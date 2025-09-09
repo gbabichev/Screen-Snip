@@ -18,10 +18,10 @@ Inspired by Greenshot on Windows - the goal is to make a tiny app that can do th
 ## Work in Progress
 - <del>Undo & Redo
 - Add Text fields with font colors, sizes, and background fill. 
-- Add lines with arrows. 
+- <del>Add lines with arrows. 
 - Add auto increment numbers. 
 - Add Crop.
-- Lines, Arrows, Shapes, numbers, etc should all be moveable objects. 
+- <del>Lines, Arrows, Shapes, numbers, etc should all be moveable objects. 
 - Open existing file
 - Paste on top & move stuff around. 
 - Image browser. 

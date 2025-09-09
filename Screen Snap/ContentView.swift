@@ -21,10 +21,19 @@ struct ContentView: View {
     // Snaps persisted on disk (newest first). Each element is a file URL to a PNG.
     @State private var snapURLs: [URL] = []
     @State private var selectedSnapURL: URL? = nil
+    @State private var objects: [Drawable] = []
+    @State private var selectedObjectID: UUID? = nil
+    @State private var activeHandle: Handle = .none
+    @State private var dragStartPoint: CGPoint? = nil
 
-    // Undo/Redo stacks of full images (save-in-place, memory-bounded by user behavior)
-    @State private var undoStack: [NSImage] = []
-    @State private var redoStack: [NSImage] = []
+    // Undo/Redo stacks of full images and overlays (save-in-place, memory-bounded by user behavior)
+    private struct Snapshot {
+        let image: NSImage?
+        let objects: [Drawable]
+    }
+    @State private var undoStack: [Snapshot] = []
+    @State private var redoStack: [Snapshot] = []
+    @State private var pushedDragUndo = false
     @State private var keyMonitor: Any? = nil
 
     var body: some View {
@@ -49,23 +58,37 @@ struct ContentView: View {
                                     .frame(width: fitted.width, height: fitted.height)
                                     .position(x: origin.x + fitted.width/2, y: origin.y + fitted.height/2)
 
-                                // Lines overlay (coordinates in the displayed image space)
+                                // Object overlay (UI coordinates within fitted image)
                                 ZStack {
+                                    // Persisted objects
+                                    ForEach(objects) { obj in
+                                        switch obj {
+                                        case .line(let o):
+                                            o.drawPath(in: fitted)
+                                                .stroke(Color(nsColor: strokeColor), style: StrokeStyle(lineWidth: o.width, lineCap: .round))
+                                                .overlay { if selectedObjectID == o.id { selectionForLine(o) } }
+                                        case .rect(let o):
+                                            o.drawPath(in: fitted)
+                                                .stroke(Color(nsColor: strokeColor), style: StrokeStyle(lineWidth: o.width))
+                                                .overlay { if selectedObjectID == o.id { selectionForRect(o) } }
+                                        }
+                                    }
+                                    // Draft feedback while creating
                                     if let d = draft {
                                         Path { p in p.move(to: d.start); p.addLine(to: d.end) }
-                                            .stroke(Color(nsColor: strokeColor), style: StrokeStyle(lineWidth: d.width, dash: [6,4]))
+                                            .stroke(Color(nsColor: strokeColor).opacity(0.8), style: StrokeStyle(lineWidth: d.width, dash: [6,4]))
                                     }
                                     if let r = draftRect {
-                                        Rectangle()
-                                            .path(in: r)
-                                            .stroke(Color(nsColor: strokeColor), style: StrokeStyle(lineWidth: strokeWidth, dash: [6,4]))
+                                        Rectangle().path(in: r)
+                                            .stroke(Color(nsColor: strokeColor).opacity(0.8), style: StrokeStyle(lineWidth: strokeWidth, dash: [6,4]))
                                     }
                                 }
                                 .frame(width: fitted.width, height: fitted.height)
                                 .position(x: origin.x + fitted.width/2, y: origin.y + fitted.height/2)
                                 .contentShape(Rectangle())
-                                .allowsHitTesting(selectedTool != .pointer)
-                                .gesture(selectedTool == .line ? lineGesture(insetOrigin: origin, fitted: fitted) : nil)
+                                .allowsHitTesting(true)
+                                .gesture(pointerGesture(insetOrigin: origin, fitted: fitted))
+                                .simultaneousGesture(selectedTool == .line ? lineGesture(insetOrigin: origin, fitted: fitted) : nil)
                                 .simultaneousGesture(selectedTool == .rect ? rectGesture(insetOrigin: origin, fitted: fitted) : nil)
                             }
                         }
@@ -121,6 +144,7 @@ struct ContentView: View {
                                         lastCapture = img
                                         selectedSnapURL = url
                                         undoStack.removeAll(); redoStack.removeAll()
+                                        objects.removeAll()
                                     }
                                 }
                                 .contextMenu {
@@ -193,16 +217,17 @@ struct ContentView: View {
                     .keyboardShortcut("Z", modifiers: [.command, .shift])
                     .disabled(redoStack.isEmpty || lastCapture == nil)
                     
-//                    Menu {
-//                        Button("Save", action: saveCurrentOverwrite)
-//                        Button("Save As…", action: saveAsCurrent)
-//                    } label: {
-//                        Label("Save", systemImage: "square.and.arrow.down")
-//                    } primaryAction: {
-//                        saveCurrentOverwrite()
-//                    }
-//
-                    Button(action: { selectedTool = .pointer }) {
+                    Menu {
+                        Button("Flatten & Save", action: flattenAndSaveInPlace)
+                        Button("Flatten & Save As…", action: flattenAndSaveAs)
+                    } label: {
+                        Label("Save", systemImage: "square.and.arrow.down")
+                    } primaryAction: {
+                        flattenAndSaveInPlace()
+                    }
+                    Button(action: { selectedTool = .pointer
+                        selectedObjectID = nil; activeHandle = .none
+                    }) {
                         Label("Pointer", systemImage: "cursorarrow")
                             .foregroundStyle(selectedTool == .pointer ? Color.white : Color.primary)
                     }
@@ -238,6 +263,7 @@ struct ContentView: View {
                             .tint(selectedTool == .line ? .white : .primary)
                     } primaryAction: {
                         selectedTool = .line
+                        selectedObjectID = nil; activeHandle = .none
                     }
                     .glassEffect(selectedTool == .line ? .regular.tint(.blue) : .regular)
 
@@ -267,6 +293,7 @@ struct ContentView: View {
                         Label("Shapes", systemImage: "square.dashed")
                     } primaryAction: {
                         selectedTool = .rect
+                        selectedObjectID = nil; activeHandle = .none
                     }
                     .glassEffect(selectedTool == .rect ? .regular.tint(.blue) : .regular)
                 }
@@ -391,6 +418,11 @@ struct ContentView: View {
         pb.writeObjects([image])
     }
 
+    private func pushUndoSnapshot() {
+        undoStack.append(Snapshot(image: lastCapture, objects: objects))
+        redoStack.removeAll()
+    }
+
     // MARK: - Save / Save As
 
     private func defaultSnapFilename() -> String {
@@ -471,24 +503,11 @@ struct ContentView: View {
             .onEnded { value in
                 let pRaw = CGPoint(x: value.location.x - insetOrigin.x, y: value.location.y - insetOrigin.y)
                 let shift = NSEvent.modifierFlags.contains(.shift)
-                guard let base = lastCapture, let start = draft?.start else { draft = nil; return }
-
-                // End point in UI space, with optional snapping
+                guard let start = draft?.start else { draft = nil; return }
                 let endUI = shift ? snappedPoint(start: start, raw: pRaw) : pRaw
-
-                // Map both start/end to image pixel space with Y-flip
-                let startImg = uiToImagePoint(start, fitted: fitted, image: base.size)
-                let endImg   = uiToImagePoint(endUI, fitted: fitted, image: base.size)
-
-                // Line width scaled to image pixels
-                let scaleX = base.size.width / max(1, fitted.width)
-                let scaleY = base.size.height / max(1, fitted.height)
-                let widthImg = strokeWidth * ((scaleX + scaleY) / 2)
-
-                let committedLine = Line(start: startImg, end: endImg, width: widthImg)
-                if let composed = composeAnnotated(base: base, lines: [committedLine], arrowHeadAtEnd: lineHasArrow) {
-                    commitChange(composed)
-                }
+                let newObj = LineObject(start: start, end: endUI, width: strokeWidth, arrow: lineHasArrow)
+                pushUndoSnapshot()
+                objects.append(.line(newObj))
                 draft = nil
             }
     }
@@ -588,72 +607,174 @@ struct ContentView: View {
             }
             .onEnded { value in
                 defer { draftRect = nil }
-                guard let base = lastCapture, let uiRect = draftRect else { return }
+                guard let uiRect = draftRect else { return }
+                let newObj = RectObject(rect: uiRect, width: strokeWidth)
+                pushUndoSnapshot()
+                objects.append(.rect(newObj))
+            }
+    }
 
-                // Map UI-space rect (origin top-left, y-down) to image pixel space (origin bottom-left, y-up)
-                let imgRect = uiRectToImageRect(uiRect, fitted: fitted, image: base.size)
-
-                // Scale line width to image pixels
-                let scaleX = base.size.width / max(1, fitted.width)
-                let scaleY = base.size.height / max(1, fitted.height)
-                let widthImg = strokeWidth * ((scaleX + scaleY) / 2)
-
-                let box = Box(rect: imgRect, width: widthImg)
-                if let composed = composeAnnotated(base: base, rects: [box]) {
-                    commitChange(composed)
+    private func pointerGesture(insetOrigin: CGPoint, fitted: CGSize) -> some Gesture {
+        DragGesture(minimumDistance: 0)
+            .onChanged { value in
+                let p = CGPoint(x: value.location.x - insetOrigin.x, y: value.location.y - insetOrigin.y)
+                if dragStartPoint == nil {
+                    dragStartPoint = p
+                    if let idx = objects.firstIndex(where: { obj in
+                        switch obj {
+                        case .line(let o): return o.handleHitTest(p) != .none || o.hitTest(p)
+                        case .rect(let o): return o.handleHitTest(p) != .none || o.hitTest(p)
+                        }
+                    }) {
+                        selectedObjectID = objects[idx].id
+                        switch objects[idx] {
+                        case .line(let o): activeHandle = o.handleHitTest(p)
+                        case .rect(let o): activeHandle = o.handleHitTest(p)
+                        }
+                    } else {
+                        selectedObjectID = nil
+                        activeHandle = .none
+                    }
+                } else if let sel = selectedObjectID, let start = dragStartPoint, let idx = objects.firstIndex(where: { $0.id == sel }) {
+                    let delta = CGSize(width: p.x - start.x, height: p.y - start.y)
+                    if !pushedDragUndo {
+                        pushUndoSnapshot()
+                        pushedDragUndo = true
+                    }
+                    switch objects[idx] {
+                    case .line(let o):
+                        objects[idx] = (activeHandle == .none) ? .line(o.moved(by: delta)) : .line(o.resizing(activeHandle, to: p))
+                    case .rect(let o):
+                        objects[idx] = (activeHandle == .none) ? .rect(o.moved(by: delta)) : .rect(o.resizing(activeHandle, to: p))
+                    }
+                    dragStartPoint = p
                 }
+            }
+            .onEnded { _ in
+                dragStartPoint = nil
+                pushedDragUndo = false
             }
     }
 
     // MARK: - Commit & Undo/Redo
     private func commitChange(_ newImage: NSImage) {
-        if let current = lastCapture {
-            undoStack.append(current)
-        }
-        redoStack.removeAll()
         lastCapture = newImage
-        if let url = selectedSnapURL {
-            if writePNG(newImage, to: url) {
-                refreshGalleryAfterSaving(to: url)
+    }
+    @ViewBuilder private func selectionForLine(_ o: LineObject) -> some View {
+        ZStack {
+            Circle().stroke(.blue, lineWidth: 1).background(Circle().fill(.white)).frame(width: 12, height: 12).position(o.start)
+            Circle().stroke(.blue, lineWidth: 1).background(Circle().fill(.white)).frame(width: 12, height: 12).position(o.end)
+        }
+    }
+
+    @ViewBuilder private func selectionForRect(_ o: RectObject) -> some View {
+        ZStack {
+            let pts = [CGPoint(x: o.rect.minX, y: o.rect.minY), CGPoint(x: o.rect.maxX, y: o.rect.minY), CGPoint(x: o.rect.minX, y: o.rect.maxY), CGPoint(x: o.rect.maxX, y: o.rect.maxY)]
+            ForEach(Array(pts.enumerated()), id: \.offset) { pair in
+                let pt = pair.element
+                Circle().stroke(.blue, lineWidth: 1).background(Circle().fill(.white)).frame(width: 12, height: 12).position(pt)
             }
         }
-        copyToPasteboard(newImage)
-        withAnimation { showCopiedHUD = true }
-        DispatchQueue.main.asyncAfter(deadline: .now() + 1.2) {
-            withAnimation { showCopiedHUD = false }
+    }
+
+    private func flattenAndSaveInPlace() {
+        guard let img = lastCapture else { return }
+        pushUndoSnapshot()
+        if let flattened = rasterize(base: img, objects: objects) {
+            lastCapture = flattened
+            objects.removeAll()
+            if let url = selectedSnapURL {
+                if writePNG(flattened, to: url) { refreshGalleryAfterSaving(to: url) }
+            } else {
+                saveAsCurrent()
+            }
         }
+    }
+
+    private func flattenAndSaveAs() {
+        guard let img = lastCapture else { return }
+        pushUndoSnapshot()
+        if let flattened = rasterize(base: img, objects: objects) {
+            lastCapture = flattened
+            objects.removeAll()
+            let panel = NSSavePanel()
+            panel.allowedContentTypes = [UTType.png]
+            panel.canCreateDirectories = true
+            panel.isExtensionHidden = false
+            panel.nameFieldStringValue = selectedSnapURL?.lastPathComponent ?? defaultSnapFilename()
+            if panel.runModal() == .OK, let url = panel.url {
+                if writePNG(flattened, to: url) {
+                    selectedSnapURL = url
+                    refreshGalleryAfterSaving(to: url)
+                }
+            }
+        }
+    }
+
+    private func rasterize(base: NSImage, objects: [Drawable]) -> NSImage? {
+        let imgSize = base.size
+        let rep = NSBitmapImageRep(bitmapDataPlanes: nil,
+                                   pixelsWide: Int(imgSize.width),
+                                   pixelsHigh: Int(imgSize.height),
+                                   bitsPerSample: 8,
+                                   samplesPerPixel: 4,
+                                   hasAlpha: true,
+                                   isPlanar: false,
+                                   colorSpaceName: .deviceRGB,
+                                   bytesPerRow: 0,
+                                   bitsPerPixel: 0)
+        guard let rep else { return nil }
+        let composed = NSImage(size: imgSize)
+        composed.addRepresentation(rep)
+
+        NSGraphicsContext.saveGraphicsState()
+        NSGraphicsContext.current = NSGraphicsContext(bitmapImageRep: rep)
+        base.draw(in: CGRect(origin: .zero, size: imgSize))
+        strokeColor.setStroke(); strokeColor.setFill()
+
+        for obj in objects {
+            switch obj {
+            case .line(let o):
+                let s = uiToImagePoint(o.start, fitted: imgSize, image: imgSize)
+                let e = uiToImagePoint(o.end,   fitted: imgSize, image: imgSize)
+                let path = NSBezierPath(); path.lineWidth = o.width; path.lineCapStyle = .round
+                path.move(to: s); path.line(to: e); path.stroke()
+                if o.arrow {
+                    let dx = e.x - s.x, dy = e.y - s.y
+                    let len = max(1, hypot(dx, dy))
+                    let headLength = min(len * 0.8, max(10, 6 * o.width))
+                    let headWidth  = max(8, 5 * o.width)
+                    let ux = dx/len, uy = dy/len
+                    let bx = e.x - ux * headLength, by = e.y - uy * headLength
+                    let px = -uy, py = ux
+                    let p1 = CGPoint(x: bx + px * (headWidth/2), y: by + py * (headWidth/2))
+                    let p2 = CGPoint(x: bx - px * (headWidth/2), y: by - py * (headWidth/2))
+                    let tri = NSBezierPath(); tri.move(to: e); tri.line(to: p1); tri.line(to: p2); tri.close(); tri.fill()
+                }
+            case .rect(let o):
+                let r = uiRectToImageRect(o.rect, fitted: imgSize, image: imgSize)
+                let path = NSBezierPath(rect: r); path.lineWidth = o.width; path.stroke()
+            }
+        }
+
+        NSGraphicsContext.restoreGraphicsState()
+        return composed
     }
 
     private func performUndo() {
-        guard let previous = undoStack.popLast(), let current = lastCapture else { return }
+        guard let prev = undoStack.popLast() else { return }
+        let current = Snapshot(image: lastCapture, objects: objects)
         redoStack.append(current)
-        lastCapture = previous
-        if let url = selectedSnapURL {
-            if writePNG(previous, to: url) {
-                refreshGalleryAfterSaving(to: url)
-            }
-        }
-        copyToPasteboard(previous)
-        withAnimation { showCopiedHUD = true }
-        DispatchQueue.main.asyncAfter(deadline: .now() + 1.0) {
-            withAnimation { showCopiedHUD = false }
-        }
+        lastCapture = prev.image
+        objects = prev.objects
     }
 
     private func performRedo() {
-        guard let next = redoStack.popLast(), let current = lastCapture else { return }
+        guard let next = redoStack.popLast() else { return }
+        let current = Snapshot(image: lastCapture, objects: objects)
         undoStack.append(current)
-        lastCapture = next
-        if let url = selectedSnapURL {
-            if writePNG(next, to: url) {
-                refreshGalleryAfterSaving(to: url)
-            }
-        }
-        copyToPasteboard(next)
-        withAnimation { showCopiedHUD = true }
-        DispatchQueue.main.asyncAfter(deadline: .now() + 1.0) {
-            withAnimation { showCopiedHUD = false }
-        }
+        lastCapture = next.image
+        objects = next.objects
     }
 
     private func uiRectToImageRect(_ r: CGRect, fitted: CGSize, image: CGSize) -> CGRect {
@@ -976,6 +1097,116 @@ private struct CopiedHUD: View {
     }
 }
 
+// MARK: - Object Editing Models
+private enum Handle: Hashable { case none, lineStart, lineEnd, rectTopLeft, rectTopRight, rectBottomLeft, rectBottomRight }
+
+private protocol DrawableObject: Identifiable, Equatable {
+    func drawPath(in size: CGSize) -> Path
+    func hitTest(_ p: CGPoint) -> Bool
+    func handleHitTest(_ p: CGPoint) -> Handle
+    func moved(by delta: CGSize) -> Self
+    func resizing(_ handle: Handle, to p: CGPoint) -> Self
+}
+
+private struct LineObject: DrawableObject {
+    let id: UUID
+    var start: CGPoint
+    var end: CGPoint
+    var width: CGFloat
+    var arrow: Bool
+
+    init(id: UUID = UUID(), start: CGPoint, end: CGPoint, width: CGFloat, arrow: Bool) {
+        self.id = id; self.start = start; self.end = end; self.width = width; self.arrow = arrow
+    }
+
+    static func == (lhs: LineObject, rhs: LineObject) -> Bool { lhs.id == rhs.id && lhs.start == rhs.start && lhs.end == rhs.end && lhs.width == rhs.width && lhs.arrow == rhs.arrow }
+
+    func drawPath(in _: CGSize) -> Path { var p = Path(); p.move(to: start); p.addLine(to: end); return p }
+
+    func hitTest(_ p: CGPoint) -> Bool {
+        let tol = max(6, width + 6)
+        let dx = end.x - start.x, dy = end.y - start.y
+        let len2 = dx*dx + dy*dy
+        if len2 == 0 { return hypot(p.x-start.x, p.y-start.y) <= tol }
+        let t = max(0, min(1, ((p.x-start.x)*dx + (p.y-start.y)*dy)/len2))
+        let proj = CGPoint(x: start.x + t*dx, y: start.y + t*dy)
+        return hypot(p.x-proj.x, p.y-proj.y) <= tol
+    }
+
+    func handleHitTest(_ p: CGPoint) -> Handle {
+        let r: CGFloat = 8
+        if CGRect(x: start.x-r, y: start.y-r, width: 2*r, height: 2*r).contains(p) { return .lineStart }
+        if CGRect(x: end.x-r,   y: end.y-r,   width: 2*r, height: 2*r).contains(p) { return .lineEnd }
+        return .none
+    }
+
+    func moved(by d: CGSize) -> LineObject {
+        var c = self
+        c.start.x += d.width; c.start.y += d.height
+        c.end.x   += d.width; c.end.y   += d.height
+        return c
+    }
+
+    func resizing(_ handle: Handle, to p: CGPoint) -> LineObject {
+        var c = self
+        switch handle { case .lineStart: c.start = p; case .lineEnd: c.end = p; default: break }
+        return c
+    }
+}
+
+private struct RectObject: DrawableObject {
+    let id: UUID
+    var rect: CGRect
+    var width: CGFloat
+
+    init(id: UUID = UUID(), rect: CGRect, width: CGFloat) { self.id = id; self.rect = rect; self.width = width }
+
+    static func == (lhs: RectObject, rhs: RectObject) -> Bool { lhs.id == rhs.id && lhs.rect == rhs.rect && lhs.width == rhs.width }
+
+    func drawPath(in _: CGSize) -> Path { Rectangle().path(in: rect) }
+
+    func hitTest(_ p: CGPoint) -> Bool {
+        let inset = -max(6, width + 6)
+        return rect.insetBy(dx: inset, dy: inset).contains(p) && !rect.insetBy(dx: max(6, width + 6), dy: max(6, width + 6)).contains(p)
+    }
+
+    func handleHitTest(_ p: CGPoint) -> Handle {
+        let r: CGFloat = 8
+        let tl = CGRect(x: rect.minX-r, y: rect.minY-r, width: 2*r, height: 2*r)
+        let tr = CGRect(x: rect.maxX-r, y: rect.minY-r, width: 2*r, height: 2*r)
+        let bl = CGRect(x: rect.minX-r, y: rect.maxY-r, width: 2*r, height: 2*r)
+        let br = CGRect(x: rect.maxX-r, y: rect.maxY-r, width: 2*r, height: 2*r)
+        if tl.contains(p) { return .rectTopLeft }
+        if tr.contains(p) { return .rectTopRight }
+        if bl.contains(p) { return .rectBottomLeft }
+        if br.contains(p) { return .rectBottomRight }
+        return .none
+    }
+
+    func moved(by d: CGSize) -> RectObject { var c = self; c.rect.origin.x += d.width; c.rect.origin.y += d.height; return c }
+
+    func resizing(_ handle: Handle, to p: CGPoint) -> RectObject {
+        var c = self
+        switch handle {
+        case .rectTopLeft:
+            c.rect = CGRect(x: p.x, y: p.y, width: rect.maxX - p.x, height: rect.maxY - p.y)
+        case .rectTopRight:
+            c.rect = CGRect(x: rect.minX, y: p.y, width: p.x - rect.minX, height: rect.maxY - p.y)
+        case .rectBottomLeft:
+            c.rect = CGRect(x: p.x, y: rect.minY, width: rect.maxX - p.x, height: p.y - rect.minY)
+        case .rectBottomRight:
+            c.rect = CGRect(x: rect.minX, y: rect.minY, width: p.x - rect.minX, height: p.y - rect.minY)
+        default: break
+        }
+        return c
+    }
+}
+
+private enum Drawable: Identifiable, Equatable {
+    case line(LineObject)
+    case rect(RectObject)
+    var id: UUID { switch self { case .line(let o): return o.id; case .rect(let o): return o.id } }
+}
 // MARK: - Inline Annotation Types
 private struct Line: Identifiable {
     let id = UUID()
