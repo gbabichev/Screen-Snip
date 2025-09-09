@@ -16,6 +16,10 @@ struct ContentView: View {
     @State private var draft: Line? = nil
     @State private var draftRect: CGRect? = nil
     @State private var cropDraftRect: CGRect? = nil
+    @State private var cropRect: CGRect? = nil
+    @State private var cropHandle: Handle = .none
+    @State private var cropDragStart: CGPoint? = nil
+    @State private var cropOriginalRect: CGRect? = nil
     @State private var strokeWidth: CGFloat = 3
     @State private var strokeColor: NSColor = .black
     @State private var lineHasArrow: Bool = false
@@ -116,6 +120,28 @@ struct ContentView: View {
                                     if let r = draftRect {
                                         Rectangle().path(in: r)
                                             .stroke(Color(nsColor: strokeColor).opacity(0.8), style: StrokeStyle(lineWidth: strokeWidth, dash: [6,4]))
+                                    }
+                                    if let crp = cropRect {
+                                        Rectangle().path(in: crp)
+                                            .stroke(Color.orange.opacity(0.95), style: StrokeStyle(lineWidth: max(1, strokeWidth), dash: [8,4]))
+                                            .overlay(
+                                                Rectangle().path(in: crp).fill(Color.orange.opacity(0.10))
+                                            )
+                                        
+                                        // Corner handles to indicate the crop can be dragged/resized
+                                        let pts = [
+                                            CGPoint(x: crp.minX, y: crp.minY),
+                                            CGPoint(x: crp.maxX, y: crp.minY),
+                                            CGPoint(x: crp.minX, y: crp.maxY),
+                                            CGPoint(x: crp.maxX, y: crp.maxY)
+                                        ]
+                                        ForEach(Array(pts.enumerated()), id: \.offset) { _, pt in
+                                            Circle()
+                                                .stroke(Color.orange, lineWidth: 1)
+                                                .background(Circle().fill(Color.white))
+                                                .frame(width: 12, height: 12)
+                                                .position(pt)
+                                        }
                                     }
                                     if let cr = cropDraftRect {
                                         Rectangle().path(in: cr)
@@ -248,6 +274,37 @@ struct ContentView: View {
                         }
                     }
                 }
+
+                // Enter/Return to commit crop when Crop tool is active
+                if selectedTool == .crop, let rect = cropRect, !event.modifierFlags.contains(.command) {
+                    if event.keyCode == 36 || event.keyCode == 76 { // Return or Keypad Enter
+                        // Perform destructive crop with current overlay
+                        if let base = lastCapture {
+                            if objectSpaceSize == nil { objectSpaceSize = lastFittedSize ?? base.size }
+                            pushUndoSnapshot()
+                            let flattened = rasterize(base: base, objects: objects) ?? base
+                            let imgRectBL = uiRectToImageRect(rect, fitted: objectSpaceSize ?? base.size, image: flattened.size)
+                            if let cropped = cropImage(flattened, toBottomLeftRect: imgRectBL) {
+                                lastCapture = cropped
+                                objects.removeAll()
+                                objectSpaceSize = nil
+                                selectedObjectID = nil
+                                activeHandle = .none
+                                cropRect = nil
+                                cropDraftRect = nil
+                                cropHandle = .none
+                            }
+                        }
+                        return nil
+                    }
+                    // Escape cancels current crop overlay
+                    if event.keyCode == 53 { // Escape
+                        cropRect = nil
+                        cropDraftRect = nil
+                        cropHandle = .none
+                        return nil
+                    }
+                }
                 return event
             }
         }
@@ -325,7 +382,7 @@ struct ContentView: View {
                         flattenAndSaveInPlace()
                     }
                     Button(action: { selectedTool = .pointer
-                        selectedObjectID = nil; activeHandle = .none; cropDraftRect = nil
+                        selectedObjectID = nil; activeHandle = .none; cropDraftRect = nil; cropRect = nil; cropHandle = .none
                     }) {
                         Label("Pointer", systemImage: "cursorarrow")
                             .foregroundStyle(selectedTool == .pointer ? Color.white : Color.primary)
@@ -362,7 +419,7 @@ struct ContentView: View {
                             .tint(selectedTool == .line ? .white : .primary)
                     } primaryAction: {
                         selectedTool = .line
-                        selectedObjectID = nil; activeHandle = .none; cropDraftRect = nil
+                        selectedObjectID = nil; activeHandle = .none; cropDraftRect = nil; cropRect = nil; cropHandle = .none
                     }
                     .glassEffect(selectedTool == .line ? .regular.tint(.blue) : .regular)
 
@@ -419,7 +476,7 @@ struct ContentView: View {
                             .tint(selectedTool == .text ? .white : .primary)
                     } primaryAction: {
                         selectedTool = .text
-                        selectedObjectID = nil; activeHandle = .none; cropDraftRect = nil
+                        selectedObjectID = nil; activeHandle = .none; cropDraftRect = nil; cropRect = nil; cropHandle = .none
                     }
                     .glassEffect(selectedTool == .text ? .regular.tint(.blue) : .regular)
                     
@@ -449,7 +506,7 @@ struct ContentView: View {
                         Label("Shapes", systemImage: "square.dashed")
                     } primaryAction: {
                         selectedTool = .rect
-                        selectedObjectID = nil; activeHandle = .none; cropDraftRect = nil
+                        selectedObjectID = nil; activeHandle = .none; cropDraftRect = nil; cropRect = nil; cropHandle = .none
                     }
                     
                     Button(action: {
@@ -490,46 +547,97 @@ struct ContentView: View {
                 let currentFit = CGPoint(x: value.location.x - insetOrigin.x, y: value.location.y - insetOrigin.y)
                 let start = fittedToAuthorPoint(startFit, fitted: fitted, author: author)
                 let current = fittedToAuthorPoint(currentFit, fitted: fitted, author: author)
-                let shift = NSEvent.modifierFlags.contains(.shift)
 
-                func rectFrom(_ a: CGPoint, _ b: CGPoint, square: Bool) -> CGRect {
-                    var x0 = min(a.x, b.x)
-                    var y0 = min(a.y, b.y)
-                    var w = abs(a.x - b.x)
-                    var h = abs(a.y - b.y)
-                    if square {
-                        let side = max(w, h)
-                        x0 = (b.x >= a.x) ? a.x : (a.x - side)
-                        y0 = (b.y >= a.y) ? a.y : (a.y - side)
-                        w = side; h = side
+                // If we already have a cropRect, interpret drags as edits (handles or move)
+                if var existing = cropRect {
+                    if cropDragStart == nil {
+                        cropDragStart = start
+                        cropOriginalRect = existing
+                        // Decide if we're on a handle; otherwise, treat as move if inside rect
+                        cropHandle = cropHandleHitTest(existing, at: start)
+                        if cropHandle == .none && existing.contains(start) {
+                            cropHandle = .none // move
+                        }
                     }
+                    if let originRect = cropOriginalRect, let s = cropDragStart {
+                        if cropHandle == .none && originRect.contains(s) {
+                            // Move
+                            let dx = current.x - s.x
+                            let dy = current.y - s.y
+                            var moved = originRect
+                            moved.origin.x += dx
+                            moved.origin.y += dy
+                            cropRect = clampRect(moved, in: author)
+                        } else {
+                            // Resize using handle
+                            cropRect = clampRect(resizeRect(originRect, handle: cropHandle, to: current), in: author)
+                        }
+                    }
+                    return
+                }
+
+                // No existing cropRect — create a new draft selection
+                func rectFrom(_ a: CGPoint, _ b: CGPoint) -> CGRect {
+                    let x0 = min(a.x, b.x)
+                    let y0 = min(a.y, b.y)
+                    let w = abs(a.x - b.x)
+                    let h = abs(a.y - b.y)
                     return CGRect(x: x0, y: y0, width: w, height: h)
                 }
+                cropDraftRect = rectFrom(start, current)
+            }
+            .onEnded { value in
+                let currentFit = CGPoint(x: value.location.x - insetOrigin.x, y: value.location.y - insetOrigin.y)
+                let current = fittedToAuthorPoint(currentFit, fitted: fitted, author: author)
 
-                cropDraftRect = rectFrom(start, current, square: shift)
-            }
-            .onEnded { _ in
-                defer { cropDraftRect = nil }
-                guard let uiRect = cropDraftRect,
-                      let base = lastCapture
-                else { return }
-                // Ensure we have a reference UI size for mapping
-                if objectSpaceSize == nil { objectSpaceSize = lastFittedSize ?? base.size }
-                pushUndoSnapshot()
-                // Flatten current objects before crop (cropping is destructive to editability)
-                let flattened = rasterize(base: base, objects: objects) ?? base
-                // Map UI rect to image rect (bottom-left origin)
-                let imgRectBL = uiRectToImageRect(uiRect, fitted: objectSpaceSize ?? base.size, image: flattened.size)
-                if let cropped = cropImage(flattened, toBottomLeftRect: imgRectBL) {
-                    lastCapture = cropped
-                    // Reset overlay/edit state after destructive crop
-                    objects.removeAll()
-                    objectSpaceSize = nil
-                    selectedObjectID = nil
-                    activeHandle = .none
-                    // Do not auto-save; user can use Save to overwrite or Save As to create a new file.
+                if let _ = cropOriginalRect {
+                    // Finish edit
+                    cropDragStart = nil
+                    cropOriginalRect = nil
+                    cropHandle = .none
+                    return
                 }
+
+                // Finish creation
+                if let draft = cropDraftRect {
+                    let clamped = clampRect(draft, in: author)
+                    cropRect = clamped.width > 2 && clamped.height > 2 ? clamped : nil
+                }
+                cropDraftRect = nil
             }
+    }
+
+    private func cropHandleHitTest(_ rect: CGRect, at p: CGPoint) -> Handle {
+        let r: CGFloat = 8
+        let tl = CGRect(x: rect.minX-r, y: rect.minY-r, width: 2*r, height: 2*r)
+        let tr = CGRect(x: rect.maxX-r, y: rect.minY-r, width: 2*r, height: 2*r)
+        let bl = CGRect(x: rect.minX-r, y: rect.maxY-r, width: 2*r, height: 2*r)
+        let br = CGRect(x: rect.maxX-r, y: rect.maxY-r, width: 2*r, height: 2*r)
+        if tl.contains(p) { return .rectTopLeft }
+        if tr.contains(p) { return .rectTopRight }
+        if bl.contains(p) { return .rectBottomLeft }
+        if br.contains(p) { return .rectBottomRight }
+        return .none
+    }
+
+    private func resizeRect(_ rect: CGRect, handle: Handle, to p: CGPoint) -> CGRect {
+        var c = rect
+        switch handle {
+        case .rectTopLeft:
+            c = CGRect(x: p.x, y: p.y, width: rect.maxX - p.x, height: rect.maxY - p.y)
+        case .rectTopRight:
+            c = CGRect(x: rect.minX, y: p.y, width: p.x - rect.minX, height: rect.maxY - p.y)
+        case .rectBottomLeft:
+            c = CGRect(x: p.x, y: rect.minY, width: rect.maxX - p.x, height: p.y - rect.minY)
+        case .rectBottomRight:
+            c = CGRect(x: rect.minX, y: rect.minY, width: p.x - rect.minX, height: p.y - rect.minY)
+        default:
+            break
+        }
+        // Minimum size
+        c.size.width = max(2, c.size.width)
+        c.size.height = max(2, c.size.height)
+        return c
     }
     
     private func startSelection() {
