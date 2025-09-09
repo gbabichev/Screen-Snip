@@ -6,7 +6,7 @@ import AppKit
 import VideoToolbox
 import UniformTypeIdentifiers
 
-private enum Tool { case pointer, line, rect, text }
+private enum Tool { case pointer, line, rect, text, crop }
 
 struct ContentView: View {
     @State private var lastCapture: NSImage? = nil
@@ -15,6 +15,7 @@ struct ContentView: View {
     // Removed lines buffer; we now auto-commit each line on mouse-up.
     @State private var draft: Line? = nil
     @State private var draftRect: CGRect? = nil
+    @State private var cropDraftRect: CGRect? = nil
     @State private var strokeWidth: CGFloat = 3
     @State private var strokeColor: NSColor = .black
     @State private var lineHasArrow: Bool = false
@@ -116,6 +117,13 @@ struct ContentView: View {
                                         Rectangle().path(in: r)
                                             .stroke(Color(nsColor: strokeColor).opacity(0.8), style: StrokeStyle(lineWidth: strokeWidth, dash: [6,4]))
                                     }
+                                    if let cr = cropDraftRect {
+                                        Rectangle().path(in: cr)
+                                            .stroke(Color.orange.opacity(0.9), style: StrokeStyle(lineWidth: max(1, strokeWidth), dash: [8,4]))
+                                            .overlay(
+                                                Rectangle().path(in: cr).fill(Color.orange.opacity(0.12))
+                                            )
+                                    }
                                 }
                                 .frame(width: author.width, height: author.height)
                                 .scaleEffect(x: sx, y: sy, anchor: .topLeading)
@@ -130,6 +138,7 @@ struct ContentView: View {
                                 .simultaneousGesture(selectedTool == .line ? lineGesture(insetOrigin: origin, fitted: fitted, author: author) : nil)
                                 .simultaneousGesture(selectedTool == .rect ? rectGesture(insetOrigin: origin, fitted: fitted, author: author) : nil)
                                 .simultaneousGesture(selectedTool == .text ? textGesture(insetOrigin: origin, fitted: fitted, author: author) : nil)
+                                .simultaneousGesture(selectedTool == .crop ? cropGesture(insetOrigin: origin, fitted: fitted, author: author) : nil)
                                 .onAppear {
                                     lastFittedSize = fitted
                                     if objectSpaceSize == nil { objectSpaceSize = fitted }
@@ -316,7 +325,7 @@ struct ContentView: View {
                         flattenAndSaveInPlace()
                     }
                     Button(action: { selectedTool = .pointer
-                        selectedObjectID = nil; activeHandle = .none
+                        selectedObjectID = nil; activeHandle = .none; cropDraftRect = nil
                     }) {
                         Label("Pointer", systemImage: "cursorarrow")
                             .foregroundStyle(selectedTool == .pointer ? Color.white : Color.primary)
@@ -353,7 +362,7 @@ struct ContentView: View {
                             .tint(selectedTool == .line ? .white : .primary)
                     } primaryAction: {
                         selectedTool = .line
-                        selectedObjectID = nil; activeHandle = .none
+                        selectedObjectID = nil; activeHandle = .none; cropDraftRect = nil
                     }
                     .glassEffect(selectedTool == .line ? .regular.tint(.blue) : .regular)
 
@@ -410,7 +419,7 @@ struct ContentView: View {
                             .tint(selectedTool == .text ? .white : .primary)
                     } primaryAction: {
                         selectedTool = .text
-                        selectedObjectID = nil; activeHandle = .none
+                        selectedObjectID = nil; activeHandle = .none; cropDraftRect = nil
                     }
                     .glassEffect(selectedTool == .text ? .regular.tint(.blue) : .regular)
                     
@@ -440,9 +449,20 @@ struct ContentView: View {
                         Label("Shapes", systemImage: "square.dashed")
                     } primaryAction: {
                         selectedTool = .rect
-                        selectedObjectID = nil; activeHandle = .none
+                        selectedObjectID = nil; activeHandle = .none; cropDraftRect = nil
                     }
-                    .glassEffect(selectedTool == .rect ? .regular.tint(.blue) : .regular)
+                    
+                    Button(action: {
+                        selectedTool = .crop
+                        selectedObjectID = nil
+                        activeHandle = .none
+                    }) {
+                        Label("Crop", systemImage: "crop")
+                            .foregroundStyle(selectedTool == .crop ? Color.white : Color.primary)
+                    }
+                    .glassEffect(selectedTool == .crop ? .regular.tint(.blue) : .regular)
+                    .help("Drag to select an area to crop")
+
                 }
                 
 
@@ -462,6 +482,56 @@ struct ContentView: View {
         }
     }
 
+    private func cropGesture(insetOrigin: CGPoint, fitted: CGSize, author: CGSize) -> some Gesture {
+        DragGesture(minimumDistance: 0)
+            .onChanged { value in
+                guard allowDraftTick() else { return }
+                let startFit = CGPoint(x: value.startLocation.x - insetOrigin.x, y: value.startLocation.y - insetOrigin.y)
+                let currentFit = CGPoint(x: value.location.x - insetOrigin.x, y: value.location.y - insetOrigin.y)
+                let start = fittedToAuthorPoint(startFit, fitted: fitted, author: author)
+                let current = fittedToAuthorPoint(currentFit, fitted: fitted, author: author)
+                let shift = NSEvent.modifierFlags.contains(.shift)
+
+                func rectFrom(_ a: CGPoint, _ b: CGPoint, square: Bool) -> CGRect {
+                    var x0 = min(a.x, b.x)
+                    var y0 = min(a.y, b.y)
+                    var w = abs(a.x - b.x)
+                    var h = abs(a.y - b.y)
+                    if square {
+                        let side = max(w, h)
+                        x0 = (b.x >= a.x) ? a.x : (a.x - side)
+                        y0 = (b.y >= a.y) ? a.y : (a.y - side)
+                        w = side; h = side
+                    }
+                    return CGRect(x: x0, y: y0, width: w, height: h)
+                }
+
+                cropDraftRect = rectFrom(start, current, square: shift)
+            }
+            .onEnded { _ in
+                defer { cropDraftRect = nil }
+                guard let uiRect = cropDraftRect,
+                      let base = lastCapture
+                else { return }
+                // Ensure we have a reference UI size for mapping
+                if objectSpaceSize == nil { objectSpaceSize = lastFittedSize ?? base.size }
+                pushUndoSnapshot()
+                // Flatten current objects before crop (cropping is destructive to editability)
+                let flattened = rasterize(base: base, objects: objects) ?? base
+                // Map UI rect to image rect (bottom-left origin)
+                let imgRectBL = uiRectToImageRect(uiRect, fitted: objectSpaceSize ?? base.size, image: flattened.size)
+                if let cropped = cropImage(flattened, toBottomLeftRect: imgRectBL) {
+                    lastCapture = cropped
+                    // Reset overlay/edit state after destructive crop
+                    objects.removeAll()
+                    objectSpaceSize = nil
+                    selectedObjectID = nil
+                    activeHandle = .none
+                    // Do not auto-save; user can use Save to overwrite or Save As to create a new file.
+                }
+            }
+    }
+    
     private func startSelection() {
         SelectionWindowManager.shared.present(onComplete: { rect in
             Task {
@@ -1756,3 +1826,17 @@ private struct PenColorButton: View {
         return CGRect(x: r.origin.x * sx, y: r.origin.y * sy, width: r.size.width * sx, height: r.size.height * sy)
     }
 
+
+    /// Crops an NSImage using a rect expressed in image coordinates with bottom-left origin.
+    private func cropImage(_ image: NSImage, toBottomLeftRect rBL: CGRect) -> NSImage? {
+        guard let cg = image.cgImage(forProposedRect: nil, context: nil, hints: nil) else { return nil }
+        let imgH = CGFloat(cg.height)
+        // Convert to CoreGraphics top-left origin
+        let rectTL = CGRect(x: rBL.origin.x,
+                            y: imgH - (rBL.origin.y + rBL.height),
+                            width: rBL.width,
+                            height: rBL.height).integral
+        guard rectTL.width > 1, rectTL.height > 1 else { return nil }
+        guard let sub = cg.cropping(to: rectTL) else { return nil }
+        return NSImage(cgImage: sub, size: NSSize(width: rectTL.width, height: rectTL.height))
+    }

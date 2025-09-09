@@ -2,12 +2,12 @@
 
 # Screen Snap
 
-<!-- <picture>
+<picture>
   <source srcset="Documentation/icon-dark.png" media="(prefers-color-scheme: dark)">
   <source srcset="Documentation/icon-light.png" media="(prefers-color-scheme: light)">
   <img src="Documentation/icon-light.png" alt="App Icon" width="100">
 </picture>
-<br/><br/> -->
+<br/><br/>
 
 A small yet powerful **macOS app** for taking & editing screenshots!
 
@@ -27,6 +27,10 @@ Inspired by Greenshot on Windows - the goal is to make a tiny app that can do th
 - Open existing file
 - Paste on top & move stuff around. 
 - Image browser. 
+- Add User Settings 
+  - User defined save folder. 
+  - User defined output type (PNG / JPG / HEIC)
+- Global system hotkey for screenshots. 
 - More as I think of it. 
 
 
