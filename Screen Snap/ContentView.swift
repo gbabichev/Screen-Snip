@@ -201,14 +201,18 @@ struct ContentView: View {
 //                    } primaryAction: {
 //                        saveCurrentOverwrite()
 //                    }
-//                    
+//
                     Button(action: { selectedTool = .pointer }) {
                         Label("Pointer", systemImage: "cursorarrow")
+                            .foregroundStyle(selectedTool == .pointer ? Color.white : Color.primary)
                     }
-                    .tint(selectedTool == .pointer ? Color.accentColor : Color.gray)
+                    .glassEffect(selectedTool == .pointer ? .regular.tint(.blue) : .regular)
+                    
                     
                     Menu {
-                        Toggle("Arrowhead on end", isOn: $lineHasArrow)
+                        Toggle("Arrow", isOn: $lineHasArrow)
+                            .toggleStyle(.button)
+                        
                         Divider()
 
                         Menu("Line Width") {
@@ -228,11 +232,15 @@ struct ContentView: View {
                             PenColorButton(current: $strokeColor, color: .white, name: "White")
                         }
                     } label: {
-                        Label("Pen", systemImage: "pencil.line")
-                            .foregroundStyle(selectedTool == .line ? Color.accentColor : Color.primary)
+                        Label("Pen", systemImage: lineHasArrow ? "arrow.right" : "pencil.line")
+                            .symbolRenderingMode(.monochrome)
+                            .foregroundStyle(selectedTool == .line ? Color.white : Color.primary)
+                            .tint(selectedTool == .line ? .white : .primary)
                     } primaryAction: {
                         selectedTool = .line
                     }
+                    .glassEffect(selectedTool == .line ? .regular.tint(.blue) : .regular)
+
                     
                     Menu {
                         // Reuse stroke controls for shapes
@@ -257,10 +265,10 @@ struct ContentView: View {
                             .foregroundStyle(.secondary)
                     } label: {
                         Label("Shapes", systemImage: "square.dashed")
-                            .foregroundStyle(selectedTool == .rect ? Color.accentColor : Color.primary)
                     } primaryAction: {
                         selectedTool = .rect
                     }
+                    .glassEffect(selectedTool == .rect ? .regular.tint(.blue) : .regular)
                 }
                 
 
