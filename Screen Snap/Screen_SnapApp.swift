@@ -13,5 +13,6 @@ struct Screen_SnapApp: App {
         WindowGroup {
             ContentView()
         }
+        .windowStyle(.hiddenTitleBar)
     }
 }

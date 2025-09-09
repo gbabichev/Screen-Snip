@@ -6,7 +6,7 @@ import AppKit
 import VideoToolbox
 import UniformTypeIdentifiers
 
-private enum Tool { case pointer, line }
+private enum Tool { case pointer, line, rect }
 
 struct ContentView: View {
     @State private var lastCapture: NSImage? = nil
@@ -14,12 +14,17 @@ struct ContentView: View {
     @State private var selectedTool: Tool = .pointer
     // Removed lines buffer; we now auto-commit each line on mouse-up.
     @State private var draft: Line? = nil
+    @State private var draftRect: CGRect? = nil
     @State private var strokeWidth: CGFloat = 3
     @State private var strokeColor: NSColor = .black
-    @State private var lastFitted: CGSize = .zero
     // Snaps persisted on disk (newest first). Each element is a file URL to a PNG.
     @State private var snapURLs: [URL] = []
     @State private var selectedSnapURL: URL? = nil
+
+    // Undo/Redo stacks of full images (save-in-place, memory-bounded by user behavior)
+    @State private var undoStack: [NSImage] = []
+    @State private var redoStack: [NSImage] = []
+    @State private var keyMonitor: Any? = nil
 
     var body: some View {
         ZStack(alignment: .topLeading) {
@@ -51,17 +56,18 @@ struct ContentView: View {
                                             Path { p in p.move(to: d.start); p.addLine(to: d.end) }
                                                 .stroke(Color(nsColor: strokeColor), style: StrokeStyle(lineWidth: d.width, dash: [6,4]))
                                         }
+                                        if let r = draftRect {
+                                            Rectangle()
+                                                .path(in: r)
+                                                .stroke(Color(nsColor: strokeColor), style: StrokeStyle(lineWidth: strokeWidth, dash: [6,4]))
+                                        }
                                     }
                                     .frame(width: fitted.width, height: fitted.height)
                                     .position(x: origin.x + fitted.width/2, y: origin.y + fitted.height/2)
                                     .contentShape(Rectangle())
-                                    .allowsHitTesting(selectedTool == .line)
-                                    .gesture(selectedTool == .line ? lineGesture(insetOrigin: origin) : nil)
-                                    .overlay(
-                                        Color.clear
-                                            .onAppear { lastFitted = fitted }
-                                            .onChange(of: geo.size) { _ in lastFitted = fitted }
-                                    )
+                                    .allowsHitTesting(selectedTool != .pointer)
+                                    .gesture(selectedTool == .line ? lineGesture(insetOrigin: origin, fitted: fitted) : nil)
+                                    .simultaneousGesture(selectedTool == .rect ? rectGesture(insetOrigin: origin, fitted: fitted) : nil)
                                 }
                             }
                             .frame(maxWidth: .infinity, maxHeight: .infinity)
@@ -118,6 +124,7 @@ struct ContentView: View {
                                     if let img = NSImage(contentsOf: url) {
                                         lastCapture = img
                                         selectedSnapURL = url
+                                        undoStack.removeAll(); redoStack.removeAll()
                                     }
                                 }
                                 .contextMenu {
@@ -136,6 +143,23 @@ struct ContentView: View {
         }
         .onAppear {
             loadExistingSnaps()
+            // Listen for Cmd+Z / Shift+Cmd+Z globally while this view is active
+            keyMonitor = NSEvent.addLocalMonitorForEvents(matching: .keyDown) { event in
+                if event.modifierFlags.contains(.command), let chars = event.charactersIgnoringModifiers?.lowercased() {
+                    if chars == "z" {
+                        if event.modifierFlags.contains(.shift) {
+                            performRedo()
+                        } else {
+                            performUndo()
+                        }
+                        return nil // consume
+                    }
+                }
+                return event
+            }
+        }
+        .onDisappear {
+            if let keyMonitor { NSEvent.removeMonitor(keyMonitor); self.keyMonitor = nil }
         }
         .toolbar {
             // Capture Region button (always available)
@@ -152,6 +176,22 @@ struct ContentView: View {
                     Button(action: { copyToPasteboard(img) }) {
                         Label("Copy Last", systemImage: "doc.on.doc")
                     }
+                }
+
+                // Undo / Redo
+                ToolbarItem(placement: .automatic) {
+                    Button(action: performUndo) {
+                        Label("Undo", systemImage: "arrow.uturn.backward")
+                    }
+                    .keyboardShortcut("z", modifiers: [.command])
+                    .disabled(undoStack.isEmpty || lastCapture == nil)
+                }
+                ToolbarItem(placement: .automatic) {
+                    Button(action: performRedo) {
+                        Label("Redo", systemImage: "arrow.uturn.forward")
+                    }
+                    .keyboardShortcut("Z", modifiers: [.command, .shift])
+                    .disabled(redoStack.isEmpty || lastCapture == nil)
                 }
 
                 // Save / Save As menu
@@ -201,10 +241,48 @@ struct ContentView: View {
                     }
                 }
 
+                // Shapes menu with primaryAction to select the rectangle tool
+                ToolbarItem(placement: .automatic) {
+                    Menu {
+                        // Reuse stroke controls for shapes
+                        Menu("Line Width") {
+                            ForEach([1,2,3,4,6,8,12,16], id: \.self) { w in
+                                Button(action: { strokeWidth = CGFloat(w) }) {
+                                    if Int(strokeWidth) == w { Image(systemName: "checkmark") }
+                                    Text("\(w) pt")
+                                }
+                            }
+                        }
+                        Menu("Color") {
+                            PenColorButton(current: $strokeColor, color: .black, name: "Black")
+                            PenColorButton(current: $strokeColor, color: .red, name: "Red")
+                            PenColorButton(current: $strokeColor, color: .blue, name: "Blue")
+                            PenColorButton(current: $strokeColor, color: .systemGreen, name: "Green")
+                            PenColorButton(current: $strokeColor, color: .systemYellow, name: "Yellow")
+                            PenColorButton(current: $strokeColor, color: .white, name: "White")
+                        }
+                        Divider()
+                        Text("Hold ⇧ for a perfect square")
+                            .foregroundStyle(.secondary)
+                    } label: {
+                        Label("Shapes", systemImage: "square.dashed")
+                            .foregroundStyle(selectedTool == .rect ? Color.accentColor : Color.primary)
+                    } primaryAction: {
+                        selectedTool = .rect
+                    }
+                }
+
                 // Line tool controls: Only show Shift-snap hint when tool is .line
                 if selectedTool == .line {
                     ToolbarItem(placement: .status) {
                         Text("Hold ⇧ to snap (0°/45°/90°)")
+                            .font(.footnote)
+                            .foregroundStyle(.secondary)
+                    }
+                }
+                if selectedTool == .rect {
+                    ToolbarItem(placement: .status) {
+                        Text("Hold ⇧ to make a square")
                             .font(.footnote)
                             .foregroundStyle(.secondary)
                     }
@@ -217,6 +295,7 @@ struct ContentView: View {
         SelectionWindowManager.shared.present(onComplete: { rect in
             Task {
                 if let img = await captureAsync(rect: rect) {
+                    undoStack.removeAll(); redoStack.removeAll()
                     lastCapture = img
                     if let savedURL = saveSnapToDisk(img) {
                         insertSnapURL(savedURL)
@@ -380,7 +459,7 @@ struct ContentView: View {
         }
     }
 
-    private func lineGesture(insetOrigin: CGPoint) -> some Gesture {
+    private func lineGesture(insetOrigin: CGPoint, fitted: CGSize) -> some Gesture {
         DragGesture(minimumDistance: 0)
             .onChanged { value in
                 let pRaw = CGPoint(x: value.location.x - insetOrigin.x, y: value.location.y - insetOrigin.y)
@@ -397,9 +476,6 @@ struct ContentView: View {
                 let shift = NSEvent.modifierFlags.contains(.shift)
                 guard let base = lastCapture, let start = draft?.start else { draft = nil; return }
 
-                // Compute fitted size (displayed size in preview)
-                let fitted = lastFitted == .zero ? fittedImageSize(original: base.size, in: CGSize(width: 800, height: 600)) : lastFitted
-
                 // End point in UI space, with optional snapping
                 let endUI = shift ? snappedPoint(start: start, raw: pRaw) : pRaw
 
@@ -414,20 +490,7 @@ struct ContentView: View {
 
                 let committedLine = Line(start: startImg, end: endImg, width: widthImg)
                 if let composed = composeAnnotated(base: base, lines: [committedLine]) {
-                    // Update the in-memory image
-                    lastCapture = composed
-                    // Auto-save by overwriting the currently selected file (no new versions)
-                    if let url = selectedSnapURL {
-                        if writePNG(composed, to: url) {
-                            refreshGalleryAfterSaving(to: url)
-                        }
-                    }
-                    // Keep convenience copy to clipboard + HUD
-                    copyToPasteboard(composed)
-                    withAnimation { showCopiedHUD = true }
-                    DispatchQueue.main.asyncAfter(deadline: .now() + 1.2) {
-                        withAnimation { showCopiedHUD = false }
-                    }
+                    commitChange(composed)
                 }
                 draft = nil
             }
@@ -435,7 +498,7 @@ struct ContentView: View {
 
     // finishInlineAnnotation and cancelInlineAnnotation removed; not needed with auto-commit per line.
 
-    private func composeAnnotated(base: NSImage, lines: [Line]) -> NSImage? {
+    private func composeAnnotated(base: NSImage, lines: [Line] = [], rects: [Box] = []) -> NSImage? {
         let imgSize = base.size
         let rep = NSBitmapImageRep(bitmapDataPlanes: nil,
                                    pixelsWide: Int(imgSize.width),
@@ -462,8 +525,115 @@ struct ContentView: View {
             path.line(to: line.end)
             path.stroke()
         }
+        for box in rects {
+            let rectPath = NSBezierPath(rect: box.rect)
+            rectPath.lineWidth = box.width
+            rectPath.stroke()
+        }
         NSGraphicsContext.restoreGraphicsState()
         return composed
+    }
+
+    private func rectGesture(insetOrigin: CGPoint, fitted: CGSize) -> some Gesture {
+        DragGesture(minimumDistance: 0)
+            .onChanged { value in
+                let start = CGPoint(x: value.startLocation.x - insetOrigin.x, y: value.startLocation.y - insetOrigin.y)
+                let current = CGPoint(x: value.location.x - insetOrigin.x, y: value.location.y - insetOrigin.y)
+                let shift = NSEvent.modifierFlags.contains(.shift)
+
+                func rectFrom(_ a: CGPoint, _ b: CGPoint, square: Bool) -> CGRect {
+                    var x0 = min(a.x, b.x)
+                    var y0 = min(a.y, b.y)
+                    var w = abs(a.x - b.x)
+                    var h = abs(a.y - b.y)
+                    if square {
+                        let side = max(w, h)
+                        // preserve drag direction relative to start point
+                        x0 = (b.x >= a.x) ? a.x : (a.x - side)
+                        y0 = (b.y >= a.y) ? a.y : (a.y - side)
+                        w = side; h = side
+                    }
+                    return CGRect(x: x0, y: y0, width: w, height: h)
+                }
+
+                draftRect = rectFrom(start, current, square: shift)
+            }
+            .onEnded { value in
+                defer { draftRect = nil }
+                guard let base = lastCapture, let uiRect = draftRect else { return }
+
+                // Map UI-space rect (origin top-left, y-down) to image pixel space (origin bottom-left, y-up)
+                let imgRect = uiRectToImageRect(uiRect, fitted: fitted, image: base.size)
+
+                // Scale line width to image pixels
+                let scaleX = base.size.width / max(1, fitted.width)
+                let scaleY = base.size.height / max(1, fitted.height)
+                let widthImg = strokeWidth * ((scaleX + scaleY) / 2)
+
+                let box = Box(rect: imgRect, width: widthImg)
+                if let composed = composeAnnotated(base: base, rects: [box]) {
+                    commitChange(composed)
+                }
+            }
+    }
+
+    // MARK: - Commit & Undo/Redo
+    private func commitChange(_ newImage: NSImage) {
+        if let current = lastCapture {
+            undoStack.append(current)
+        }
+        redoStack.removeAll()
+        lastCapture = newImage
+        if let url = selectedSnapURL {
+            if writePNG(newImage, to: url) {
+                refreshGalleryAfterSaving(to: url)
+            }
+        }
+        copyToPasteboard(newImage)
+        withAnimation { showCopiedHUD = true }
+        DispatchQueue.main.asyncAfter(deadline: .now() + 1.2) {
+            withAnimation { showCopiedHUD = false }
+        }
+    }
+
+    private func performUndo() {
+        guard let previous = undoStack.popLast(), let current = lastCapture else { return }
+        redoStack.append(current)
+        lastCapture = previous
+        if let url = selectedSnapURL {
+            if writePNG(previous, to: url) {
+                refreshGalleryAfterSaving(to: url)
+            }
+        }
+        copyToPasteboard(previous)
+        withAnimation { showCopiedHUD = true }
+        DispatchQueue.main.asyncAfter(deadline: .now() + 1.0) {
+            withAnimation { showCopiedHUD = false }
+        }
+    }
+
+    private func performRedo() {
+        guard let next = redoStack.popLast(), let current = lastCapture else { return }
+        undoStack.append(current)
+        lastCapture = next
+        if let url = selectedSnapURL {
+            if writePNG(next, to: url) {
+                refreshGalleryAfterSaving(to: url)
+            }
+        }
+        copyToPasteboard(next)
+        withAnimation { showCopiedHUD = true }
+        DispatchQueue.main.asyncAfter(deadline: .now() + 1.0) {
+            withAnimation { showCopiedHUD = false }
+        }
+    }
+
+    private func uiRectToImageRect(_ r: CGRect, fitted: CGSize, image: CGSize) -> CGRect {
+        let scaleX = image.width / max(1, fitted.width)
+        let scaleY = image.height / max(1, fitted.height)
+        let x = r.origin.x * scaleX
+        let y = (fitted.height - (r.origin.y + r.height)) * scaleY // convert top-left origin to bottom-left
+        return CGRect(x: x, y: y, width: r.width * scaleX, height: r.height * scaleY)
     }
 
     private func fittedImageSize(original: CGSize, in container: CGSize) -> CGSize {
@@ -783,6 +953,12 @@ private struct Line: Identifiable {
     let id = UUID()
     var start: CGPoint
     var end: CGPoint
+    var width: CGFloat
+}
+
+private struct Box: Identifiable {
+    let id = UUID()
+    var rect: CGRect
     var width: CGFloat
 }
 
