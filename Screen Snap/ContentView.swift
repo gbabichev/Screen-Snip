@@ -9,6 +9,7 @@ import UniformTypeIdentifiers
 private enum Tool { case pointer, line, rect, text, crop, badge }
 
 struct ContentView: View {
+    @FocusState private var focusedTextID: UUID?
     @State private var lastCapture: NSImage? = nil
     @State private var showCopiedHUD = false
     @State private var selectedTool: Tool = .pointer
@@ -30,7 +31,7 @@ struct ContentView: View {
     @State private var selectedObjectID: UUID? = nil
     @State private var activeHandle: Handle = .none
     @State private var dragStartPoint: CGPoint? = nil
-
+    
     // Undo/Redo stacks of full images and overlays (save-in-place, memory-bounded by user behavior)
     private struct Snapshot {
         let image: NSImage?
@@ -47,15 +48,15 @@ struct ContentView: View {
     @State private var textBGColor: NSColor = .black.withAlphaComponent(0.6)
     @State private var badgeColor: NSColor = .systemRed
     @State private var badgeCount: Int = 0
-
+    
     @State private var lastFittedSize: CGSize? = nil
     @State private var objectSpaceSize: CGSize? = nil  // tracks the UI coordinate space size the objects are authored in
     @State private var resizeSeq: Int = 0
-
+    
     @State private var showTextEditor: Bool = false
     @State private var editingText: String = ""
     @State private var lastDraftTick: CFTimeInterval = 0
-
+    
     // Throttle rapid draft updates to ~90 Hz (for drag gestures)
     private func allowDraftTick(interval: Double = 1.0/90.0) -> Bool {
         let now = CACurrentMediaTime()
@@ -64,12 +65,12 @@ struct ContentView: View {
         return true
     }
     
-
+    
     var body: some View {
         ZStack(alignment: .topLeading) {
             // Main canvas
             VStack(spacing: 12) {
-
+                
                 Group {
                     if let img = lastCapture {
                         ZStack {
@@ -82,14 +83,14 @@ struct ContentView: View {
                                 let author = objectSpaceSize ?? fitted
                                 let sx = fitted.width / max(1, author.width)
                                 let sy = fitted.height / max(1, author.height)
-
+                                
                                 // Base image
                                 Image(nsImage: img)
                                     .resizable()
                                     .interpolation(.high)
                                     .frame(width: fitted.width, height: fitted.height)
                                     .position(x: origin.x + fitted.width/2, y: origin.y + fitted.height/2)
-
+                                
                                 // Object overlay drawn in author space and scaled live to fitted
                                 ZStack {
                                     // Persisted objects
@@ -98,11 +99,9 @@ struct ContentView: View {
                                         case .line(let o):
                                             o.drawPath(in: author)
                                                 .stroke(Color(nsColor: strokeColor), style: StrokeStyle(lineWidth: o.width, lineCap: .round))
-                                                .overlay { if selectedObjectID == o.id { selectionForLine(o) } }
                                         case .rect(let o):
                                             o.drawPath(in: author)
                                                 .stroke(Color(nsColor: strokeColor), style: StrokeStyle(lineWidth: o.width))
-                                                .overlay { if selectedObjectID == o.id { selectionForRect(o) } }
                                         case .text(let o):
                                             Text(o.text.isEmpty ? " " : o.text)
                                                 .font(.system(size: o.fontSize))
@@ -111,7 +110,6 @@ struct ContentView: View {
                                                 .padding(4)
                                                 .background(o.bgEnabled ? Color(nsColor: o.bgColor) : Color.clear)
                                                 .position(x: o.rect.midX, y: o.rect.midY)
-                                                .overlay { if selectedObjectID == o.id { selectionForRect(RectObject(rect: o.rect, width: 1)) } }
                                         case .badge(let o):
                                             Circle()
                                                 .fill(Color(nsColor: o.fillColor))
@@ -123,7 +121,6 @@ struct ContentView: View {
                                                         .foregroundStyle(Color(nsColor: o.textColor))
                                                         .position(x: o.rect.midX, y: o.rect.midY)
                                                 }
-                                                .overlay { if selectedObjectID == o.id { selectionForRect(RectObject(rect: o.rect, width: 1)) } }
                                         }
                                     }
                                     // Draft feedback while creating (draft is stored in author space)
@@ -172,6 +169,16 @@ struct ContentView: View {
                                 .transaction { $0.disablesAnimations = true }
                                 .compositingGroup()
                                 .drawingGroup()
+                                .overlay(alignment: .topLeading) {
+                                    if let sel = selectedObjectID, let idx = objects.firstIndex(where: { $0.id == sel }) {
+                                        switch objects[idx] {
+                                        case .line(let o):  selectionForLine(o)
+                                        case .rect(let o):  selectionForRect(o)
+                                        case .text(let o):  selectionForText(o)   // interactive TextEditor now outside drawingGroup
+                                        case .badge:        EmptyView()
+                                        }
+                                    }
+                                }
                                 .contentShape(Rectangle())
                                 .allowsHitTesting(true)
                                 .simultaneousGesture(selectedTool == .pointer ? pointerGesture(insetOrigin: origin, fitted: fitted, author: author) : nil)
@@ -206,7 +213,7 @@ struct ContentView: View {
                 }
                 Spacer()
             }
-
+            
             if showCopiedHUD {
                 CopiedHUD()
                     .transition(.scale)
@@ -279,7 +286,7 @@ struct ContentView: View {
                         return nil // consume
                     }
                 }
-
+                
                 // Delete or Forward Delete to remove selected object (no Command modifier)
                 if !event.modifierFlags.contains(.command) {
                     if event.keyCode == 51 || event.keyCode == 117 { // delete/backspace or forward delete
@@ -289,7 +296,7 @@ struct ContentView: View {
                         }
                     }
                 }
-
+                
                 // Enter/Return to commit crop when Crop tool is active
                 if selectedTool == .crop, let rect = cropRect, !event.modifierFlags.contains(.command) {
                     if event.keyCode == 36 || event.keyCode == 76 { // Return or Keypad Enter
@@ -326,32 +333,6 @@ struct ContentView: View {
         .onDisappear {
             if let keyMonitor { NSEvent.removeMonitor(keyMonitor); self.keyMonitor = nil }
         }
-        .sheet(isPresented: $showTextEditor) {
-            VStack(alignment: .leading, spacing: 12) {
-                Text("Edit Text").font(.headline)
-                TextEditor(text: $editingText)
-                    .frame(minHeight: 120)
-                    .font(.system(size: textFontSize))
-                    .overlay(RoundedRectangle(cornerRadius: 6).stroke(Color.secondary.opacity(0.3)))
-                HStack {
-                    Spacer()
-                    Button("Cancel") { showTextEditor = false }
-                    Button("Save") {
-                        if let sel = selectedObjectID,
-                           let idx = objects.firstIndex(where: { $0.id == sel }) {
-                            if case .text(var o) = objects[idx] {
-                                o.text = editingText
-                                objects[idx] = .text(o)
-                            }
-                        }
-                        showTextEditor = false
-                    }
-                    .keyboardShortcut(.defaultAction)
-                }
-            }
-            .padding(16)
-            .frame(width: 420)
-        }
         .toolbar {
             ToolbarItemGroup(placement: .navigation) {
                 Button {
@@ -367,7 +348,7 @@ struct ContentView: View {
                     Label("Settings", systemImage: "gearshape")
                 }
             }
-        
+            
             // Items visible only when we have a capture
             if let img = lastCapture {
                 
@@ -398,6 +379,7 @@ struct ContentView: View {
                     }
                     Button(action: { selectedTool = .pointer
                         selectedObjectID = nil; activeHandle = .none; cropDraftRect = nil; cropRect = nil; cropHandle = .none
+                        focusedTextID = nil
                     }) {
                         Label("Pointer", systemImage: "cursorarrow")
                             .foregroundStyle(selectedTool == .pointer ? Color.white : Color.primary)
@@ -410,7 +392,7 @@ struct ContentView: View {
                             .toggleStyle(.button)
                         
                         Divider()
-
+                        
                         Menu("Line Width") {
                             ForEach([1,2,3,4,6,8,12,16], id: \.self) { w in
                                 Button(action: { strokeWidth = CGFloat(w) }) {
@@ -435,9 +417,10 @@ struct ContentView: View {
                     } primaryAction: {
                         selectedTool = .line
                         selectedObjectID = nil; activeHandle = .none; cropDraftRect = nil; cropRect = nil; cropHandle = .none
+                        focusedTextID = nil
                     }
                     .glassEffect(selectedTool == .line ? .regular.tint(.blue) : .regular)
-
+                    
                     Menu {
                         Menu("Font Size") {
                             ForEach([10,12,14,16,18,22,26,32,40,48], id: \.self) { s in
@@ -465,25 +448,9 @@ struct ContentView: View {
                             PenColorButton(current: $textBGColor, color: NSColor.systemYellow.withAlphaComponent(0.5), name: "Yellow 50%")
                         }
                         Divider()
-                        Button("Edit Text…") {
-                            if let sel = selectedObjectID,
-                               let idx = objects.firstIndex(where: { $0.id == sel }) {
-                                if case .text(let o) = objects[idx] {
-                                    editingText = o.text
-                                    showTextEditor = true
-                                }
-                            } else if let img = lastCapture {
-                                let fitted = objectSpaceSize ?? lastFittedSize ?? img.size
-                                let rect = CGRect(x: max(0, fitted.width/2 - 120), y: max(0, fitted.height/2 - 40), width: 240, height: 80)
-                                let rectClamped = clampRect(rect, in: fitted)
-                                let newObj = TextObject(rect: rectClamped, text: "Text", fontSize: textFontSize, textColor: textColor, bgEnabled: textBGEnabled, bgColor: textBGColor)
-                                pushUndoSnapshot()
-                                objects.append(.text(newObj))
-                                selectedObjectID = newObj.id
-                                editingText = newObj.text
-                                showTextEditor = true
-                            }
-                        }
+                        
+                        Button("Edit Text…") {}
+                        
                     } label: {
                         Label("Text", systemImage: "textformat")
                             .symbolRenderingMode(.monochrome)
@@ -522,12 +489,14 @@ struct ContentView: View {
                     } primaryAction: {
                         selectedTool = .rect
                         selectedObjectID = nil; activeHandle = .none; cropDraftRect = nil; cropRect = nil; cropHandle = .none
+                        focusedTextID = nil
                     }
                     
                     Button(action: {
                         selectedTool = .crop
                         selectedObjectID = nil
                         activeHandle = .none
+                        focusedTextID = nil
                     }) {
                         Label("Crop", systemImage: "crop")
                             .foregroundStyle(selectedTool == .crop ? Color.white : Color.primary)
@@ -554,20 +523,21 @@ struct ContentView: View {
                     } primaryAction: {
                         selectedTool = .badge
                         selectedObjectID = nil; activeHandle = .none; cropDraftRect = nil; cropRect = nil; cropHandle = .none
+                        focusedTextID = nil
                     }
                     .glassEffect(selectedTool == .badge ? .regular.tint(.blue) : .regular)
                     .help("Click to place numbered badge")
                     
-
+                    
                 }
                 
-
+                
             }        else {
                 ToolbarItem(placement: .principal) {
                     Spacer()
                 }
             }
-
+            
             // Capture Region button (always available)
             ToolbarItem(placement: .primaryAction) {
                 Button(action: startSelection) {
@@ -577,7 +547,79 @@ struct ContentView: View {
             }
         }
     }
+    
+    @ViewBuilder
+    private func selectionForText(_ o: TextObject) -> some View {
+        GeometryReader { geo in
+            ZStack {
+                // Map author's rect to fitted (onscreen) coordinates for the overlay
+                let fittedSize = lastFittedSize ?? objectSpaceSize ?? .zero
+                let authorSize = objectSpaceSize ?? fittedSize
+                let sx = fittedSize.width / max(1, authorSize.width)
+                let sy = fittedSize.height / max(1, authorSize.height)
+                let rf = CGRect(x: o.rect.origin.x * sx,
+                                y: o.rect.origin.y * sy,
+                                width: o.rect.size.width * sx,
+                                height: o.rect.size.height * sy)
+                // Inset (image centered within canvas)
+                let ox = max(0, (geo.size.width  - fittedSize.width)  / 2)
+                let oy = max(0, (geo.size.height - fittedSize.height) / 2)
 
+                // Corner handles (use fitted rect corners + inset)
+                let pts = [
+                    CGPoint(x: rf.minX + ox, y: rf.minY + oy),
+                    CGPoint(x: rf.maxX + ox, y: rf.minY + oy),
+                    CGPoint(x: rf.minX + ox, y: rf.maxY + oy),
+                    CGPoint(x: rf.maxX + ox, y: rf.maxY + oy)
+                ]
+                ForEach(Array(pts.enumerated()), id: \.offset) { pair in
+                    let pt = pair.element
+                    Circle()
+                        .stroke(.blue, lineWidth: 1)
+                        .background(Circle().fill(.white))
+                        .frame(width: 12, height: 12)
+                        .position(pt)
+                }
+
+                // Invisible hit area covering the text box to reliably capture taps/double-clicks
+                Rectangle()
+                    .fill(Color.clear)
+                    .frame(width: rf.width, height: rf.height)
+                    .position(x: rf.midX + ox, y: rf.midY + oy)
+                    .contentShape(Rectangle())
+                    .onTapGesture(count: 2) {
+                        if selectedObjectID != o.id { selectedObjectID = o.id }
+                        focusedTextID = o.id
+                    }
+                
+                // Show inline editor only when focused; otherwise just show the handles
+                if focusedTextID == o.id {
+                    TextEditor(text: Binding(
+                        get: { o.text },
+                        set: { newVal in
+                            if let idx = objects.firstIndex(where: { $0.id == o.id }) {
+                                if case .text(var t) = objects[idx] {
+                                    t.text = newVal
+                                    objects[idx] = .text(t)
+                                }
+                            }
+                        }
+                    ))
+                    .font(.system(size: o.fontSize))
+                    .foregroundStyle(Color(nsColor: o.textColor))
+                    .background(o.bgEnabled ? Color(nsColor: o.bgColor) : Color.clear)
+                    .scrollContentBackground(.hidden)
+                    .focused($focusedTextID, equals: o.id)
+                    .frame(width: rf.width, height: rf.height)
+                    .position(x: rf.midX + ox, y: rf.midY + oy)
+                    .overlay(RoundedRectangle(cornerRadius: 4)
+                        .stroke(.blue.opacity(0.6), lineWidth: 1))
+                    .contentShape(Rectangle())
+                }
+            }
+        }
+    }
+    
     private func badgeGesture(insetOrigin: CGPoint, fitted: CGSize, author: CGSize) -> some Gesture {
         DragGesture(minimumDistance: 0)
             .onEnded { value in
@@ -597,8 +639,8 @@ struct ContentView: View {
                 selectedObjectID = newObj.id
             }
     }
-
-
+    
+    
     private func cropGesture(insetOrigin: CGPoint, fitted: CGSize, author: CGSize) -> some Gesture {
         DragGesture(minimumDistance: 0)
             .onChanged { value in
@@ -607,7 +649,7 @@ struct ContentView: View {
                 let currentFit = CGPoint(x: value.location.x - insetOrigin.x, y: value.location.y - insetOrigin.y)
                 let start = fittedToAuthorPoint(startFit, fitted: fitted, author: author)
                 let current = fittedToAuthorPoint(currentFit, fitted: fitted, author: author)
-
+                
                 // If we already have a cropRect, interpret drags as edits (handles or move)
                 if var existing = cropRect {
                     if cropDragStart == nil {
@@ -635,7 +677,7 @@ struct ContentView: View {
                     }
                     return
                 }
-
+                
                 // No existing cropRect — create a new draft selection
                 func rectFrom(_ a: CGPoint, _ b: CGPoint) -> CGRect {
                     let x0 = min(a.x, b.x)
@@ -649,7 +691,7 @@ struct ContentView: View {
             .onEnded { value in
                 let currentFit = CGPoint(x: value.location.x - insetOrigin.x, y: value.location.y - insetOrigin.y)
                 let current = fittedToAuthorPoint(currentFit, fitted: fitted, author: author)
-
+                
                 if let _ = cropOriginalRect {
                     // Finish edit
                     cropDragStart = nil
@@ -657,7 +699,7 @@ struct ContentView: View {
                     cropHandle = .none
                     return
                 }
-
+                
                 // Finish creation
                 if let draft = cropDraftRect {
                     let clamped = clampRect(draft, in: author)
@@ -666,7 +708,7 @@ struct ContentView: View {
                 cropDraftRect = nil
             }
     }
-
+    
     private func cropHandleHitTest(_ rect: CGRect, at p: CGPoint) -> Handle {
         let r: CGFloat = 8
         let tl = CGRect(x: rect.minX-r, y: rect.minY-r, width: 2*r, height: 2*r)
@@ -679,7 +721,7 @@ struct ContentView: View {
         if br.contains(p) { return .rectBottomRight }
         return .none
     }
-
+    
     private func resizeRect(_ rect: CGRect, handle: Handle, to p: CGPoint) -> CGRect {
         var c = rect
         switch handle {
@@ -725,60 +767,60 @@ struct ContentView: View {
             }
         })
     }
-
+    
     private func endSelectionCleanup() {
         SelectionWindowManager.shared.dismiss()
     }
-
+    
     /// Captures a screenshot of the selected rect using ScreenCaptureKit, selecting the correct display.
     private func captureAsync(rect selectedGlobalRect: CGRect) async -> NSImage? {
         defer { endSelectionCleanup() }
-
+        
         // 1) Determine which NSScreen the selection mostly lies on.
         guard let bestScreen = bestScreenForSelection(selectedGlobalRect) else { return nil }
         let screenFramePts = bestScreen.frame
         // let scale = bestScreen.backingScaleFactor // REMOVED
-
+        
         // 2) Map selection to that screen and intersect.
         let intersectPts = selectedGlobalRect.intersection(screenFramePts)
         if intersectPts.isNull || intersectPts.isEmpty { return nil }
-
+        
         // 3) Find matching SCDisplay by CGDisplayID.
         guard let cgIDNum = bestScreen.deviceDescription[NSDeviceDescriptionKey("NSScreenNumber")] as? NSNumber else { return nil }
         let cgID = CGDirectDisplayID(truncating: cgIDNum)
-
+        
         do {
             let content = try await SCShareableContent.current
             guard let scDisplay = content.displays.first(where: { $0.displayID == cgID }) else { return nil }
-
+            
             // Compute precise pixels-per-point per axis from SCDisplay + NSScreen
             let pxPerPtX = CGFloat(scDisplay.width) / screenFramePts.width
             let pxPerPtY = CGFloat(scDisplay.height) / screenFramePts.height
-
+            
             // 4) Build a filter for that display and capture one frame.
             let filter = SCContentFilter(display: scDisplay, excludingWindows: [])
             guard let fullCG = await ScreenCapturer.shared.captureImage(using: filter, display: scDisplay) else { return nil }
-
+            
             // 5) Convert the intersected rect (points) to pixel crop in the captured image space.
             let cropPx = cropRectPixels(intersectPts,
                                         withinScreenFramePts: screenFramePts,
                                         imageSizePx: CGSize(width: fullCG.width, height: fullCG.height),
                                         scaleX: pxPerPtX,
                                         scaleY: pxPerPtY)
-
+            
             let clamped = CGRect(x: max(0, cropPx.origin.x),
                                  y: max(0, cropPx.origin.y),
                                  width: min(cropPx.width, CGFloat(fullCG.width) - max(0, cropPx.origin.x)),
                                  height: min(cropPx.height, CGFloat(fullCG.height) - max(0, cropPx.origin.y)))
             guard clamped.width > 1, clamped.height > 1 else { return nil }
-
+            
             guard let cropped = fullCG.cropping(to: clamped) else { return nil }
             return NSImage(cgImage: cropped, size: .zero)
         } catch {
             return nil
         }
     }
-
+    
     /// Returns the screen with the largest intersection area with the selection.
     private func bestScreenForSelection(_ selection: CGRect) -> NSScreen? {
         var best: (screen: NSScreen, area: CGFloat)?
@@ -788,7 +830,7 @@ struct ContentView: View {
         }
         return best?.screen
     }
-
+    
     /// Convert a selection rect in **points** (global screen coords) to a **pixel** crop rect with origin at top-left of the display image.
     private func cropRectPixels(_ selectionPts: CGRect, withinScreenFramePts screenPts: CGRect, imageSizePx: CGSize, scaleX: CGFloat, scaleY: CGFloat) -> CGRect {
         // Translate selection to screen-local origin (points)
@@ -802,26 +844,26 @@ struct ContentView: View {
         let yPx = imageSizePx.height - (localYPts * scaleY + heightPx)
         return CGRect(x: xPx.rounded(.down), y: yPx.rounded(.down), width: widthPx.rounded(.down), height: heightPx.rounded(.down))
     }
-
+    
     private func copyToPasteboard(_ image: NSImage) {
         let pb = NSPasteboard.general
         pb.clearContents()
         pb.writeObjects([image])
     }
-
+    
     private func pushUndoSnapshot() {
         undoStack.append(Snapshot(image: lastCapture, objects: objects))
         redoStack.removeAll()
     }
-
+    
     // MARK: - Save / Save As
-
+    
     private func defaultSnapFilename() -> String {
         let formatter = DateFormatter()
         formatter.dateFormat = "yyyyMMdd_HHmmss_SSS"
         return "snap_\(formatter.string(from: Date())).png"
     }
-
+    
     /// Writes the image as PNG to a URL. Returns true on success.
     @discardableResult
     private func writePNG(_ image: NSImage, to url: URL) -> Bool {
@@ -835,7 +877,7 @@ struct ContentView: View {
             return false
         }
     }
-
+    
     /// Save As… — prompts for a destination, updates gallery if under snaps folder.
     private func saveAsCurrent() {
         guard let img = lastCapture else { return }
@@ -859,7 +901,7 @@ struct ContentView: View {
             }
         }
     }
-
+    
     /// Save — overwrites the currently selected snap if available, else falls back to Save As….
     private func saveCurrentOverwrite() {
         guard let img = lastCapture else { return }
@@ -871,14 +913,14 @@ struct ContentView: View {
             saveAsCurrent()
         }
     }
-
+    
     /// If saved file is within our snaps directory, update the gallery list.
     private func refreshGalleryAfterSaving(to url: URL) {
         if let dir = snapsDirectory(), url.path.hasPrefix(dir.path) {
             insertSnapURL(url)
         }
     }
-
+    
     private func lineGesture(insetOrigin: CGPoint, fitted: CGSize, author: CGSize) -> some Gesture {
         DragGesture(minimumDistance: 0)
             .onChanged { value in
@@ -909,9 +951,9 @@ struct ContentView: View {
                 draft = nil
             }
     }
-
+    
     // finishInlineAnnotation and cancelInlineAnnotation removed; not needed with auto-commit per line.
-
+    
     private func composeAnnotated(base: NSImage, lines: [Line] = [], rects: [Box] = [], arrowHeadAtEnd: Bool = false) -> NSImage? {
         let imgSize = base.size
         let rep = NSBitmapImageRep(bitmapDataPlanes: nil,
@@ -927,13 +969,13 @@ struct ContentView: View {
         guard let rep else { return nil }
         let composed = NSImage(size: imgSize)
         composed.addRepresentation(rep)
-
+        
         NSGraphicsContext.saveGraphicsState()
         NSGraphicsContext.current = NSGraphicsContext(bitmapImageRep: rep)
         base.draw(in: CGRect(origin: .zero, size: imgSize))
         strokeColor.setStroke()
         strokeColor.setFill()
-
+        
         for line in lines {
             // Draw the shaft
             let path = NSBezierPath()
@@ -942,7 +984,7 @@ struct ContentView: View {
             path.move(to: line.start)
             path.line(to: line.end)
             path.stroke()
-
+            
             // Optionally draw an arrowhead at the end
             if arrowHeadAtEnd {
                 let dx = line.end.x - line.start.x
@@ -961,7 +1003,7 @@ struct ContentView: View {
                 let py = ux
                 let p1 = CGPoint(x: bx + px * (headWidth / 2), y: by + py * (headWidth / 2))
                 let p2 = CGPoint(x: bx - px * (headWidth / 2), y: by - py * (headWidth / 2))
-
+                
                 let tri = NSBezierPath()
                 tri.move(to: line.end)
                 tri.line(to: p1)
@@ -978,7 +1020,7 @@ struct ContentView: View {
         NSGraphicsContext.restoreGraphicsState()
         return composed
     }
-
+    
     private func rectGesture(insetOrigin: CGPoint, fitted: CGSize, author: CGSize) -> some Gesture {
         DragGesture(minimumDistance: 0)
             .onChanged { value in
@@ -988,7 +1030,7 @@ struct ContentView: View {
                 let start = fittedToAuthorPoint(startFit, fitted: fitted, author: author)
                 let current = fittedToAuthorPoint(currentFit, fitted: fitted, author: author)
                 let shift = NSEvent.modifierFlags.contains(.shift)
-
+                
                 func rectFrom(_ a: CGPoint, _ b: CGPoint, square: Bool) -> CGRect {
                     var x0 = min(a.x, b.x)
                     var y0 = min(a.y, b.y)
@@ -1002,7 +1044,7 @@ struct ContentView: View {
                     }
                     return CGRect(x: x0, y: y0, width: w, height: h)
                 }
-
+                
                 draftRect = rectFrom(start, current, square: shift)
             }
             .onEnded { value in
@@ -1015,15 +1057,98 @@ struct ContentView: View {
                 if objectSpaceSize == nil { objectSpaceSize = author }
             }
     }
-
+    
     private func textGesture(insetOrigin: CGPoint, fitted: CGSize, author: CGSize) -> some Gesture {
         DragGesture(minimumDistance: 0)
-            .onEnded { value in
+            .onChanged { value in
                 let pFit = CGPoint(x: value.location.x - insetOrigin.x, y: value.location.y - insetOrigin.y)
                 let p = fittedToAuthorPoint(pFit, fitted: fitted, author: author)
+                if dragStartPoint == nil {
+                    dragStartPoint = p
+                    // If starting on a text object, select it and decide handle
+                    if let idx = objects.lastIndex(where: { obj in
+                        switch obj {
+                        case .text(let o): return o.handleHitTest(p) != .none || o.hitTest(p)
+                        default: return false
+                        }
+                    }) {
+                        selectedObjectID = objects[idx].id
+                        if case .text(let o) = objects[idx] {
+                            activeHandle = o.handleHitTest(p)
+                        } else {
+                            activeHandle = .none
+                        }
+                        focusedTextID = nil // don’t edit while dragging
+                    } else {
+                        selectedObjectID = nil
+                        activeHandle = .none
+                        focusedTextID = nil
+                    }
+                } else if
+                    let sel = selectedObjectID,
+                    let start = dragStartPoint,
+                    let idx = objects.firstIndex(where: { $0.id == sel })
+                {
+                    let delta = CGSize(width: p.x - start.x, height: p.y - start.y)
+                    if !pushedDragUndo {
+                        pushUndoSnapshot()
+                        pushedDragUndo = true
+                    }
+                    switch objects[idx] {
+                    case .text(var o):
+                        let updated = (activeHandle == .none) ? o.moved(by: delta) : o.resizing(activeHandle, to: p)
+                        let clamped = clampRect(updated.rect, in: author)
+                        var u = updated; u.rect = clamped
+                        objects[idx] = .text(u)
+                    default:
+                        break
+                    }
+                    dragStartPoint = p
+                }
+            }
+            .onEnded { value in
+                // Convert end & start to author space
+                let endFit = CGPoint(x: value.location.x - insetOrigin.x, y: value.location.y - insetOrigin.y)
+                let startFit = CGPoint(x: value.startLocation.x - insetOrigin.x, y: value.startLocation.y - insetOrigin.y)
+                let pEnd = fittedToAuthorPoint(endFit, fitted: fitted, author: author)
+                let pStart = fittedToAuthorPoint(startFit, fitted: fitted, author: author)
+                
+                let dx = pEnd.x - pStart.x
+                let dy = pEnd.y - pStart.y
+                let moved = hypot(dx, dy) > 3 // threshold in author space
+                
+                if moved {
+                    // We were dragging — finish and clean up
+                    dragStartPoint = nil
+                    pushedDragUndo = false
+                    return
+                }
+                
+                // CLICK (or DOUBLE-CLICK) PATH:
+                dragStartPoint = nil
+                pushedDragUndo = false
+                
+                // 1) If click is on an existing TEXT object, select or enter edit mode
+                if let idx = objects.lastIndex(where: { obj in
+                    switch obj {
+                    case .text(let o): return o.handleHitTest(pEnd) != .none || o.hitTest(pEnd)
+                    default: return false
+                    }
+                }) {
+                    selectedObjectID = objects[idx].id
+                    activeHandle = .none
+                    if let ev = NSApp.currentEvent, ev.clickCount >= 2 {
+                        focusedTextID = objects[idx].id
+                    } else {
+                        focusedTextID = nil
+                    }
+                    return
+                }
+                
+                // 2) Otherwise, create a new text box at the click point (single click only)
                 let defaultSize = CGSize(width: 240, height: 80)
-                let rect = CGRect(x: max(0, p.x - defaultSize.width/2),
-                                  y: max(0, p.y - defaultSize.height/2),
+                let rect = CGRect(x: max(0, pEnd.x - defaultSize.width/2),
+                                  y: max(0, pEnd.y - defaultSize.height/2),
                                   width: defaultSize.width,
                                   height: defaultSize.height)
                 let rectClamped = clampRect(rect, in: author)
@@ -1037,8 +1162,8 @@ struct ContentView: View {
                 objects.append(.text(newObj))
                 if objectSpaceSize == nil { objectSpaceSize = author }
                 selectedObjectID = newObj.id
-                editingText = newObj.text
-                showTextEditor = true
+                activeHandle = .none
+                focusedTextID = nil
             }
     }
     
@@ -1064,9 +1189,12 @@ struct ContentView: View {
                         case .text(let o): activeHandle = o.handleHitTest(p)
                         case .badge(let o): activeHandle = o.handleHitTest(p)
                         }
+                        // On single click or drag, always clear focus (do not enter edit mode)
+                        focusedTextID = nil
                     } else {
                         selectedObjectID = nil
                         activeHandle = .none
+                        focusedTextID = nil
                     }
                 } else if let sel = selectedObjectID, let start = dragStartPoint, let idx = objects.firstIndex(where: { $0.id == sel }) {
                     let delta = CGSize(width: p.x - start.x, height: p.y - start.y)
@@ -1101,32 +1229,90 @@ struct ContentView: View {
                 }
             }
             .onEnded { _ in
+                // If this was a double-click and a text object is selected, enter edit mode.
+                if let ev = NSApp.currentEvent, ev.clickCount >= 2,
+                   let sel = selectedObjectID,
+                   let idx = objects.firstIndex(where: { $0.id == sel }) {
+                    if case .text(_) = objects[idx] {
+                        focusedTextID = sel
+                        dragStartPoint = nil
+                        pushedDragUndo = false
+                        return
+                    }
+                }
                 dragStartPoint = nil
                 pushedDragUndo = false
             }
     }
-
+    
     // MARK: - Commit & Undo/Redo
     private func commitChange(_ newImage: NSImage) {
         lastCapture = newImage
     }
     @ViewBuilder private func selectionForLine(_ o: LineObject) -> some View {
-        ZStack {
-            Circle().stroke(.blue, lineWidth: 1).background(Circle().fill(.white)).frame(width: 12, height: 12).position(o.start)
-            Circle().stroke(.blue, lineWidth: 1).background(Circle().fill(.white)).frame(width: 12, height: 12).position(o.end)
-        }
-    }
+        GeometryReader { geo in
+            ZStack {
+                // Map author-space endpoints to fitted (onscreen) coordinates
+                let fittedSize = lastFittedSize ?? objectSpaceSize ?? .zero
+                let authorSize = objectSpaceSize ?? fittedSize
+                let sx = fittedSize.width / max(1, authorSize.width)
+                let sy = fittedSize.height / max(1, authorSize.height)
+                let sF = CGPoint(x: o.start.x * sx, y: o.start.y * sy)
+                let eF = CGPoint(x: o.end.x   * sx, y: o.end.y   * sy)
 
-    @ViewBuilder private func selectionForRect(_ o: RectObject) -> some View {
-        ZStack {
-            let pts = [CGPoint(x: o.rect.minX, y: o.rect.minY), CGPoint(x: o.rect.maxX, y: o.rect.minY), CGPoint(x: o.rect.minX, y: o.rect.maxY), CGPoint(x: o.rect.maxX, y: o.rect.maxY)]
-            ForEach(Array(pts.enumerated()), id: \.offset) { pair in
-                let pt = pair.element
-                Circle().stroke(.blue, lineWidth: 1).background(Circle().fill(.white)).frame(width: 12, height: 12).position(pt)
+                // Inset (image centered within canvas)
+                let ox = max(0, (geo.size.width  - fittedSize.width)  / 2)
+                let oy = max(0, (geo.size.height - fittedSize.height) / 2)
+
+                // Endpoint handles (in fitted space + inset)
+                Circle().stroke(.blue, lineWidth: 1)
+                    .background(Circle().fill(.white))
+                    .frame(width: 12, height: 12)
+                    .position(x: sF.x + ox, y: sF.y + oy)
+
+                Circle().stroke(.blue, lineWidth: 1)
+                    .background(Circle().fill(.white))
+                    .frame(width: 12, height: 12)
+                    .position(x: eF.x + ox, y: eF.y + oy)
             }
         }
     }
 
+    @ViewBuilder private func selectionForRect(_ o: RectObject) -> some View {
+        GeometryReader { geo in
+            ZStack {
+                // Map author rect to fitted (onscreen) coordinates
+                let fittedSize = lastFittedSize ?? objectSpaceSize ?? .zero
+                let authorSize = objectSpaceSize ?? fittedSize
+                let sx = fittedSize.width / max(1, authorSize.width)
+                let sy = fittedSize.height / max(1, authorSize.height)
+                let rf = CGRect(x: o.rect.origin.x * sx,
+                                y: o.rect.origin.y * sy,
+                                width: o.rect.size.width * sx,
+                                height: o.rect.size.height * sy)
+                // Inset (image centered within canvas)
+                let ox = max(0, (geo.size.width  - fittedSize.width)  / 2)
+                let oy = max(0, (geo.size.height - fittedSize.height) / 2)
+
+                // Corner handles in fitted space + inset
+                let pts = [
+                    CGPoint(x: rf.minX + ox, y: rf.minY + oy),
+                    CGPoint(x: rf.maxX + ox, y: rf.minY + oy),
+                    CGPoint(x: rf.minX + ox, y: rf.maxY + oy),
+                    CGPoint(x: rf.maxX + ox, y: rf.maxY + oy)
+                ]
+                ForEach(Array(pts.enumerated()), id: \.offset) { pair in
+                    let pt = pair.element
+                    Circle()
+                        .stroke(.blue, lineWidth: 1)
+                        .background(Circle().fill(.white))
+                        .frame(width: 12, height: 12)
+                        .position(pt)
+                }
+            }
+        }
+    }
+    
     private func flattenAndSaveInPlace() {
         guard let img = lastCapture else { return }
         if objectSpaceSize == nil { objectSpaceSize = lastFittedSize ?? img.size }
@@ -1141,7 +1327,7 @@ struct ContentView: View {
             }
         }
     }
-
+    
     private func flattenAndSaveAs() {
         guard let img = lastCapture else { return }
         if objectSpaceSize == nil { objectSpaceSize = lastFittedSize ?? img.size }
@@ -1162,7 +1348,7 @@ struct ContentView: View {
             }
         }
     }
-
+    
     private func rasterize(base: NSImage, objects: [Drawable]) -> NSImage? {
         let imgSize = base.size
         let rep = NSBitmapImageRep(bitmapDataPlanes: nil,
@@ -1178,18 +1364,18 @@ struct ContentView: View {
         guard let rep else { return nil }
         let composed = NSImage(size: imgSize)
         composed.addRepresentation(rep)
-
+        
         NSGraphicsContext.saveGraphicsState()
         NSGraphicsContext.current = NSGraphicsContext(bitmapImageRep: rep)
         base.draw(in: CGRect(origin: .zero, size: imgSize))
         strokeColor.setStroke(); strokeColor.setFill()
-
+        
         // Use the objectSpaceSize (UI space) that objects were laid out in; fall back to lastFittedSize or image size if unknown
         let fitted = objectSpaceSize ?? lastFittedSize ?? imgSize
         let scaleX = imgSize.width / max(1, fitted.width)
         let scaleY = imgSize.height / max(1, fitted.height)
         let scaleW = (scaleX + scaleY) / 2
-
+        
         for obj in objects {
             switch obj {
             case .line(let o):
@@ -1230,6 +1416,23 @@ struct ContentView: View {
                 ]
                 NSString(string: o.text).draw(in: r.insetBy(dx: 4 * scaleW, dy: 4 * scaleW), withAttributes: attrs)
                 
+// In your canvas drawing loop, update the .text(let o) case as follows:
+// (Find the ForEach(objects) { obj in ... } and update the .text(let o) case)
+// (The actual ForEach is not included in this snippet, but the replacement is below.)
+// Replace:
+// case .text(let o):
+//     ... (old code)
+// With:
+// case .text(let o):
+//     if selectedObjectID != o.id {
+//         Text(o.text.isEmpty ? " " : o.text)
+//             .font(.system(size: o.fontSize))
+//             .foregroundStyle(Color(nsColor: o.textColor))
+//             .frame(width: o.rect.width, height: o.rect.height, alignment: .topLeading)
+//             .padding(4)
+//             .background(o.bgEnabled ? Color(nsColor: o.bgColor) : Color.clear)
+//             .position(x: o.rect.midX, y: o.rect.midY)
+//     }
             case .badge(let o):
                 let r = uiRectToImageRect(o.rect, fitted: fitted, image: imgSize)
                 let circlePath = NSBezierPath(ovalIn: r)
@@ -1245,7 +1448,7 @@ struct ContentView: View {
                 NSString(string: "\(o.number)").draw(in: r, withAttributes: attrs)
             }
         }
-
+        
         NSGraphicsContext.restoreGraphicsState()
         return composed
     }
@@ -1257,7 +1460,7 @@ struct ContentView: View {
         selectedObjectID = nil
         activeHandle = .none
     }
-
+    
     private func performUndo() {
         guard let prev = undoStack.popLast() else { return }
         let current = Snapshot(image: lastCapture, objects: objects)
@@ -1265,7 +1468,7 @@ struct ContentView: View {
         lastCapture = prev.image
         objects = prev.objects
     }
-
+    
     private func performRedo() {
         guard let next = redoStack.popLast() else { return }
         let current = Snapshot(image: lastCapture, objects: objects)
@@ -1273,7 +1476,7 @@ struct ContentView: View {
         lastCapture = next.image
         objects = next.objects
     }
-
+    
     private func clampPoint(_ p: CGPoint, in fitted: CGSize) -> CGPoint {
         CGPoint(x: min(max(0, p.x), fitted.width),
                 y: min(max(0, p.y), fitted.height))
@@ -1285,12 +1488,12 @@ struct ContentView: View {
         var h = max(0, min(r.height, fitted.height - y))
         return CGRect(x: x, y: y, width: w, height: h)
     }
-
+    
     private func fittedImageSize(original: CGSize, in container: CGSize) -> CGSize {
         let scale = min(container.width / max(1, original.width), container.height / max(1, original.height))
         return CGSize(width: original.width * scale, height: original.height * scale)
     }
-
+    
     private func uiToImagePoint(_ p: CGPoint, fitted: CGSize, image: CGSize) -> CGPoint {
         let p = clampPoint(p, in: fitted)
         let scaleX = image.width / max(1, fitted.width)
@@ -1298,7 +1501,7 @@ struct ContentView: View {
         // UI: (0,0) top-left (Y down) -> Image: (0,0) bottom-left (Y up)
         return CGPoint(x: p.x * scaleX, y: (fitted.height - p.y) * scaleY)
     }
-
+    
     private func uiRectToImageRect(_ r: CGRect, fitted: CGSize, image: CGSize) -> CGRect {
         let r = clampRect(r, in: fitted)
         let scaleX = image.width / max(1, fitted.width)
@@ -1310,7 +1513,7 @@ struct ContentView: View {
         let y = (fitted.height - (r.origin.y + r.height)) * scaleY
         return CGRect(x: x, y: y, width: width, height: height)
     }
-
+    
     // Shift snapping for straight lines at 0°/45°/90°
     private func snappedPoint(start: CGPoint, raw: CGPoint) -> CGPoint {
         let dx = raw.x - start.x
@@ -1321,7 +1524,7 @@ struct ContentView: View {
         // Thresholds for 22.5° and 67.5° to decide snapping band
         let tan22: CGFloat = 0.41421356  // tan(22.5°)
         let tan67: CGFloat = 2.41421356  // tan(67.5°)
-
+        
         if ady <= adx * tan22 { // Horizontal
             return CGPoint(x: start.x + dx, y: start.y)
         } else if ady >= adx * tan67 { // Vertical
@@ -1333,9 +1536,9 @@ struct ContentView: View {
             return CGPoint(x: start.x + sx * m, y: start.y + sy * m)
         }
     }
-
+    
     // MARK: - Snaps Persistence
-
+    
     /// Directory where we store PNG snaps.
     private func snapsDirectory() -> URL? {
         let fm = FileManager.default
@@ -1348,7 +1551,7 @@ struct ContentView: View {
         }
         return nil
     }
-
+    
     /// Saves an NSImage as PNG to disk; returns the file URL if successful.
     private func saveSnapToDisk(_ image: NSImage) -> URL? {
         guard let dir = snapsDirectory() else { return nil }
@@ -1356,7 +1559,7 @@ struct ContentView: View {
         formatter.dateFormat = "yyyyMMdd_HHmmss_SSS"
         let name = "snap_\(formatter.string(from: Date())).png"
         let url = dir.appendingPathComponent(name)
-
+        
         guard let tiff = image.tiffRepresentation,
               let rep = NSBitmapImageRep(data: tiff),
               let png = rep.representation(using: .png, properties: [:]) else { return nil }
@@ -1367,7 +1570,7 @@ struct ContentView: View {
             return nil
         }
     }
-
+    
     /// Loads existing snaps on disk (PNG files), newest first.
     private func loadExistingSnaps() {
         guard let dir = snapsDirectory() else { return }
@@ -1389,7 +1592,7 @@ struct ContentView: View {
             snapURLs = []
         }
     }
-
+    
     /// Inserts a newly saved URL at the start of the list (leftmost), de-duplicating if necessary.
     private func insertSnapURL(_ url: URL) {
         if let idx = snapURLs.firstIndex(of: url) {
@@ -1397,7 +1600,7 @@ struct ContentView: View {
         }
         snapURLs.insert(url, at: 0)
     }
-
+    
     /// Delete a snap from disk and update gallery/selection.
     private func deleteSnap(_ url: URL) {
         let fm = FileManager.default
@@ -1422,9 +1625,9 @@ struct ContentView: View {
             }
         }
     }
-
+    
     // MARK: - Thumbnail View
-
+    
     private struct ThumbnailView: View {
         let url: URL
         let selected: Bool
@@ -1434,7 +1637,7 @@ struct ContentView: View {
         @State private var hovering = false
         @State private var hoverDebounce = 0
         @State private var image: NSImage? = nil
-
+        
         var body: some View {
             ZStack {
                 if let img = image {
@@ -1523,10 +1726,10 @@ private struct SelectionOverlay: View {
     let windowOrigin: CGPoint
     let onComplete: (CGRect) -> Void
     let onCancel: () -> Void
-
+    
     @State private var startPoint: CGPoint? = nil
     @State private var currentPoint: CGPoint? = nil
-
+    
     var body: some View {
         GeometryReader { geo in
             // Cover the entire screen space with a dim layer
@@ -1549,7 +1752,7 @@ private struct SelectionOverlay: View {
                 .onTapGesture(count: 2) { onCancel() }
         }
     }
-
+    
     private func dragGesture(in geo: GeometryProxy) -> some Gesture {
         DragGesture(minimumDistance: 0)
             .onChanged { value in
@@ -1571,7 +1774,7 @@ private struct SelectionOverlay: View {
                 }
             }
     }
-
+    
     private func globalPoint(from local: CGPoint, in geo: GeometryProxy) -> CGPoint {
         // SwiftUI local coordinates are top-left–origin with Y down.
         // Global screen coordinates are bottom-left–origin with Y up.
@@ -1580,12 +1783,12 @@ private struct SelectionOverlay: View {
             y: windowOrigin.y + (geo.size.height - local.y)
         )
     }
-
+    
     private func selectionRect(in geo: GeometryProxy) -> CGRect? {
         guard let s = startPoint, let c = currentPoint else { return nil }
         return CGRect(x: min(s.x, c.x), y: min(s.y, c.y), width: abs(s.x - c.x), height: abs(s.y - c.y))
     }
-
+    
     private func buildRect(from start: CGPoint?, to end: CGPoint) -> CGRect? {
         guard let start else { return nil }
         return CGRect(x: min(start.x, end.x),
@@ -1600,7 +1803,7 @@ private struct SelectionShape: Shape {
     var rect: CGRect
     func path(in _: CGRect) -> Path {
         var p = Path(CGRect(x: 0, y: 0, width: NSScreen.screens.map { $0.frame.maxX }.max() ?? 0,
-                              height: NSScreen.screens.map { $0.frame.maxY }.max() ?? 0))
+                            height: NSScreen.screens.map { $0.frame.maxY }.max() ?? 0))
         p.addRect(rect)
         return p
     }
@@ -1637,15 +1840,15 @@ private struct LineObject: DrawableObject {
     var end: CGPoint
     var width: CGFloat
     var arrow: Bool
-
+    
     init(id: UUID = UUID(), start: CGPoint, end: CGPoint, width: CGFloat, arrow: Bool) {
         self.id = id; self.start = start; self.end = end; self.width = width; self.arrow = arrow
     }
-
+    
     static func == (lhs: LineObject, rhs: LineObject) -> Bool { lhs.id == rhs.id && lhs.start == rhs.start && lhs.end == rhs.end && lhs.width == rhs.width && lhs.arrow == rhs.arrow }
-
+    
     func drawPath(in _: CGSize) -> Path { var p = Path(); p.move(to: start); p.addLine(to: end); return p }
-
+    
     func hitTest(_ p: CGPoint) -> Bool {
         let tol = max(6, width + 6)
         let dx = end.x - start.x, dy = end.y - start.y
@@ -1655,21 +1858,21 @@ private struct LineObject: DrawableObject {
         let proj = CGPoint(x: start.x + t*dx, y: start.y + t*dy)
         return hypot(p.x-proj.x, p.y-proj.y) <= tol
     }
-
+    
     func handleHitTest(_ p: CGPoint) -> Handle {
         let r: CGFloat = 8
         if CGRect(x: start.x-r, y: start.y-r, width: 2*r, height: 2*r).contains(p) { return .lineStart }
         if CGRect(x: end.x-r,   y: end.y-r,   width: 2*r, height: 2*r).contains(p) { return .lineEnd }
         return .none
     }
-
+    
     func moved(by d: CGSize) -> LineObject {
         var c = self
         c.start.x += d.width; c.start.y += d.height
         c.end.x   += d.width; c.end.y   += d.height
         return c
     }
-
+    
     func resizing(_ handle: Handle, to p: CGPoint) -> LineObject {
         var c = self
         switch handle { case .lineStart: c.start = p; case .lineEnd: c.end = p; default: break }
@@ -1681,18 +1884,18 @@ private struct RectObject: DrawableObject {
     let id: UUID
     var rect: CGRect
     var width: CGFloat
-
+    
     init(id: UUID = UUID(), rect: CGRect, width: CGFloat) { self.id = id; self.rect = rect; self.width = width }
-
+    
     static func == (lhs: RectObject, rhs: RectObject) -> Bool { lhs.id == rhs.id && lhs.rect == rhs.rect && lhs.width == rhs.width }
-
+    
     func drawPath(in _: CGSize) -> Path { Rectangle().path(in: rect) }
-
+    
     func hitTest(_ p: CGPoint) -> Bool {
         let inset = -max(6, width + 6)
         return rect.insetBy(dx: inset, dy: inset).contains(p) && !rect.insetBy(dx: max(6, width + 6), dy: max(6, width + 6)).contains(p)
     }
-
+    
     func handleHitTest(_ p: CGPoint) -> Handle {
         let r: CGFloat = 8
         let tl = CGRect(x: rect.minX-r, y: rect.minY-r, width: 2*r, height: 2*r)
@@ -1705,9 +1908,9 @@ private struct RectObject: DrawableObject {
         if br.contains(p) { return .rectBottomRight }
         return .none
     }
-
+    
     func moved(by d: CGSize) -> RectObject { var c = self; c.rect.origin.x += d.width; c.rect.origin.y += d.height; return c }
-
+    
     func resizing(_ handle: Handle, to p: CGPoint) -> RectObject {
         var c = self
         switch handle {
@@ -1733,19 +1936,19 @@ private struct TextObject: DrawableObject {
     var textColor: NSColor
     var bgEnabled: Bool
     var bgColor: NSColor
-
+    
     init(id: UUID = UUID(), rect: CGRect, text: String, fontSize: CGFloat, textColor: NSColor, bgEnabled: Bool, bgColor: NSColor) {
         self.id = id; self.rect = rect; self.text = text; self.fontSize = fontSize; self.textColor = textColor; self.bgEnabled = bgEnabled; self.bgColor = bgColor
     }
-
+    
     static func == (lhs: TextObject, rhs: TextObject) -> Bool {
         lhs.id == rhs.id && lhs.rect == rhs.rect && lhs.text == rhs.text && lhs.fontSize == rhs.fontSize && lhs.textColor == rhs.textColor && lhs.bgEnabled == rhs.bgEnabled && lhs.bgColor == rhs.bgColor
     }
-
+    
     func drawPath(in _: CGSize) -> Path { Rectangle().path(in: rect) }
-
+    
     func hitTest(_ p: CGPoint) -> Bool { rect.insetBy(dx: -6, dy: -6).contains(p) }
-
+    
     func handleHitTest(_ p: CGPoint) -> Handle {
         let r: CGFloat = 8
         let tl = CGRect(x: rect.minX-r, y: rect.minY-r, width: 2*r, height: 2*r)
@@ -1758,14 +1961,14 @@ private struct TextObject: DrawableObject {
         if br.contains(p) { return .rectBottomRight }
         return .none
     }
-
+    
     func moved(by d: CGSize) -> TextObject {
         var c = self
         c.rect.origin.x += d.width
         c.rect.origin.y += d.height
         return c
     }
-
+    
     func resizing(_ handle: Handle, to p: CGPoint) -> TextObject {
         var c = self
         switch handle {
@@ -1791,23 +1994,23 @@ private struct BadgeObject: DrawableObject {
     var number: Int
     var fillColor: NSColor
     var textColor: NSColor
-
+    
     init(id: UUID = UUID(), rect: CGRect, number: Int, fillColor: NSColor, textColor: NSColor) {
         self.id = id; self.rect = rect; self.number = number; self.fillColor = fillColor; self.textColor = textColor
     }
-
+    
     static func == (lhs: BadgeObject, rhs: BadgeObject) -> Bool {
         lhs.id == rhs.id && lhs.rect == rhs.rect && lhs.number == rhs.number && lhs.fillColor == rhs.fillColor && lhs.textColor == rhs.textColor
     }
-
+    
     func drawPath(in _: CGSize) -> Path { Circle().path(in: rect) }
-
+    
     func hitTest(_ p: CGPoint) -> Bool {
         let c = CGPoint(x: rect.midX, y: rect.midY)
         let radius = max(rect.width, rect.height) / 2 + 6
         return hypot(p.x - c.x, p.y - c.y) <= radius
     }
-
+    
     func handleHitTest(_ p: CGPoint) -> Handle {
         let r: CGFloat = 8
         let tl = CGRect(x: rect.minX - r, y: rect.minY - r, width: 2*r, height: 2*r)
@@ -1820,14 +2023,14 @@ private struct BadgeObject: DrawableObject {
         if br.contains(p) { return .rectBottomRight }
         return .none
     }
-
+    
     func moved(by d: CGSize) -> BadgeObject {
         var c = self
         c.rect.origin.x += d.width
         c.rect.origin.y += d.height
         return c
     }
-
+    
     func resizing(_ handle: Handle, to p: CGPoint) -> BadgeObject {
         var c = self
         switch handle {
@@ -1852,7 +2055,7 @@ private enum Drawable: Identifiable, Equatable {
     case rect(RectObject)
     case text(TextObject)
     case badge(BadgeObject)
-
+    
     var id: UUID {
         switch self {
         case .line(let o): return o.id
@@ -1879,16 +2082,16 @@ private struct Box: Identifiable {
 
 final class ScreenCapturer: NSObject, SCStreamOutput {
     static let shared = ScreenCapturer()
-
+    
     private var stream: SCStream?
     private var continuation: CheckedContinuation<CGImage?, Never>?
-
+    
     /// Captures a single CGImage of the main display using ScreenCaptureKit.
     func captureMainDisplayImage() async -> CGImage? {
         do {
             let content = try await SCShareableContent.current
             guard let display = content.displays.first else { return nil }
-
+            
             let filter = SCContentFilter(display: display, excludingWindows: [])
             let config = SCStreamConfiguration()
             config.width = display.width
@@ -1896,13 +2099,13 @@ final class ScreenCapturer: NSObject, SCStreamOutput {
             config.pixelFormat = kCVPixelFormatType_32BGRA
             config.showsCursor = false
             config.minimumFrameInterval = CMTime(value: 1, timescale: 60)
-
+            
             let stream = SCStream(filter: filter, configuration: config, delegate: nil)
             self.stream = stream
-
+            
             try await stream.addStreamOutput(self, type: SCStreamOutputType.screen, sampleHandlerQueue: DispatchQueue.main)
             try await stream.startCapture()
-
+            
             return await withCheckedContinuation { (cont: CheckedContinuation<CGImage?, Never>) in
                 self.continuation = cont
             }
@@ -1910,7 +2113,7 @@ final class ScreenCapturer: NSObject, SCStreamOutput {
             return nil
         }
     }
-
+    
     func captureImage(using filter: SCContentFilter, display: SCDisplay) async -> CGImage? {
         do {
             let cfg = SCStreamConfiguration()
@@ -1920,12 +2123,12 @@ final class ScreenCapturer: NSObject, SCStreamOutput {
             cfg.pixelFormat = kCVPixelFormatType_32BGRA
             cfg.showsCursor = false
             cfg.minimumFrameInterval = CMTime(value: 1, timescale: 60)
-
+            
             let stream = SCStream(filter: filter, configuration: cfg, delegate: nil)
             self.stream = stream
             try await stream.addStreamOutput(self, type: .screen, sampleHandlerQueue: .main)
             try await stream.startCapture()
-
+            
             return await withCheckedContinuation { (cont: CheckedContinuation<CGImage?, Never>) in
                 self.continuation = cont
             }
@@ -1933,19 +2136,19 @@ final class ScreenCapturer: NSObject, SCStreamOutput {
             return nil
         }
     }
-
+    
     // MARK: - SCStreamOutput
     func stream(_ stream: SCStream, didOutputSampleBuffer sampleBuffer: CMSampleBuffer, of outputType: SCStreamOutputType) {
         guard outputType == .screen,
               let pixelBuffer = CMSampleBufferGetImageBuffer(sampleBuffer) else { return }
-
+        
         var cgImage: CGImage?
         VTCreateCGImageFromCVPixelBuffer(pixelBuffer, options: nil, imageOut: &cgImage)
-
+        
         if let cgImage {
             continuation?.resume(returning: cgImage)
             continuation = nil
-
+            
             Task { [weak self] in
                 do {
                     try await self?.stream?.stopCapture()
@@ -1955,6 +2158,7 @@ final class ScreenCapturer: NSObject, SCStreamOutput {
             }
         }
     }
+    
 }
 
 
@@ -1963,11 +2167,11 @@ final class SelectionWindowManager {
     static let shared = SelectionWindowManager()
     private var panel: NSPanel?
     private var keyMonitor: Any?
-
+    
     func present(onComplete: @escaping (CGRect) -> Void) {
         guard panel == nil else { return }
         guard let screen = NSScreen.main else { return }
-
+        
         let frame = screen.frame
         let panel = NSPanel(contentRect: frame,
                             styleMask: [.borderless, .nonactivatingPanel],
@@ -1982,21 +2186,21 @@ final class SelectionWindowManager {
         panel.collectionBehavior = [.canJoinAllSpaces, .fullScreenAuxiliary]
         panel.titleVisibility = .hidden
         panel.titlebarAppearsTransparent = true
-
+        
         // SwiftUI overlay content
         let root = SelectionOverlay(windowOrigin: frame.origin,
                                     onComplete: { rect in
-                                        onComplete(rect)
-                                        self.dismiss()
-                                    },
+            onComplete(rect)
+            self.dismiss()
+        },
                                     onCancel: { self.dismiss() })
             .ignoresSafeArea()
-
+        
         panel.contentView = NSHostingView(rootView: root)
         panel.makeKeyAndOrderFront(nil)
         NSApp.activate(ignoringOtherApps: true)
         self.panel = panel
-
+        
         // Listen for ESC to cancel selection
         keyMonitor = NSEvent.addLocalMonitorForEvents(matching: .keyDown) { [weak self] event in
             guard let self else { return event }
@@ -2008,7 +2212,7 @@ final class SelectionWindowManager {
             return event
         }
     }
-
+    
     func dismiss() {
         panel?.orderOut(nil)
         panel = nil
@@ -2045,61 +2249,63 @@ private struct PenColorButton: View {
 
 
 
-    // Scales a Drawable from an old UI space to a new one (non-uniform allowed).
-    private func scaleDrawable(_ d: Drawable, sx: CGFloat, sy: CGFloat) -> Drawable {
-        let avgScale = (sx + sy) / 2
-        switch d {
-        case .line(let o):
-            var c = o
-            c.start.x *= sx; c.start.y *= sy
-            c.end.x   *= sx; c.end.y   *= sy
-            c.width   = max(1, c.width * avgScale)
-            return .line(c)
-        case .rect(let o):
-            var c = o
-            c.rect.origin.x *= sx; c.rect.origin.y *= sy
-            c.rect.size.width  *= sx; c.rect.size.height *= sy
-            c.width = max(1, c.width * avgScale)
-            return .rect(c)
-        case .text(let o):
-            var c = o
-            c.rect.origin.x *= sx; c.rect.origin.y *= sy
-            c.rect.size.width  *= sx; c.rect.size.height *= sy
-            c.fontSize = max(6, c.fontSize * avgScale)
-            return .text(c)
-        case .badge(let o):
-            var c = o
-            c.rect.origin.x *= sx; c.rect.origin.y *= sy
-            c.rect.size.width  *= sx; c.rect.size.height *= sy
-            // Keep badge roughly square after non-uniform scaling
-            let side = max(8, (c.rect.width + c.rect.height) / 2)
-            c.rect.size = CGSize(width: side, height: side)
-            return .badge(c)
-        }
+// Scales a Drawable from an old UI space to a new one (non-uniform allowed).
+private func scaleDrawable(_ d: Drawable, sx: CGFloat, sy: CGFloat) -> Drawable {
+    let avgScale = (sx + sy) / 2
+    switch d {
+    case .line(let o):
+        var c = o
+        c.start.x *= sx; c.start.y *= sy
+        c.end.x   *= sx; c.end.y   *= sy
+        c.width   = max(1, c.width * avgScale)
+        return .line(c)
+    case .rect(let o):
+        var c = o
+        c.rect.origin.x *= sx; c.rect.origin.y *= sy
+        c.rect.size.width  *= sx; c.rect.size.height *= sy
+        c.width = max(1, c.width * avgScale)
+        return .rect(c)
+    case .text(let o):
+        var c = o
+        c.rect.origin.x *= sx; c.rect.origin.y *= sy
+        c.rect.size.width  *= sx; c.rect.size.height *= sy
+        c.fontSize = max(6, c.fontSize * avgScale)
+        return .text(c)
+    case .badge(let o):
+        var c = o
+        c.rect.origin.x *= sx; c.rect.origin.y *= sy
+        c.rect.size.width  *= sx; c.rect.size.height *= sy
+        // Keep badge roughly square after non-uniform scaling
+        let side = max(8, (c.rect.width + c.rect.height) / 2)
+        c.rect.size = CGSize(width: side, height: side)
+        return .badge(c)
     }
+}
 
-    private func fittedToAuthorPoint(_ p: CGPoint, fitted: CGSize, author: CGSize) -> CGPoint {
-        let sx = author.width / max(1, fitted.width)
-        let sy = author.height / max(1, fitted.height)
-        return CGPoint(x: p.x * sx, y: p.y * sy)
-    }
-    private func fittedToAuthorRect(_ r: CGRect, fitted: CGSize, author: CGSize) -> CGRect {
-        let sx = author.width / max(1, fitted.width)
-        let sy = author.height / max(1, fitted.height)
-        return CGRect(x: r.origin.x * sx, y: r.origin.y * sy, width: r.size.width * sx, height: r.size.height * sy)
-    }
+private func fittedToAuthorPoint(_ p: CGPoint, fitted: CGSize, author: CGSize) -> CGPoint {
+    let sx = author.width / max(1, fitted.width)
+    let sy = author.height / max(1, fitted.height)
+    return CGPoint(x: p.x * sx, y: p.y * sy)
+}
+private func fittedToAuthorRect(_ r: CGRect, fitted: CGSize, author: CGSize) -> CGRect {
+    let sx = author.width / max(1, fitted.width)
+    let sy = author.height / max(1, fitted.height)
+    return CGRect(x: r.origin.x * sx, y: r.origin.y * sy, width: r.size.width * sx, height: r.size.height * sy)
+}
 
 
-    /// Crops an NSImage using a rect expressed in image coordinates with bottom-left origin.
-    private func cropImage(_ image: NSImage, toBottomLeftRect rBL: CGRect) -> NSImage? {
-        guard let cg = image.cgImage(forProposedRect: nil, context: nil, hints: nil) else { return nil }
-        let imgH = CGFloat(cg.height)
-        // Convert to CoreGraphics top-left origin
-        let rectTL = CGRect(x: rBL.origin.x,
-                            y: imgH - (rBL.origin.y + rBL.height),
-                            width: rBL.width,
-                            height: rBL.height).integral
-        guard rectTL.width > 1, rectTL.height > 1 else { return nil }
-        guard let sub = cg.cropping(to: rectTL) else { return nil }
-        return NSImage(cgImage: sub, size: NSSize(width: rectTL.width, height: rectTL.height))
-    }
+/// Crops an NSImage using a rect expressed in image coordinates with bottom-left origin.
+private func cropImage(_ image: NSImage, toBottomLeftRect rBL: CGRect) -> NSImage? {
+    guard let cg = image.cgImage(forProposedRect: nil, context: nil, hints: nil) else { return nil }
+    let imgH = CGFloat(cg.height)
+    // Convert to CoreGraphics top-left origin
+    let rectTL = CGRect(x: rBL.origin.x,
+                        y: imgH - (rBL.origin.y + rBL.height),
+                        width: rBL.width,
+                        height: rBL.height).integral
+    guard rectTL.width > 1, rectTL.height > 1 else { return nil }
+    guard let sub = cg.cropping(to: rectTL) else { return nil }
+    return NSImage(cgImage: sub, size: NSSize(width: rectTL.width, height: rectTL.height))
+}
+
+

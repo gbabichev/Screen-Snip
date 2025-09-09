@@ -21,8 +21,8 @@ Inspired by Greenshot on Windows - the goal is to make a tiny app that can do th
    - Click onto text area to adjust it. Not spwan new text boxes.
 - <del>Add lines with arrows. 
 - <del>Objects should be eraseable with delete key.
-- Add auto increment numbers. 
-- Add Crop.
+- <del>Add auto increment numbers. 
+- <del>Add Crop.
 - <del>Lines, Arrows, Shapes, numbers, etc should all be moveable objects. 
 - Open existing file
 - Paste on top & move stuff around. 
@@ -31,7 +31,7 @@ Inspired by Greenshot on Windows - the goal is to make a tiny app that can do th
   - User defined save folder. 
   - User defined output type (PNG / JPG / HEIC)
 - Global system hotkey for screenshots. 
-- More as I think of it. 
+- More as I think of it. 😊
 
 
 ## 🖥️ Screenshots 
