@@ -43,6 +43,7 @@ struct ContentView: View {
 
     @State private var lastFittedSize: CGSize? = nil
     @State private var objectSpaceSize: CGSize? = nil  // tracks the UI coordinate space size the objects are authored in
+    @State private var resizeSeq: Int = 0
 
     @State private var showTextEditor: Bool = false
     @State private var editingText: String = ""
@@ -62,6 +63,9 @@ struct ContentView: View {
                                     x: (geo.size.width - fitted.width)/2,
                                     y: (geo.size.height - fitted.height)/2
                                 )
+                                let author = objectSpaceSize ?? fitted
+                                let sx = fitted.width / max(1, author.width)
+                                let sy = fitted.height / max(1, author.height)
 
                                 // Base image
                                 Image(nsImage: img)
@@ -70,17 +74,17 @@ struct ContentView: View {
                                     .frame(width: fitted.width, height: fitted.height)
                                     .position(x: origin.x + fitted.width/2, y: origin.y + fitted.height/2)
 
-                                // Object overlay (UI coordinates within fitted image)
+                                // Object overlay drawn in author space and scaled live to fitted
                                 ZStack {
                                     // Persisted objects
                                     ForEach(objects) { obj in
                                         switch obj {
                                         case .line(let o):
-                                            o.drawPath(in: fitted)
+                                            o.drawPath(in: author)
                                                 .stroke(Color(nsColor: strokeColor), style: StrokeStyle(lineWidth: o.width, lineCap: .round))
                                                 .overlay { if selectedObjectID == o.id { selectionForLine(o) } }
                                         case .rect(let o):
-                                            o.drawPath(in: fitted)
+                                            o.drawPath(in: author)
                                                 .stroke(Color(nsColor: strokeColor), style: StrokeStyle(lineWidth: o.width))
                                                 .overlay { if selectedObjectID == o.id { selectionForRect(o) } }
                                         case .text(let o):
@@ -94,7 +98,7 @@ struct ContentView: View {
                                                 .overlay { if selectedObjectID == o.id { selectionForRect(RectObject(rect: o.rect, width: 1)) } }
                                         }
                                     }
-                                    // Draft feedback while creating
+                                    // Draft feedback while creating (draft is stored in author space)
                                     if let d = draft {
                                         Path { p in p.move(to: d.start); p.addLine(to: d.end) }
                                             .stroke(Color(nsColor: strokeColor).opacity(0.8), style: StrokeStyle(lineWidth: d.width, dash: [6,4]))
@@ -104,27 +108,24 @@ struct ContentView: View {
                                             .stroke(Color(nsColor: strokeColor).opacity(0.8), style: StrokeStyle(lineWidth: strokeWidth, dash: [6,4]))
                                     }
                                 }
-                                .frame(width: fitted.width, height: fitted.height)
+                                .frame(width: author.width, height: author.height)
+                                .scaleEffect(x: sx, y: sy, anchor: .topLeading)
+                                .frame(width: fitted.width, height: fitted.height, alignment: .topLeading)
                                 .position(x: origin.x + fitted.width/2, y: origin.y + fitted.height/2)
                                 .contentShape(Rectangle())
                                 .allowsHitTesting(true)
-                                .gesture(pointerGesture(insetOrigin: origin, fitted: fitted))
-                                .simultaneousGesture(selectedTool == .line ? lineGesture(insetOrigin: origin, fitted: fitted) : nil)
-                                .simultaneousGesture(selectedTool == .rect ? rectGesture(insetOrigin: origin, fitted: fitted) : nil)
-                                .simultaneousGesture(selectedTool == .text ? textGesture(insetOrigin: origin, fitted: fitted) : nil)
+                                .gesture(pointerGesture(insetOrigin: origin, fitted: fitted, author: author))
+                                .simultaneousGesture(selectedTool == .line ? lineGesture(insetOrigin: origin, fitted: fitted, author: author) : nil)
+                                .simultaneousGesture(selectedTool == .rect ? rectGesture(insetOrigin: origin, fitted: fitted, author: author) : nil)
+                                .simultaneousGesture(selectedTool == .text ? textGesture(insetOrigin: origin, fitted: fitted, author: author) : nil)
                                 .onAppear {
                                     lastFittedSize = fitted
+                                    if objectSpaceSize == nil { objectSpaceSize = fitted }
                                 }
                                 .onChange(of: geo.size) { _ in
+                                    // Track latest fitted size for rasterization; do not mutate objects during live resize
                                     lastFittedSize = fitted
-                                    // Only scale objects if we have existing objects AND the space size was previously set
-                                    if let old = objectSpaceSize, !objects.isEmpty, old != fitted {
-                                        let sx = fitted.width  / max(old.width,  1)
-                                        let sy = fitted.height / max(old.height, 1)
-                                        objects = objects.map { scaleDrawable($0, sx: sx, sy: sy) }
-                                    }
-                                    // Always update to the current fitted size
-                                    objectSpaceSize = fitted
+                                    if objectSpaceSize == nil { objectSpaceSize = fitted }
                                 }
                             }
                         }
@@ -628,15 +629,17 @@ struct ContentView: View {
         }
     }
 
-    private func lineGesture(insetOrigin: CGPoint, fitted: CGSize) -> some Gesture {
+    private func lineGesture(insetOrigin: CGPoint, fitted: CGSize, author: CGSize) -> some Gesture {
         DragGesture(minimumDistance: 0)
             .onChanged { value in
                 let pRaw = CGPoint(x: value.location.x - insetOrigin.x, y: value.location.y - insetOrigin.y)
                 let sRaw = CGPoint(x: value.startLocation.x - insetOrigin.x, y: value.startLocation.y - insetOrigin.y)
-                if draft == nil { draft = Line(start: sRaw, end: pRaw, width: strokeWidth) }
+                let pA = fittedToAuthorPoint(pRaw, fitted: fitted, author: author)
+                let sA = fittedToAuthorPoint(sRaw, fitted: fitted, author: author)
+                if draft == nil { draft = Line(start: sA, end: pA, width: strokeWidth) }
                 let shift = NSEvent.modifierFlags.contains(.shift)
                 if let start = draft?.start {
-                    draft?.end = shift ? snappedPoint(start: start, raw: pRaw) : pRaw
+                    draft?.end = shift ? snappedPoint(start: start, raw: pA) : pA
                 }
                 draft?.width = strokeWidth
             }
@@ -644,13 +647,14 @@ struct ContentView: View {
                 let pRaw = CGPoint(x: value.location.x - insetOrigin.x, y: value.location.y - insetOrigin.y)
                 let shift = NSEvent.modifierFlags.contains(.shift)
                 guard let start = draft?.start else { draft = nil; return }
-                let endUI = shift ? snappedPoint(start: start, raw: pRaw) : pRaw
-                let s = clampPoint(start, in: fitted)
-                let e = clampPoint(endUI, in: fitted)
+                let pA = fittedToAuthorPoint(pRaw, fitted: fitted, author: author)
+                let endUI = shift ? snappedPoint(start: start, raw: pA) : pA
+                let s = clampPoint(start, in: author)
+                let e = clampPoint(endUI, in: author)
                 let newObj = LineObject(start: s, end: e, width: strokeWidth, arrow: lineHasArrow)
                 pushUndoSnapshot()
                 objects.append(.line(newObj))
-                if objectSpaceSize == nil { objectSpaceSize = fitted }
+                if objectSpaceSize == nil { objectSpaceSize = author }
                 draft = nil
             }
     }
@@ -724,11 +728,13 @@ struct ContentView: View {
         return composed
     }
 
-    private func rectGesture(insetOrigin: CGPoint, fitted: CGSize) -> some Gesture {
+    private func rectGesture(insetOrigin: CGPoint, fitted: CGSize, author: CGSize) -> some Gesture {
         DragGesture(minimumDistance: 0)
             .onChanged { value in
-                let start = CGPoint(x: value.startLocation.x - insetOrigin.x, y: value.startLocation.y - insetOrigin.y)
-                let current = CGPoint(x: value.location.x - insetOrigin.x, y: value.location.y - insetOrigin.y)
+                let startFit = CGPoint(x: value.startLocation.x - insetOrigin.x, y: value.startLocation.y - insetOrigin.y)
+                let currentFit = CGPoint(x: value.location.x - insetOrigin.x, y: value.location.y - insetOrigin.y)
+                let start = fittedToAuthorPoint(startFit, fitted: fitted, author: author)
+                let current = fittedToAuthorPoint(currentFit, fitted: fitted, author: author)
                 let shift = NSEvent.modifierFlags.contains(.shift)
 
                 func rectFrom(_ a: CGPoint, _ b: CGPoint, square: Bool) -> CGRect {
@@ -738,7 +744,6 @@ struct ContentView: View {
                     var h = abs(a.y - b.y)
                     if square {
                         let side = max(w, h)
-                        // preserve drag direction relative to start point
                         x0 = (b.x >= a.x) ? a.x : (a.x - side)
                         y0 = (b.y >= a.y) ? a.y : (a.y - side)
                         w = side; h = side
@@ -751,25 +756,25 @@ struct ContentView: View {
             .onEnded { value in
                 defer { draftRect = nil }
                 guard let uiRect = draftRect else { return }
-                let clamped = clampRect(uiRect, in: fitted)
+                let clamped = clampRect(uiRect, in: author)
                 let newObj = RectObject(rect: clamped, width: strokeWidth)
                 pushUndoSnapshot()
                 objects.append(.rect(newObj))
-                if objectSpaceSize == nil { objectSpaceSize = fitted }
-
+                if objectSpaceSize == nil { objectSpaceSize = author }
             }
     }
 
-    private func textGesture(insetOrigin: CGPoint, fitted: CGSize) -> some Gesture {
+    private func textGesture(insetOrigin: CGPoint, fitted: CGSize, author: CGSize) -> some Gesture {
         DragGesture(minimumDistance: 0)
             .onEnded { value in
-                let p = CGPoint(x: value.location.x - insetOrigin.x, y: value.location.y - insetOrigin.y)
+                let pFit = CGPoint(x: value.location.x - insetOrigin.x, y: value.location.y - insetOrigin.y)
+                let p = fittedToAuthorPoint(pFit, fitted: fitted, author: author)
                 let defaultSize = CGSize(width: 240, height: 80)
                 let rect = CGRect(x: max(0, p.x - defaultSize.width/2),
                                   y: max(0, p.y - defaultSize.height/2),
                                   width: defaultSize.width,
                                   height: defaultSize.height)
-                let rectClamped = clampRect(rect, in: fitted)
+                let rectClamped = clampRect(rect, in: author)
                 let newObj = TextObject(rect: rectClamped,
                                         text: "Text",
                                         fontSize: textFontSize,
@@ -778,17 +783,18 @@ struct ContentView: View {
                                         bgColor: textBGColor)
                 pushUndoSnapshot()
                 objects.append(.text(newObj))
-                if objectSpaceSize == nil { objectSpaceSize = fitted }
+                if objectSpaceSize == nil { objectSpaceSize = author }
                 selectedObjectID = newObj.id
                 editingText = newObj.text
                 showTextEditor = true
             }
     }
     
-    private func pointerGesture(insetOrigin: CGPoint, fitted: CGSize) -> some Gesture {
+    private func pointerGesture(insetOrigin: CGPoint, fitted: CGSize, author: CGSize) -> some Gesture {
         DragGesture(minimumDistance: 0)
             .onChanged { value in
-                let p = CGPoint(x: value.location.x - insetOrigin.x, y: value.location.y - insetOrigin.y)
+                let pFit = CGPoint(x: value.location.x - insetOrigin.x, y: value.location.y - insetOrigin.y)
+                let p = fittedToAuthorPoint(pFit, fitted: fitted, author: author)
                 if dragStartPoint == nil {
                     dragStartPoint = p
                     if let idx = objects.firstIndex(where: { obj in
@@ -815,20 +821,20 @@ struct ContentView: View {
                         pushedDragUndo = true
                     }
                     switch objects[idx] {
-                    case .line(let o):
+                    case .line(var o):
                         let updated = (activeHandle == .none) ? o.moved(by: delta) : o.resizing(activeHandle, to: p)
                         var u = updated
-                        u.start = clampPoint(u.start, in: fitted)
-                        u.end   = clampPoint(u.end,   in: fitted)
+                        u.start = clampPoint(u.start, in: author)
+                        u.end   = clampPoint(u.end,   in: author)
                         objects[idx] = .line(u)
-                    case .rect(let o):
+                    case .rect(var o):
                         let updated = (activeHandle == .none) ? o.moved(by: delta) : o.resizing(activeHandle, to: p)
-                        let clamped = clampRect(updated.rect, in: fitted)
+                        let clamped = clampRect(updated.rect, in: author)
                         var u = updated; u.rect = clamped
                         objects[idx] = .rect(u)
-                    case .text(let o):
+                    case .text(var o):
                         let updated = (activeHandle == .none) ? o.moved(by: delta) : o.resizing(activeHandle, to: p)
-                        let clamped = clampRect(updated.rect, in: fitted)
+                        let clamped = clampRect(updated.rect, in: author)
                         var u = updated; u.rect = clamped
                         objects[idx] = .text(u)
                     }
@@ -1714,4 +1720,15 @@ private struct PenColorButton: View {
             c.fontSize = max(6, c.fontSize * avgScale)
             return .text(c)
         }
+    }
+
+    private func fittedToAuthorPoint(_ p: CGPoint, fitted: CGSize, author: CGSize) -> CGPoint {
+        let sx = author.width / max(1, fitted.width)
+        let sy = author.height / max(1, fitted.height)
+        return CGPoint(x: p.x * sx, y: p.y * sy)
+    }
+    private func fittedToAuthorRect(_ r: CGRect, fitted: CGSize, author: CGSize) -> CGRect {
+        let sx = author.width / max(1, fitted.width)
+        let sy = author.height / max(1, fitted.height)
+        return CGRect(x: r.origin.x * sx, y: r.origin.y * sy, width: r.size.width * sx, height: r.size.height * sy)
     }
