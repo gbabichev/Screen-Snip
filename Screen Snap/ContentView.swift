@@ -42,6 +42,7 @@ struct ContentView: View {
     @State private var textBGColor: NSColor = .black.withAlphaComponent(0.6)
 
     @State private var lastFittedSize: CGSize? = nil
+    @State private var objectSpaceSize: CGSize? = nil  // tracks the UI coordinate space size the objects are authored in
 
     @State private var showTextEditor: Bool = false
     @State private var editingText: String = ""
@@ -111,8 +112,20 @@ struct ContentView: View {
                                 .simultaneousGesture(selectedTool == .line ? lineGesture(insetOrigin: origin, fitted: fitted) : nil)
                                 .simultaneousGesture(selectedTool == .rect ? rectGesture(insetOrigin: origin, fitted: fitted) : nil)
                                 .simultaneousGesture(selectedTool == .text ? textGesture(insetOrigin: origin, fitted: fitted) : nil)
-                                .onAppear { lastFittedSize = fitted }
-                                .onChange(of: geo.size) { _ in lastFittedSize = fitted }
+                                .onAppear {
+                                    lastFittedSize = fitted
+                                }
+                                .onChange(of: geo.size) { _ in
+                                    lastFittedSize = fitted
+                                    // Only scale objects if we have existing objects AND the space size was previously set
+                                    if let old = objectSpaceSize, !objects.isEmpty, old != fitted {
+                                        let sx = fitted.width  / max(old.width,  1)
+                                        let sy = fitted.height / max(old.height, 1)
+                                        objects = objects.map { scaleDrawable($0, sx: sx, sy: sy) }
+                                    }
+                                    // Always update to the current fitted size
+                                    objectSpaceSize = fitted
+                                }
                             }
                         }
                         .frame(maxWidth: .infinity, maxHeight: .infinity)
@@ -168,6 +181,10 @@ struct ContentView: View {
                                         selectedSnapURL = url
                                         undoStack.removeAll(); redoStack.removeAll()
                                         objects.removeAll()
+                                        // Reset object space size when loading a different image
+                                        objectSpaceSize = nil
+                                        selectedObjectID = nil
+                                        activeHandle = .none
                                     }
                                 }
                                 .contextMenu {
@@ -362,9 +379,10 @@ struct ContentView: View {
                                     showTextEditor = true
                                 }
                             } else if let img = lastCapture {
-                                let fitted = fittedImageSize(original: img.size, in: CGSize(width: img.size.width, height: img.size.height))
+                                let fitted = objectSpaceSize ?? lastFittedSize ?? img.size
                                 let rect = CGRect(x: max(0, fitted.width/2 - 120), y: max(0, fitted.height/2 - 40), width: 240, height: 80)
-                                let newObj = TextObject(rect: rect, text: "Text", fontSize: textFontSize, textColor: textColor, bgEnabled: textBGEnabled, bgColor: textBGColor)
+                                let rectClamped = clampRect(rect, in: fitted)
+                                let newObj = TextObject(rect: rectClamped, text: "Text", fontSize: textFontSize, textColor: textColor, bgEnabled: textBGEnabled, bgColor: textBGColor)
                                 pushUndoSnapshot()
                                 objects.append(.text(newObj))
                                 selectedObjectID = newObj.id
@@ -437,6 +455,12 @@ struct ContentView: View {
                 if let img = await captureAsync(rect: rect) {
                     undoStack.removeAll(); redoStack.removeAll()
                     lastCapture = img
+                    // Reset object space size when loading a new image
+                    objectSpaceSize = nil
+                    objects.removeAll() // Clear objects from previous image
+                    selectedObjectID = nil
+                    activeHandle = .none
+                    
                     if let savedURL = saveSnapToDisk(img) {
                         insertSnapURL(savedURL)
                         selectedSnapURL = savedURL
@@ -621,9 +645,12 @@ struct ContentView: View {
                 let shift = NSEvent.modifierFlags.contains(.shift)
                 guard let start = draft?.start else { draft = nil; return }
                 let endUI = shift ? snappedPoint(start: start, raw: pRaw) : pRaw
-                let newObj = LineObject(start: start, end: endUI, width: strokeWidth, arrow: lineHasArrow)
+                let s = clampPoint(start, in: fitted)
+                let e = clampPoint(endUI, in: fitted)
+                let newObj = LineObject(start: s, end: e, width: strokeWidth, arrow: lineHasArrow)
                 pushUndoSnapshot()
                 objects.append(.line(newObj))
+                if objectSpaceSize == nil { objectSpaceSize = fitted }
                 draft = nil
             }
     }
@@ -724,9 +751,12 @@ struct ContentView: View {
             .onEnded { value in
                 defer { draftRect = nil }
                 guard let uiRect = draftRect else { return }
-                let newObj = RectObject(rect: uiRect, width: strokeWidth)
+                let clamped = clampRect(uiRect, in: fitted)
+                let newObj = RectObject(rect: clamped, width: strokeWidth)
                 pushUndoSnapshot()
                 objects.append(.rect(newObj))
+                if objectSpaceSize == nil { objectSpaceSize = fitted }
+
             }
     }
 
@@ -739,7 +769,8 @@ struct ContentView: View {
                                   y: max(0, p.y - defaultSize.height/2),
                                   width: defaultSize.width,
                                   height: defaultSize.height)
-                let newObj = TextObject(rect: rect,
+                let rectClamped = clampRect(rect, in: fitted)
+                let newObj = TextObject(rect: rectClamped,
                                         text: "Text",
                                         fontSize: textFontSize,
                                         textColor: textColor,
@@ -747,6 +778,7 @@ struct ContentView: View {
                                         bgColor: textBGColor)
                 pushUndoSnapshot()
                 objects.append(.text(newObj))
+                if objectSpaceSize == nil { objectSpaceSize = fitted }
                 selectedObjectID = newObj.id
                 editingText = newObj.text
                 showTextEditor = true
@@ -784,11 +816,21 @@ struct ContentView: View {
                     }
                     switch objects[idx] {
                     case .line(let o):
-                        objects[idx] = (activeHandle == .none) ? .line(o.moved(by: delta)) : .line(o.resizing(activeHandle, to: p))
+                        let updated = (activeHandle == .none) ? o.moved(by: delta) : o.resizing(activeHandle, to: p)
+                        var u = updated
+                        u.start = clampPoint(u.start, in: fitted)
+                        u.end   = clampPoint(u.end,   in: fitted)
+                        objects[idx] = .line(u)
                     case .rect(let o):
-                        objects[idx] = (activeHandle == .none) ? .rect(o.moved(by: delta)) : .rect(o.resizing(activeHandle, to: p))
+                        let updated = (activeHandle == .none) ? o.moved(by: delta) : o.resizing(activeHandle, to: p)
+                        let clamped = clampRect(updated.rect, in: fitted)
+                        var u = updated; u.rect = clamped
+                        objects[idx] = .rect(u)
                     case .text(let o):
-                        objects[idx] = (activeHandle == .none) ? .text(o.moved(by: delta)) : .text(o.resizing(activeHandle, to: p))
+                        let updated = (activeHandle == .none) ? o.moved(by: delta) : o.resizing(activeHandle, to: p)
+                        let clamped = clampRect(updated.rect, in: fitted)
+                        var u = updated; u.rect = clamped
+                        objects[idx] = .text(u)
                     }
                     dragStartPoint = p
                 }
@@ -822,6 +864,7 @@ struct ContentView: View {
 
     private func flattenAndSaveInPlace() {
         guard let img = lastCapture else { return }
+        if objectSpaceSize == nil { objectSpaceSize = lastFittedSize ?? img.size }
         pushUndoSnapshot()
         if let flattened = rasterize(base: img, objects: objects) {
             lastCapture = flattened
@@ -836,6 +879,7 @@ struct ContentView: View {
 
     private func flattenAndSaveAs() {
         guard let img = lastCapture else { return }
+        if objectSpaceSize == nil { objectSpaceSize = lastFittedSize ?? img.size }
         pushUndoSnapshot()
         if let flattened = rasterize(base: img, objects: objects) {
             lastCapture = flattened
@@ -875,17 +919,18 @@ struct ContentView: View {
         base.draw(in: CGRect(origin: .zero, size: imgSize))
         strokeColor.setStroke(); strokeColor.setFill()
 
-        // Use the last fitted (on-screen) size that objects were laid out in; fall back to image size if unknown
-        let fitted = lastFittedSize ?? imgSize
+        // Use the objectSpaceSize (UI space) that objects were laid out in; fall back to lastFittedSize or image size if unknown
+        let fitted = objectSpaceSize ?? lastFittedSize ?? imgSize
         let scaleX = imgSize.width / max(1, fitted.width)
         let scaleY = imgSize.height / max(1, fitted.height)
+        let scaleW = (scaleX + scaleY) / 2
 
         for obj in objects {
             switch obj {
             case .line(let o):
                 let s = uiToImagePoint(o.start, fitted: fitted, image: imgSize)
                 let e = uiToImagePoint(o.end,   fitted: fitted, image: imgSize)
-                let widthScaled = o.width * scaleX
+                let widthScaled = o.width * scaleW
                 let path = NSBezierPath(); path.lineWidth = widthScaled; path.lineCapStyle = .round
                 path.move(to: s); path.line(to: e); path.stroke()
                 if o.arrow {
@@ -902,7 +947,7 @@ struct ContentView: View {
                 }
             case .rect(let o):
                 let r = uiRectToImageRect(o.rect, fitted: fitted, image: imgSize)
-                let path = NSBezierPath(rect: r); path.lineWidth = o.width * scaleX; path.stroke()
+                let path = NSBezierPath(rect: r); path.lineWidth = o.width * scaleW; path.stroke()
             case .text(let o):
                 let r = uiRectToImageRect(o.rect, fitted: fitted, image: imgSize)
                 if o.bgEnabled {
@@ -914,18 +959,18 @@ struct ContentView: View {
                 para.alignment = .left
                 para.lineBreakMode = .byWordWrapping
                 let attrs: [NSAttributedString.Key: Any] = [
-                    .font: NSFont.systemFont(ofSize: o.fontSize),
+                    .font: NSFont.systemFont(ofSize: o.fontSize * scaleW),
                     .foregroundColor: o.textColor,
                     .paragraphStyle: para
                 ]
-                NSString(string: o.text).draw(in: r.insetBy(dx: 4, dy: 4), withAttributes: attrs)
+                NSString(string: o.text).draw(in: r.insetBy(dx: 4 * scaleW, dy: 4 * scaleW), withAttributes: attrs)
             }
         }
 
         NSGraphicsContext.restoreGraphicsState()
         return composed
     }
-
+    
     private func deleteSelectedObject() {
         guard let sel = selectedObjectID, let idx = objects.firstIndex(where: { $0.id == sel }) else { return }
         pushUndoSnapshot()
@@ -950,12 +995,16 @@ struct ContentView: View {
         objects = next.objects
     }
 
-    private func uiRectToImageRect(_ r: CGRect, fitted: CGSize, image: CGSize) -> CGRect {
-        let scaleX = image.width / max(1, fitted.width)
-        let scaleY = image.height / max(1, fitted.height)
-        let x = r.origin.x * scaleX
-        let y = (fitted.height - (r.origin.y + r.height)) * scaleY // convert top-left origin to bottom-left
-        return CGRect(x: x, y: y, width: r.width * scaleX, height: r.height * scaleY)
+    private func clampPoint(_ p: CGPoint, in fitted: CGSize) -> CGPoint {
+        CGPoint(x: min(max(0, p.x), fitted.width),
+                y: min(max(0, p.y), fitted.height))
+    }
+    private func clampRect(_ r: CGRect, in fitted: CGSize) -> CGRect {
+        var x = max(0, min(r.origin.x, fitted.width))
+        var y = max(0, min(r.origin.y, fitted.height))
+        var w = max(0, min(r.width,  fitted.width  - x))
+        var h = max(0, min(r.height, fitted.height - y))
+        return CGRect(x: x, y: y, width: w, height: h)
     }
 
     private func fittedImageSize(original: CGSize, in container: CGSize) -> CGSize {
@@ -964,10 +1013,23 @@ struct ContentView: View {
     }
 
     private func uiToImagePoint(_ p: CGPoint, fitted: CGSize, image: CGSize) -> CGPoint {
+        let p = clampPoint(p, in: fitted)
         let scaleX = image.width / max(1, fitted.width)
         let scaleY = image.height / max(1, fitted.height)
-        // UI space: (0,0) is top-left of fitted image (Y down); Image space: (0,0) is bottom-left (Y up)
+        // UI: (0,0) top-left (Y down) -> Image: (0,0) bottom-left (Y up)
         return CGPoint(x: p.x * scaleX, y: (fitted.height - p.y) * scaleY)
+    }
+
+    private func uiRectToImageRect(_ r: CGRect, fitted: CGSize, image: CGSize) -> CGRect {
+        let r = clampRect(r, in: fitted)
+        let scaleX = image.width / max(1, fitted.width)
+        let scaleY = image.height / max(1, fitted.height)
+        let x = r.origin.x * scaleX
+        let width = r.width * scaleX
+        let height = r.height * scaleY
+        // Convert Y coordinate: UI top-left origin to image bottom-left origin
+        let y = (fitted.height - (r.origin.y + r.height)) * scaleY
+        return CGRect(x: x, y: y, width: width, height: height)
     }
 
     // Shift snapping for straight lines at 0°/45°/90°
@@ -1628,3 +1690,28 @@ private struct PenColorButton: View {
 }
 
 
+
+    // Scales a Drawable from an old UI space to a new one (non-uniform allowed).
+    private func scaleDrawable(_ d: Drawable, sx: CGFloat, sy: CGFloat) -> Drawable {
+        let avgScale = (sx + sy) / 2
+        switch d {
+        case .line(let o):
+            var c = o
+            c.start.x *= sx; c.start.y *= sy
+            c.end.x   *= sx; c.end.y   *= sy
+            c.width   = max(1, c.width * avgScale)
+            return .line(c)
+        case .rect(let o):
+            var c = o
+            c.rect.origin.x *= sx; c.rect.origin.y *= sy
+            c.rect.size.width  *= sx; c.rect.size.height *= sy
+            c.width = max(1, c.width * avgScale)
+            return .rect(c)
+        case .text(let o):
+            var c = o
+            c.rect.origin.x *= sx; c.rect.origin.y *= sy
+            c.rect.size.width  *= sx; c.rect.size.height *= sy
+            c.fontSize = max(6, c.fontSize * avgScale)
+            return .text(c)
+        }
+    }
