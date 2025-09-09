@@ -47,6 +47,15 @@ struct ContentView: View {
 
     @State private var showTextEditor: Bool = false
     @State private var editingText: String = ""
+    @State private var lastDraftTick: CFTimeInterval = 0
+
+    // Throttle rapid draft updates to ~90 Hz (for drag gestures)
+    private func allowDraftTick(interval: Double = 1.0/90.0) -> Bool {
+        let now = CACurrentMediaTime()
+        if now - lastDraftTick < interval { return false }
+        lastDraftTick = now
+        return true
+    }
     
 
     var body: some View {
@@ -112,9 +121,12 @@ struct ContentView: View {
                                 .scaleEffect(x: sx, y: sy, anchor: .topLeading)
                                 .frame(width: fitted.width, height: fitted.height, alignment: .topLeading)
                                 .position(x: origin.x + fitted.width/2, y: origin.y + fitted.height/2)
+                                .transaction { $0.disablesAnimations = true }
+                                .compositingGroup()
+                                .drawingGroup()
                                 .contentShape(Rectangle())
                                 .allowsHitTesting(true)
-                                .gesture(pointerGesture(insetOrigin: origin, fitted: fitted, author: author))
+                                .simultaneousGesture(selectedTool == .pointer ? pointerGesture(insetOrigin: origin, fitted: fitted, author: author) : nil)
                                 .simultaneousGesture(selectedTool == .line ? lineGesture(insetOrigin: origin, fitted: fitted, author: author) : nil)
                                 .simultaneousGesture(selectedTool == .rect ? rectGesture(insetOrigin: origin, fitted: fitted, author: author) : nil)
                                 .simultaneousGesture(selectedTool == .text ? textGesture(insetOrigin: origin, fitted: fitted, author: author) : nil)
@@ -632,6 +644,7 @@ struct ContentView: View {
     private func lineGesture(insetOrigin: CGPoint, fitted: CGSize, author: CGSize) -> some Gesture {
         DragGesture(minimumDistance: 0)
             .onChanged { value in
+                guard allowDraftTick() else { return }
                 let pRaw = CGPoint(x: value.location.x - insetOrigin.x, y: value.location.y - insetOrigin.y)
                 let sRaw = CGPoint(x: value.startLocation.x - insetOrigin.x, y: value.startLocation.y - insetOrigin.y)
                 let pA = fittedToAuthorPoint(pRaw, fitted: fitted, author: author)
@@ -731,6 +744,7 @@ struct ContentView: View {
     private func rectGesture(insetOrigin: CGPoint, fitted: CGSize, author: CGSize) -> some Gesture {
         DragGesture(minimumDistance: 0)
             .onChanged { value in
+                guard allowDraftTick() else { return }
                 let startFit = CGPoint(x: value.startLocation.x - insetOrigin.x, y: value.startLocation.y - insetOrigin.y)
                 let currentFit = CGPoint(x: value.location.x - insetOrigin.x, y: value.location.y - insetOrigin.y)
                 let start = fittedToAuthorPoint(startFit, fitted: fitted, author: author)
@@ -1160,10 +1174,11 @@ struct ContentView: View {
         let height: CGFloat
         @State private var hovering = false
         @State private var hoverDebounce = 0
+        @State private var image: NSImage? = nil
 
         var body: some View {
             ZStack {
-                if let img = NSImage(contentsOf: url) {
+                if let img = image {
                     Image(nsImage: img)
                         .resizable()
                         .interpolation(.low)
@@ -1229,6 +1244,14 @@ struct ContentView: View {
                     }
                 }
                 .padding(4)
+            }
+            .onAppear {
+                if image == nil {
+                    image = NSImage(contentsOf: url)
+                }
+            }
+            .onChange(of: url) { newURL in
+                image = NSImage(contentsOf: newURL)
             }
         }
     }
@@ -1732,3 +1755,4 @@ private struct PenColorButton: View {
         let sy = author.height / max(1, fitted.height)
         return CGRect(x: r.origin.x * sx, y: r.origin.y * sy, width: r.size.width * sx, height: r.size.height * sy)
     }
+
