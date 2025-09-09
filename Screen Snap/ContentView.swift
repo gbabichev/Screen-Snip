@@ -17,6 +17,7 @@ struct ContentView: View {
     @State private var draftRect: CGRect? = nil
     @State private var strokeWidth: CGFloat = 3
     @State private var strokeColor: NSColor = .black
+    @State private var lineHasArrow: Bool = false
     // Snaps persisted on disk (newest first). Each element is a file URL to a PNG.
     @State private var snapURLs: [URL] = []
     @State private var selectedSnapURL: URL? = nil
@@ -33,47 +34,42 @@ struct ContentView: View {
 
                 Group {
                     if let img = lastCapture {
-                        VStack(spacing: 8) {
-                            Text("Last Capture (preview)").font(.caption)
-                            ZStack {
-                                GeometryReader { geo in
-                                    let fitted = fittedImageSize(original: img.size, in: geo.size)
-                                    let origin = CGPoint(
-                                        x: (geo.size.width - fitted.width)/2,
-                                        y: (geo.size.height - fitted.height)/2
-                                    )
+                        ZStack {
+                            GeometryReader { geo in
+                                let fitted = fittedImageSize(original: img.size, in: geo.size)
+                                let origin = CGPoint(
+                                    x: (geo.size.width - fitted.width)/2,
+                                    y: (geo.size.height - fitted.height)/2
+                                )
 
-                                    // Base image
-                                    Image(nsImage: img)
-                                        .resizable()
-                                        .interpolation(.high)
-                                        .frame(width: fitted.width, height: fitted.height)
-                                        .position(x: origin.x + fitted.width/2, y: origin.y + fitted.height/2)
-
-                                    // Lines overlay (coordinates in the displayed image space)
-                                    ZStack {
-                                        if let d = draft {
-                                            Path { p in p.move(to: d.start); p.addLine(to: d.end) }
-                                                .stroke(Color(nsColor: strokeColor), style: StrokeStyle(lineWidth: d.width, dash: [6,4]))
-                                        }
-                                        if let r = draftRect {
-                                            Rectangle()
-                                                .path(in: r)
-                                                .stroke(Color(nsColor: strokeColor), style: StrokeStyle(lineWidth: strokeWidth, dash: [6,4]))
-                                        }
-                                    }
+                                // Base image
+                                Image(nsImage: img)
+                                    .resizable()
+                                    .interpolation(.high)
                                     .frame(width: fitted.width, height: fitted.height)
                                     .position(x: origin.x + fitted.width/2, y: origin.y + fitted.height/2)
-                                    .contentShape(Rectangle())
-                                    .allowsHitTesting(selectedTool != .pointer)
-                                    .gesture(selectedTool == .line ? lineGesture(insetOrigin: origin, fitted: fitted) : nil)
-                                    .simultaneousGesture(selectedTool == .rect ? rectGesture(insetOrigin: origin, fitted: fitted) : nil)
+
+                                // Lines overlay (coordinates in the displayed image space)
+                                ZStack {
+                                    if let d = draft {
+                                        Path { p in p.move(to: d.start); p.addLine(to: d.end) }
+                                            .stroke(Color(nsColor: strokeColor), style: StrokeStyle(lineWidth: d.width, dash: [6,4]))
+                                    }
+                                    if let r = draftRect {
+                                        Rectangle()
+                                            .path(in: r)
+                                            .stroke(Color(nsColor: strokeColor), style: StrokeStyle(lineWidth: strokeWidth, dash: [6,4]))
+                                    }
                                 }
+                                .frame(width: fitted.width, height: fitted.height)
+                                .position(x: origin.x + fitted.width/2, y: origin.y + fitted.height/2)
+                                .contentShape(Rectangle())
+                                .allowsHitTesting(selectedTool != .pointer)
+                                .gesture(selectedTool == .line ? lineGesture(insetOrigin: origin, fitted: fitted) : nil)
+                                .simultaneousGesture(selectedTool == .rect ? rectGesture(insetOrigin: origin, fitted: fitted) : nil)
                             }
-                            .frame(maxWidth: .infinity, maxHeight: .infinity)
-                            .border(.secondary)
                         }
-                        .padding()
+                        .frame(maxWidth: .infinity, maxHeight: .infinity)
                     } else {
                         VStack(spacing: 8) {
                             Image(systemName: "camera")
@@ -212,6 +208,9 @@ struct ContentView: View {
                     .tint(selectedTool == .pointer ? Color.accentColor : Color.gray)
                     
                     Menu {
+                        Toggle("Arrowhead on end", isOn: $lineHasArrow)
+                        Divider()
+
                         Menu("Line Width") {
                             ForEach([1,2,3,4,6,8,12,16], id: \.self) { w in
                                 Button(action: { strokeWidth = CGFloat(w) }) {
@@ -229,7 +228,7 @@ struct ContentView: View {
                             PenColorButton(current: $strokeColor, color: .white, name: "White")
                         }
                     } label: {
-                        Label("Pen", systemImage: "pencil.and.outline")
+                        Label("Pen", systemImage: "pencil.line")
                             .foregroundStyle(selectedTool == .line ? Color.accentColor : Color.primary)
                     } primaryAction: {
                         selectedTool = .line
@@ -479,7 +478,7 @@ struct ContentView: View {
                 let widthImg = strokeWidth * ((scaleX + scaleY) / 2)
 
                 let committedLine = Line(start: startImg, end: endImg, width: widthImg)
-                if let composed = composeAnnotated(base: base, lines: [committedLine]) {
+                if let composed = composeAnnotated(base: base, lines: [committedLine], arrowHeadAtEnd: lineHasArrow) {
                     commitChange(composed)
                 }
                 draft = nil
@@ -488,7 +487,7 @@ struct ContentView: View {
 
     // finishInlineAnnotation and cancelInlineAnnotation removed; not needed with auto-commit per line.
 
-    private func composeAnnotated(base: NSImage, lines: [Line] = [], rects: [Box] = []) -> NSImage? {
+    private func composeAnnotated(base: NSImage, lines: [Line] = [], rects: [Box] = [], arrowHeadAtEnd: Bool = false) -> NSImage? {
         let imgSize = base.size
         let rep = NSBitmapImageRep(bitmapDataPlanes: nil,
                                    pixelsWide: Int(imgSize.width),
@@ -508,12 +507,43 @@ struct ContentView: View {
         NSGraphicsContext.current = NSGraphicsContext(bitmapImageRep: rep)
         base.draw(in: CGRect(origin: .zero, size: imgSize))
         strokeColor.setStroke()
+        strokeColor.setFill()
+
         for line in lines {
+            // Draw the shaft
             let path = NSBezierPath()
             path.lineWidth = line.width
+            path.lineCapStyle = .round
             path.move(to: line.start)
             path.line(to: line.end)
             path.stroke()
+
+            // Optionally draw an arrowhead at the end
+            if arrowHeadAtEnd {
+                let dx = line.end.x - line.start.x
+                let dy = line.end.y - line.start.y
+                let len = max(1, hypot(dx, dy))
+                // Arrowhead dimensions scale with stroke width, capped by line length
+                let headLength = min(len * 0.8, max(10, 6 * line.width))
+                let headWidth  = max(8, 5 * line.width)
+                let ux = dx / len
+                let uy = dy / len
+                // Base of the triangle
+                let bx = line.end.x - ux * headLength
+                let by = line.end.y - uy * headLength
+                // Perpendicular vector
+                let px = -uy
+                let py = ux
+                let p1 = CGPoint(x: bx + px * (headWidth / 2), y: by + py * (headWidth / 2))
+                let p2 = CGPoint(x: bx - px * (headWidth / 2), y: by - py * (headWidth / 2))
+
+                let tri = NSBezierPath()
+                tri.move(to: line.end)
+                tri.line(to: p1)
+                tri.line(to: p2)
+                tri.close()
+                tri.fill()
+            }
         }
         for box in rects {
             let rectPath = NSBezierPath(rect: box.rect)
