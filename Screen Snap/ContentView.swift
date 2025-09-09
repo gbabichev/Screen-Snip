@@ -162,60 +162,55 @@ struct ContentView: View {
             if let keyMonitor { NSEvent.removeMonitor(keyMonitor); self.keyMonitor = nil }
         }
         .toolbar {
-            // Capture Region button (always available)
-            ToolbarItem(placement: .automatic) {
-                Button(action: startSelection) {
-                    Label("Capture Region", systemImage: "camera.viewfinder")
+            ToolbarItemGroup(placement: .navigation) {
+                Button {
+                    //selectFolders()
+                } label: {
+                    Label("Open Folder", systemImage: "folder")
                 }
-                .keyboardShortcut("2", modifiers: [.command, .shift])
+                .keyboardShortcut("o", modifiers: [.command])
+                
+                Button {
+                    //showSettingsPopover = true
+                } label: {
+                    Label("Settings", systemImage: "gearshape")
+                }
             }
-
+        
             // Items visible only when we have a capture
             if let img = lastCapture {
-                ToolbarItem(placement: .automatic) {
+                
+                ToolbarItemGroup(placement: .principal) {
                     Button(action: { copyToPasteboard(img) }) {
                         Label("Copy Last", systemImage: "doc.on.doc")
                     }
-                }
-
-                // Undo / Redo
-                ToolbarItem(placement: .automatic) {
+                    
                     Button(action: performUndo) {
                         Label("Undo", systemImage: "arrow.uturn.backward")
                     }
                     .keyboardShortcut("z", modifiers: [.command])
                     .disabled(undoStack.isEmpty || lastCapture == nil)
-                }
-                ToolbarItem(placement: .automatic) {
+                    
                     Button(action: performRedo) {
                         Label("Redo", systemImage: "arrow.uturn.forward")
                     }
                     .keyboardShortcut("Z", modifiers: [.command, .shift])
                     .disabled(redoStack.isEmpty || lastCapture == nil)
-                }
-
-                // Save / Save As menu
-                ToolbarItem(placement: .automatic) {
-                    Menu {
-                        Button("Save", action: saveCurrentOverwrite)
-                        Button("Save As…", action: saveAsCurrent)
-                    } label: {
-                        Label("Save", systemImage: "square.and.arrow.down")
-                    } primaryAction: {
-                        saveCurrentOverwrite()
-                    }
-                }
-
-                // Pointer tool button
-                ToolbarItem(placement: .automatic) {
+                    
+//                    Menu {
+//                        Button("Save", action: saveCurrentOverwrite)
+//                        Button("Save As…", action: saveAsCurrent)
+//                    } label: {
+//                        Label("Save", systemImage: "square.and.arrow.down")
+//                    } primaryAction: {
+//                        saveCurrentOverwrite()
+//                    }
+//                    
                     Button(action: { selectedTool = .pointer }) {
                         Label("Pointer", systemImage: "cursorarrow")
                     }
                     .tint(selectedTool == .pointer ? Color.accentColor : Color.gray)
-                }
-
-                // Pen menu with primaryAction to select the pen tool
-                ToolbarItem(placement: .automatic) {
+                    
                     Menu {
                         Menu("Line Width") {
                             ForEach([1,2,3,4,6,8,12,16], id: \.self) { w in
@@ -239,10 +234,7 @@ struct ContentView: View {
                     } primaryAction: {
                         selectedTool = .line
                     }
-                }
-
-                // Shapes menu with primaryAction to select the rectangle tool
-                ToolbarItem(placement: .automatic) {
+                    
                     Menu {
                         // Reuse stroke controls for shapes
                         Menu("Line Width") {
@@ -271,22 +263,20 @@ struct ContentView: View {
                         selectedTool = .rect
                     }
                 }
+                
 
-                // Line tool controls: Only show Shift-snap hint when tool is .line
-                if selectedTool == .line {
-                    ToolbarItem(placement: .status) {
-                        Text("Hold ⇧ to snap (0°/45°/90°)")
-                            .font(.footnote)
-                            .foregroundStyle(.secondary)
-                    }
+            }        else {
+                ToolbarItem(placement: .principal) {
+                    Spacer()
                 }
-                if selectedTool == .rect {
-                    ToolbarItem(placement: .status) {
-                        Text("Hold ⇧ to make a square")
-                            .font(.footnote)
-                            .foregroundStyle(.secondary)
-                    }
+            }
+
+            // Capture Region button (always available)
+            ToolbarItem(placement: .primaryAction) {
+                Button(action: startSelection) {
+                    Label("Capture Region", systemImage: "camera.viewfinder")
                 }
+                .keyboardShortcut("2", modifiers: [.command, .shift])
             }
         }
     }
