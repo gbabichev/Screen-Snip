@@ -6,7 +6,7 @@ import AppKit
 import VideoToolbox
 import UniformTypeIdentifiers
 
-private enum Tool { case pointer, line, rect, text, crop }
+private enum Tool { case pointer, line, rect, text, crop, badge }
 
 struct ContentView: View {
     @State private var lastCapture: NSImage? = nil
@@ -45,6 +45,8 @@ struct ContentView: View {
     @State private var textColor: NSColor = .white
     @State private var textBGEnabled: Bool = true
     @State private var textBGColor: NSColor = .black.withAlphaComponent(0.6)
+    @State private var badgeColor: NSColor = .systemRed
+    @State private var badgeCount: Int = 0
 
     @State private var lastFittedSize: CGSize? = nil
     @State private var objectSpaceSize: CGSize? = nil  // tracks the UI coordinate space size the objects are authored in
@@ -110,6 +112,18 @@ struct ContentView: View {
                                                 .background(o.bgEnabled ? Color(nsColor: o.bgColor) : Color.clear)
                                                 .position(x: o.rect.midX, y: o.rect.midY)
                                                 .overlay { if selectedObjectID == o.id { selectionForRect(RectObject(rect: o.rect, width: 1)) } }
+                                        case .badge(let o):
+                                            Circle()
+                                                .fill(Color(nsColor: o.fillColor))
+                                                .frame(width: o.rect.width, height: o.rect.height)
+                                                .position(x: o.rect.midX, y: o.rect.midY)
+                                                .overlay {
+                                                    Text("\(o.number)")
+                                                        .font(.system(size: max(10, min(o.rect.width, o.rect.height) * 0.6), weight: .bold))
+                                                        .foregroundStyle(Color(nsColor: o.textColor))
+                                                        .position(x: o.rect.midX, y: o.rect.midY)
+                                                }
+                                                .overlay { if selectedObjectID == o.id { selectionForRect(RectObject(rect: o.rect, width: 1)) } }
                                         }
                                     }
                                     // Draft feedback while creating (draft is stored in author space)
@@ -165,6 +179,7 @@ struct ContentView: View {
                                 .simultaneousGesture(selectedTool == .rect ? rectGesture(insetOrigin: origin, fitted: fitted, author: author) : nil)
                                 .simultaneousGesture(selectedTool == .text ? textGesture(insetOrigin: origin, fitted: fitted, author: author) : nil)
                                 .simultaneousGesture(selectedTool == .crop ? cropGesture(insetOrigin: origin, fitted: fitted, author: author) : nil)
+                                .simultaneousGesture(selectedTool == .badge ? badgeGesture(insetOrigin: origin, fitted: fitted, author: author) : nil)
                                 .onAppear {
                                     lastFittedSize = fitted
                                     if objectSpaceSize == nil { objectSpaceSize = fitted }
@@ -519,6 +534,30 @@ struct ContentView: View {
                     }
                     .glassEffect(selectedTool == .crop ? .regular.tint(.blue) : .regular)
                     .help("Drag to select an area to crop")
+                    
+                    Menu {
+                        Menu("Color") {
+                            PenColorButton(current: $badgeColor, color: .systemRed,   name: "Red")
+                            PenColorButton(current: $badgeColor, color: .blue,        name: "Blue")
+                            PenColorButton(current: $badgeColor, color: .black,       name: "Black")
+                            PenColorButton(current: $badgeColor, color: .systemGreen, name: "Green")
+                            PenColorButton(current: $badgeColor, color: .systemYellow,name: "Yellow")
+                            PenColorButton(current: $badgeColor, color: .white,       name: "White")
+                        }
+                        Divider()
+                        Button("Reset Counter") { badgeCount = 0 }
+                    } label: {
+                        Label("Badge", systemImage: "1.circle")
+                            .symbolRenderingMode(.monochrome)
+                            .foregroundStyle(selectedTool == .badge ? Color.white : Color.primary)
+                            .tint(selectedTool == .badge ? .white : .primary)
+                    } primaryAction: {
+                        selectedTool = .badge
+                        selectedObjectID = nil; activeHandle = .none; cropDraftRect = nil; cropRect = nil; cropHandle = .none
+                    }
+                    .glassEffect(selectedTool == .badge ? .regular.tint(.blue) : .regular)
+                    .help("Click to place numbered badge")
+                    
 
                 }
                 
@@ -538,6 +577,27 @@ struct ContentView: View {
             }
         }
     }
+
+    private func badgeGesture(insetOrigin: CGPoint, fitted: CGSize, author: CGSize) -> some Gesture {
+        DragGesture(minimumDistance: 0)
+            .onEnded { value in
+                let pFit = CGPoint(x: value.location.x - insetOrigin.x, y: value.location.y - insetOrigin.y)
+                let p = fittedToAuthorPoint(pFit, fitted: fitted, author: author)
+                let diameter: CGFloat = 32
+                let rect = CGRect(x: max(0, p.x - diameter/2),
+                                  y: max(0, p.y - diameter/2),
+                                  width: diameter,
+                                  height: diameter)
+                let rectClamped = clampRect(rect, in: author)
+                badgeCount &+= 1
+                let newObj = BadgeObject(rect: rectClamped, number: badgeCount, fillColor: badgeColor, textColor: .white)
+                pushUndoSnapshot()
+                objects.append(.badge(newObj))
+                if objectSpaceSize == nil { objectSpaceSize = author }
+                selectedObjectID = newObj.id
+            }
+    }
+
 
     private func cropGesture(insetOrigin: CGPoint, fitted: CGSize, author: CGSize) -> some Gesture {
         DragGesture(minimumDistance: 0)
@@ -994,6 +1054,7 @@ struct ContentView: View {
                         case .line(let o): return o.handleHitTest(p) != .none || o.hitTest(p)
                         case .rect(let o): return o.handleHitTest(p) != .none || o.hitTest(p)
                         case .text(let o): return o.handleHitTest(p) != .none || o.hitTest(p)
+                        case .badge(let o): return o.handleHitTest(p) != .none || o.hitTest(p)
                         }
                     }) {
                         selectedObjectID = objects[idx].id
@@ -1001,6 +1062,7 @@ struct ContentView: View {
                         case .line(let o): activeHandle = o.handleHitTest(p)
                         case .rect(let o): activeHandle = o.handleHitTest(p)
                         case .text(let o): activeHandle = o.handleHitTest(p)
+                        case .badge(let o): activeHandle = o.handleHitTest(p)
                         }
                     } else {
                         selectedObjectID = nil
@@ -1029,6 +1091,11 @@ struct ContentView: View {
                         let clamped = clampRect(updated.rect, in: author)
                         var u = updated; u.rect = clamped
                         objects[idx] = .text(u)
+                    case .badge(var o):
+                        let updated = (activeHandle == .none) ? o.moved(by: delta) : o.resizing(activeHandle, to: p)
+                        let clamped = clampRect(updated.rect, in: author)
+                        var u = updated; u.rect = clamped
+                        objects[idx] = .badge(u)
                     }
                     dragStartPoint = p
                 }
@@ -1162,6 +1229,20 @@ struct ContentView: View {
                     .paragraphStyle: para
                 ]
                 NSString(string: o.text).draw(in: r.insetBy(dx: 4 * scaleW, dy: 4 * scaleW), withAttributes: attrs)
+                
+            case .badge(let o):
+                let r = uiRectToImageRect(o.rect, fitted: fitted, image: imgSize)
+                let circlePath = NSBezierPath(ovalIn: r)
+                o.fillColor.setFill()
+                circlePath.fill()
+                let para = NSMutableParagraphStyle(); para.alignment = .center
+                let fontSize = min(r.width, r.height) * 0.6
+                let attrs: [NSAttributedString.Key: Any] = [
+                    .font: NSFont.systemFont(ofSize: fontSize, weight: .bold),
+                    .foregroundColor: o.textColor,
+                    .paragraphStyle: para
+                ]
+                NSString(string: "\(o.number)").draw(in: r, withAttributes: attrs)
             }
         }
 
@@ -1704,18 +1785,84 @@ private struct TextObject: DrawableObject {
     }
 }
 
+private struct BadgeObject: DrawableObject {
+    let id: UUID
+    var rect: CGRect
+    var number: Int
+    var fillColor: NSColor
+    var textColor: NSColor
+
+    init(id: UUID = UUID(), rect: CGRect, number: Int, fillColor: NSColor, textColor: NSColor) {
+        self.id = id; self.rect = rect; self.number = number; self.fillColor = fillColor; self.textColor = textColor
+    }
+
+    static func == (lhs: BadgeObject, rhs: BadgeObject) -> Bool {
+        lhs.id == rhs.id && lhs.rect == rhs.rect && lhs.number == rhs.number && lhs.fillColor == rhs.fillColor && lhs.textColor == rhs.textColor
+    }
+
+    func drawPath(in _: CGSize) -> Path { Circle().path(in: rect) }
+
+    func hitTest(_ p: CGPoint) -> Bool {
+        let c = CGPoint(x: rect.midX, y: rect.midY)
+        let radius = max(rect.width, rect.height) / 2 + 6
+        return hypot(p.x - c.x, p.y - c.y) <= radius
+    }
+
+    func handleHitTest(_ p: CGPoint) -> Handle {
+        let r: CGFloat = 8
+        let tl = CGRect(x: rect.minX - r, y: rect.minY - r, width: 2*r, height: 2*r)
+        let tr = CGRect(x: rect.maxX - r, y: rect.minY - r, width: 2*r, height: 2*r)
+        let bl = CGRect(x: rect.minX - r, y: rect.maxY - r, width: 2*r, height: 2*r)
+        let br = CGRect(x: rect.maxX - r, y: rect.maxY - r, width: 2*r, height: 2*r)
+        if tl.contains(p) { return .rectTopLeft }
+        if tr.contains(p) { return .rectTopRight }
+        if bl.contains(p) { return .rectBottomLeft }
+        if br.contains(p) { return .rectBottomRight }
+        return .none
+    }
+
+    func moved(by d: CGSize) -> BadgeObject {
+        var c = self
+        c.rect.origin.x += d.width
+        c.rect.origin.y += d.height
+        return c
+    }
+
+    func resizing(_ handle: Handle, to p: CGPoint) -> BadgeObject {
+        var c = self
+        switch handle {
+        case .rectTopLeft:
+            c.rect = CGRect(x: p.x, y: p.y, width: rect.maxX - p.x, height: rect.maxY - p.y)
+        case .rectTopRight:
+            c.rect = CGRect(x: rect.minX, y: p.y, width: p.x - rect.minX, height: rect.maxY - p.y)
+        case .rectBottomLeft:
+            c.rect = CGRect(x: p.x, y: rect.minY, width: rect.maxX - p.x, height: p.y - rect.minY)
+        case .rectBottomRight:
+            c.rect = CGRect(x: rect.minX, y: rect.minY, width: p.x - rect.minX, height: p.y - rect.minY)
+        default: break
+        }
+        let side = max(8, (c.rect.width + c.rect.height) / 2)
+        c.rect.size = CGSize(width: side, height: side)
+        return c
+    }
+}
+
 private enum Drawable: Identifiable, Equatable {
     case line(LineObject)
     case rect(RectObject)
     case text(TextObject)
+    case badge(BadgeObject)
+
     var id: UUID {
         switch self {
         case .line(let o): return o.id
         case .rect(let o): return o.id
         case .text(let o): return o.id
+        case .badge(let o): return o.id
         }
     }
 }
+
 // MARK: - Inline Annotation Types
 private struct Line: Identifiable {
     let id = UUID()
@@ -1920,6 +2067,14 @@ private struct PenColorButton: View {
             c.rect.size.width  *= sx; c.rect.size.height *= sy
             c.fontSize = max(6, c.fontSize * avgScale)
             return .text(c)
+        case .badge(let o):
+            var c = o
+            c.rect.origin.x *= sx; c.rect.origin.y *= sy
+            c.rect.size.width  *= sx; c.rect.size.height *= sy
+            // Keep badge roughly square after non-uniform scaling
+            let side = max(8, (c.rect.width + c.rect.height) / 2)
+            c.rect.size = CGSize(width: side, height: side)
+            return .badge(c)
         }
     }
 
