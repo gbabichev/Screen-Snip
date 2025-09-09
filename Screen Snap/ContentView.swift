@@ -6,7 +6,7 @@ import AppKit
 import VideoToolbox
 import UniformTypeIdentifiers
 
-private enum Tool { case pointer, line, rect }
+private enum Tool { case pointer, line, rect, text }
 
 struct ContentView: View {
     @State private var lastCapture: NSImage? = nil
@@ -35,6 +35,17 @@ struct ContentView: View {
     @State private var redoStack: [Snapshot] = []
     @State private var pushedDragUndo = false
     @State private var keyMonitor: Any? = nil
+    
+    @State private var textFontSize: CGFloat = 18
+    @State private var textColor: NSColor = .white
+    @State private var textBGEnabled: Bool = true
+    @State private var textBGColor: NSColor = .black.withAlphaComponent(0.6)
+
+    @State private var lastFittedSize: CGSize? = nil
+
+    @State private var showTextEditor: Bool = false
+    @State private var editingText: String = ""
+    
 
     var body: some View {
         ZStack(alignment: .topLeading) {
@@ -71,6 +82,15 @@ struct ContentView: View {
                                             o.drawPath(in: fitted)
                                                 .stroke(Color(nsColor: strokeColor), style: StrokeStyle(lineWidth: o.width))
                                                 .overlay { if selectedObjectID == o.id { selectionForRect(o) } }
+                                        case .text(let o):
+                                            Text(o.text.isEmpty ? " " : o.text)
+                                                .font(.system(size: o.fontSize))
+                                                .foregroundStyle(Color(nsColor: o.textColor))
+                                                .frame(width: o.rect.width, height: o.rect.height, alignment: .topLeading)
+                                                .padding(4)
+                                                .background(o.bgEnabled ? Color(nsColor: o.bgColor) : Color.clear)
+                                                .position(x: o.rect.midX, y: o.rect.midY)
+                                                .overlay { if selectedObjectID == o.id { selectionForRect(RectObject(rect: o.rect, width: 1)) } }
                                         }
                                     }
                                     // Draft feedback while creating
@@ -90,6 +110,9 @@ struct ContentView: View {
                                 .gesture(pointerGesture(insetOrigin: origin, fitted: fitted))
                                 .simultaneousGesture(selectedTool == .line ? lineGesture(insetOrigin: origin, fitted: fitted) : nil)
                                 .simultaneousGesture(selectedTool == .rect ? rectGesture(insetOrigin: origin, fitted: fitted) : nil)
+                                .simultaneousGesture(selectedTool == .text ? textGesture(insetOrigin: origin, fitted: fitted) : nil)
+                                .onAppear { lastFittedSize = fitted }
+                                .onChange(of: geo.size) { _ in lastFittedSize = fitted }
                             }
                         }
                         .frame(maxWidth: .infinity, maxHeight: .infinity)
@@ -163,8 +186,9 @@ struct ContentView: View {
         }
         .onAppear {
             loadExistingSnaps()
-            // Listen for Cmd+Z / Shift+Cmd+Z globally while this view is active
+            // Listen for Cmd+Z / Shift+Cmd+Z globally while this view is active, and Delete for selected objects
             keyMonitor = NSEvent.addLocalMonitorForEvents(matching: .keyDown) { event in
+                // Cmd+Z / Shift+Cmd+Z for Undo/Redo
                 if event.modifierFlags.contains(.command), let chars = event.charactersIgnoringModifiers?.lowercased() {
                     if chars == "z" {
                         if event.modifierFlags.contains(.shift) {
@@ -175,11 +199,47 @@ struct ContentView: View {
                         return nil // consume
                     }
                 }
+
+                // Delete or Forward Delete to remove selected object (no Command modifier)
+                if !event.modifierFlags.contains(.command) {
+                    if event.keyCode == 51 || event.keyCode == 117 { // delete/backspace or forward delete
+                        if selectedObjectID != nil {
+                            deleteSelectedObject()
+                            return nil // consume
+                        }
+                    }
+                }
                 return event
             }
         }
         .onDisappear {
             if let keyMonitor { NSEvent.removeMonitor(keyMonitor); self.keyMonitor = nil }
+        }
+        .sheet(isPresented: $showTextEditor) {
+            VStack(alignment: .leading, spacing: 12) {
+                Text("Edit Text").font(.headline)
+                TextEditor(text: $editingText)
+                    .frame(minHeight: 120)
+                    .font(.system(size: textFontSize))
+                    .overlay(RoundedRectangle(cornerRadius: 6).stroke(Color.secondary.opacity(0.3)))
+                HStack {
+                    Spacer()
+                    Button("Cancel") { showTextEditor = false }
+                    Button("Save") {
+                        if let sel = selectedObjectID,
+                           let idx = objects.firstIndex(where: { $0.id == sel }) {
+                            if case .text(var o) = objects[idx] {
+                                o.text = editingText
+                                objects[idx] = .text(o)
+                            }
+                        }
+                        showTextEditor = false
+                    }
+                    .keyboardShortcut(.defaultAction)
+                }
+            }
+            .padding(16)
+            .frame(width: 420)
         }
         .toolbar {
             ToolbarItemGroup(placement: .navigation) {
@@ -267,6 +327,62 @@ struct ContentView: View {
                     }
                     .glassEffect(selectedTool == .line ? .regular.tint(.blue) : .regular)
 
+                    Menu {
+                        Menu("Font Size") {
+                            ForEach([10,12,14,16,18,22,26,32,40,48], id: \.self) { s in
+                                Button(action: { textFontSize = CGFloat(s) }) {
+                                    if Int(textFontSize) == s { Image(systemName: "checkmark") }
+                                    Text("\(s) pt")
+                                }
+                            }
+                        }
+                        Menu("Text Color") {
+                            PenColorButton(current: $textColor, color: .black, name: "Black")
+                            PenColorButton(current: $textColor, color: .white, name: "White")
+                            PenColorButton(current: $textColor, color: .red, name: "Red")
+                            PenColorButton(current: $textColor, color: .blue, name: "Blue")
+                            PenColorButton(current: $textColor, color: .systemGreen, name: "Green")
+                            PenColorButton(current: $textColor, color: .systemYellow, name: "Yellow")
+                        }
+                        Toggle("Background", isOn: $textBGEnabled)
+                        Menu("Background Color") {
+                            PenColorButton(current: $textBGColor, color: .black.withAlphaComponent(0.6), name: "Black 60%")
+                            PenColorButton(current: $textBGColor, color: NSColor.white.withAlphaComponent(0.7), name: "White 70%")
+                            PenColorButton(current: $textBGColor, color: NSColor.red.withAlphaComponent(0.5), name: "Red 50%")
+                            PenColorButton(current: $textBGColor, color: NSColor.blue.withAlphaComponent(0.5), name: "Blue 50%")
+                            PenColorButton(current: $textBGColor, color: NSColor.systemGreen.withAlphaComponent(0.5), name: "Green 50%")
+                            PenColorButton(current: $textBGColor, color: NSColor.systemYellow.withAlphaComponent(0.5), name: "Yellow 50%")
+                        }
+                        Divider()
+                        Button("Edit Text…") {
+                            if let sel = selectedObjectID,
+                               let idx = objects.firstIndex(where: { $0.id == sel }) {
+                                if case .text(let o) = objects[idx] {
+                                    editingText = o.text
+                                    showTextEditor = true
+                                }
+                            } else if let img = lastCapture {
+                                let fitted = fittedImageSize(original: img.size, in: CGSize(width: img.size.width, height: img.size.height))
+                                let rect = CGRect(x: max(0, fitted.width/2 - 120), y: max(0, fitted.height/2 - 40), width: 240, height: 80)
+                                let newObj = TextObject(rect: rect, text: "Text", fontSize: textFontSize, textColor: textColor, bgEnabled: textBGEnabled, bgColor: textBGColor)
+                                pushUndoSnapshot()
+                                objects.append(.text(newObj))
+                                selectedObjectID = newObj.id
+                                editingText = newObj.text
+                                showTextEditor = true
+                            }
+                        }
+                    } label: {
+                        Label("Text", systemImage: "textformat")
+                            .symbolRenderingMode(.monochrome)
+                            .foregroundStyle(selectedTool == .text ? Color.white : Color.primary)
+                            .tint(selectedTool == .text ? .white : .primary)
+                    } primaryAction: {
+                        selectedTool = .text
+                        selectedObjectID = nil; activeHandle = .none
+                    }
+                    .glassEffect(selectedTool == .text ? .regular.tint(.blue) : .regular)
+                    
                     
                     Menu {
                         // Reuse stroke controls for shapes
@@ -614,6 +730,29 @@ struct ContentView: View {
             }
     }
 
+    private func textGesture(insetOrigin: CGPoint, fitted: CGSize) -> some Gesture {
+        DragGesture(minimumDistance: 0)
+            .onEnded { value in
+                let p = CGPoint(x: value.location.x - insetOrigin.x, y: value.location.y - insetOrigin.y)
+                let defaultSize = CGSize(width: 240, height: 80)
+                let rect = CGRect(x: max(0, p.x - defaultSize.width/2),
+                                  y: max(0, p.y - defaultSize.height/2),
+                                  width: defaultSize.width,
+                                  height: defaultSize.height)
+                let newObj = TextObject(rect: rect,
+                                        text: "Text",
+                                        fontSize: textFontSize,
+                                        textColor: textColor,
+                                        bgEnabled: textBGEnabled,
+                                        bgColor: textBGColor)
+                pushUndoSnapshot()
+                objects.append(.text(newObj))
+                selectedObjectID = newObj.id
+                editingText = newObj.text
+                showTextEditor = true
+            }
+    }
+    
     private func pointerGesture(insetOrigin: CGPoint, fitted: CGSize) -> some Gesture {
         DragGesture(minimumDistance: 0)
             .onChanged { value in
@@ -624,12 +763,14 @@ struct ContentView: View {
                         switch obj {
                         case .line(let o): return o.handleHitTest(p) != .none || o.hitTest(p)
                         case .rect(let o): return o.handleHitTest(p) != .none || o.hitTest(p)
+                        case .text(let o): return o.handleHitTest(p) != .none || o.hitTest(p)
                         }
                     }) {
                         selectedObjectID = objects[idx].id
                         switch objects[idx] {
                         case .line(let o): activeHandle = o.handleHitTest(p)
                         case .rect(let o): activeHandle = o.handleHitTest(p)
+                        case .text(let o): activeHandle = o.handleHitTest(p)
                         }
                     } else {
                         selectedObjectID = nil
@@ -646,6 +787,8 @@ struct ContentView: View {
                         objects[idx] = (activeHandle == .none) ? .line(o.moved(by: delta)) : .line(o.resizing(activeHandle, to: p))
                     case .rect(let o):
                         objects[idx] = (activeHandle == .none) ? .rect(o.moved(by: delta)) : .rect(o.resizing(activeHandle, to: p))
+                    case .text(let o):
+                        objects[idx] = (activeHandle == .none) ? .text(o.moved(by: delta)) : .text(o.resizing(activeHandle, to: p))
                     }
                     dragStartPoint = p
                 }
@@ -732,18 +875,24 @@ struct ContentView: View {
         base.draw(in: CGRect(origin: .zero, size: imgSize))
         strokeColor.setStroke(); strokeColor.setFill()
 
+        // Use the last fitted (on-screen) size that objects were laid out in; fall back to image size if unknown
+        let fitted = lastFittedSize ?? imgSize
+        let scaleX = imgSize.width / max(1, fitted.width)
+        let scaleY = imgSize.height / max(1, fitted.height)
+
         for obj in objects {
             switch obj {
             case .line(let o):
-                let s = uiToImagePoint(o.start, fitted: imgSize, image: imgSize)
-                let e = uiToImagePoint(o.end,   fitted: imgSize, image: imgSize)
-                let path = NSBezierPath(); path.lineWidth = o.width; path.lineCapStyle = .round
+                let s = uiToImagePoint(o.start, fitted: fitted, image: imgSize)
+                let e = uiToImagePoint(o.end,   fitted: fitted, image: imgSize)
+                let widthScaled = o.width * scaleX
+                let path = NSBezierPath(); path.lineWidth = widthScaled; path.lineCapStyle = .round
                 path.move(to: s); path.line(to: e); path.stroke()
                 if o.arrow {
                     let dx = e.x - s.x, dy = e.y - s.y
                     let len = max(1, hypot(dx, dy))
-                    let headLength = min(len * 0.8, max(10, 6 * o.width))
-                    let headWidth  = max(8, 5 * o.width)
+                    let headLength = min(len * 0.8, max(10, 6 * widthScaled))
+                    let headWidth  = max(8, 5 * widthScaled)
                     let ux = dx/len, uy = dy/len
                     let bx = e.x - ux * headLength, by = e.y - uy * headLength
                     let px = -uy, py = ux
@@ -752,13 +901,37 @@ struct ContentView: View {
                     let tri = NSBezierPath(); tri.move(to: e); tri.line(to: p1); tri.line(to: p2); tri.close(); tri.fill()
                 }
             case .rect(let o):
-                let r = uiRectToImageRect(o.rect, fitted: imgSize, image: imgSize)
-                let path = NSBezierPath(rect: r); path.lineWidth = o.width; path.stroke()
+                let r = uiRectToImageRect(o.rect, fitted: fitted, image: imgSize)
+                let path = NSBezierPath(rect: r); path.lineWidth = o.width * scaleX; path.stroke()
+            case .text(let o):
+                let r = uiRectToImageRect(o.rect, fitted: fitted, image: imgSize)
+                if o.bgEnabled {
+                    let bgPath = NSBezierPath(rect: r)
+                    o.bgColor.setFill()
+                    bgPath.fill()
+                }
+                let para = NSMutableParagraphStyle()
+                para.alignment = .left
+                para.lineBreakMode = .byWordWrapping
+                let attrs: [NSAttributedString.Key: Any] = [
+                    .font: NSFont.systemFont(ofSize: o.fontSize),
+                    .foregroundColor: o.textColor,
+                    .paragraphStyle: para
+                ]
+                NSString(string: o.text).draw(in: r.insetBy(dx: 4, dy: 4), withAttributes: attrs)
             }
         }
 
         NSGraphicsContext.restoreGraphicsState()
         return composed
+    }
+
+    private func deleteSelectedObject() {
+        guard let sel = selectedObjectID, let idx = objects.firstIndex(where: { $0.id == sel }) else { return }
+        pushUndoSnapshot()
+        objects.remove(at: idx)
+        selectedObjectID = nil
+        activeHandle = .none
     }
 
     private func performUndo() {
@@ -1202,10 +1375,77 @@ private struct RectObject: DrawableObject {
     }
 }
 
+private struct TextObject: DrawableObject {
+    let id: UUID
+    var rect: CGRect
+    var text: String
+    var fontSize: CGFloat
+    var textColor: NSColor
+    var bgEnabled: Bool
+    var bgColor: NSColor
+
+    init(id: UUID = UUID(), rect: CGRect, text: String, fontSize: CGFloat, textColor: NSColor, bgEnabled: Bool, bgColor: NSColor) {
+        self.id = id; self.rect = rect; self.text = text; self.fontSize = fontSize; self.textColor = textColor; self.bgEnabled = bgEnabled; self.bgColor = bgColor
+    }
+
+    static func == (lhs: TextObject, rhs: TextObject) -> Bool {
+        lhs.id == rhs.id && lhs.rect == rhs.rect && lhs.text == rhs.text && lhs.fontSize == rhs.fontSize && lhs.textColor == rhs.textColor && lhs.bgEnabled == rhs.bgEnabled && lhs.bgColor == rhs.bgColor
+    }
+
+    func drawPath(in _: CGSize) -> Path { Rectangle().path(in: rect) }
+
+    func hitTest(_ p: CGPoint) -> Bool { rect.insetBy(dx: -6, dy: -6).contains(p) }
+
+    func handleHitTest(_ p: CGPoint) -> Handle {
+        let r: CGFloat = 8
+        let tl = CGRect(x: rect.minX-r, y: rect.minY-r, width: 2*r, height: 2*r)
+        let tr = CGRect(x: rect.maxX-r, y: rect.minY-r, width: 2*r, height: 2*r)
+        let bl = CGRect(x: rect.minX-r, y: rect.maxY-r, width: 2*r, height: 2*r)
+        let br = CGRect(x: rect.maxX-r, y: rect.maxY-r, width: 2*r, height: 2*r)
+        if tl.contains(p) { return .rectTopLeft }
+        if tr.contains(p) { return .rectTopRight }
+        if bl.contains(p) { return .rectBottomLeft }
+        if br.contains(p) { return .rectBottomRight }
+        return .none
+    }
+
+    func moved(by d: CGSize) -> TextObject {
+        var c = self
+        c.rect.origin.x += d.width
+        c.rect.origin.y += d.height
+        return c
+    }
+
+    func resizing(_ handle: Handle, to p: CGPoint) -> TextObject {
+        var c = self
+        switch handle {
+        case .rectTopLeft:
+            c.rect = CGRect(x: p.x, y: p.y, width: rect.maxX - p.x, height: rect.maxY - p.y)
+        case .rectTopRight:
+            c.rect = CGRect(x: rect.minX, y: p.y, width: p.x - rect.minX, height: rect.maxY - p.y)
+        case .rectBottomLeft:
+            c.rect = CGRect(x: p.x, y: rect.minY, width: rect.maxX - p.x, height: p.y - rect.minY)
+        case .rectBottomRight:
+            c.rect = CGRect(x: rect.minX, y: rect.minY, width: p.x - rect.minX, height: p.y - rect.minY)
+        default: break
+        }
+        c.rect.size.width = max(10, c.rect.size.width)
+        c.rect.size.height = max(10, c.rect.size.height)
+        return c
+    }
+}
+
 private enum Drawable: Identifiable, Equatable {
     case line(LineObject)
     case rect(RectObject)
-    var id: UUID { switch self { case .line(let o): return o.id; case .rect(let o): return o.id } }
+    case text(TextObject)
+    var id: UUID {
+        switch self {
+        case .line(let o): return o.id
+        case .rect(let o): return o.id
+        case .text(let o): return o.id
+        }
+    }
 }
 // MARK: - Inline Annotation Types
 private struct Line: Identifiable {
@@ -1381,7 +1621,7 @@ private struct PenColorButton: View {
                     .frame(width: 14, height: 14)
                 Text(name)
                 Spacer()
-                if current == color { Image(systemName: "checkmark") }
+                if current.isEqual(color) { Image(systemName: "checkmark") }
             }
         }
     }

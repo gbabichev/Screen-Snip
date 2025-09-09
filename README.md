@@ -17,8 +17,10 @@ Inspired by Greenshot on Windows - the goal is to make a tiny app that can do th
 
 ## Work in Progress
 - <del>Undo & Redo
-- Add Text fields with font colors, sizes, and background fill. 
+- <del>Add Text fields with font colors, sizes, and background fill.</del>
+   - Click onto text area to adjust it. Not spwan new text boxes.
 - <del>Add lines with arrows. 
+- <del>Objects should be eraseable with delete key.
 - Add auto increment numbers. 
 - Add Crop.
 - <del>Lines, Arrows, Shapes, numbers, etc should all be moveable objects. 
