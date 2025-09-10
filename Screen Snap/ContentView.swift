@@ -185,7 +185,7 @@ struct ContentView: View {
                                         case .line(let o):  selectionForLine(o)
                                         case .rect(let o):  selectionForRect(o)
                                         case .text(let o):  selectionForText(o)   // interactive TextEditor now outside drawingGroup
-                                        case .badge:        EmptyView()
+                                        case .badge(let o): selectionForBadge(o)
                                         }
                                     }
                                 }
@@ -666,12 +666,76 @@ struct ContentView: View {
     
     private func badgeGesture(insetOrigin: CGPoint, fitted: CGSize, author: CGSize) -> some Gesture {
         DragGesture(minimumDistance: 0)
-            .onEnded { value in
+            .onChanged { value in
                 let pFit = CGPoint(x: value.location.x - insetOrigin.x, y: value.location.y - insetOrigin.y)
                 let p = fittedToAuthorPoint(pFit, fitted: fitted, author: author)
+
+                if dragStartPoint == nil {
+                    dragStartPoint = p
+                    // If starting on a badge, select it and decide handle (resize vs move)
+                    if let idx = objects.lastIndex(where: { obj in
+                        switch obj {
+                        case .badge(let o): return o.handleHitTest(p) != .none || o.hitTest(p)
+                        default: return false
+                        }
+                    }) {
+                        selectedObjectID = objects[idx].id
+                        if case .badge(let o) = objects[idx] { activeHandle = o.handleHitTest(p) }
+                    } else {
+                        selectedObjectID = nil
+                        activeHandle = .none
+                    }
+                } else if
+                    let sel = selectedObjectID,
+                    let start = dragStartPoint,
+                    let idx = objects.firstIndex(where: { $0.id == sel })
+                {
+                    let delta = CGSize(width: p.x - start.x, height: p.y - start.y)
+                    let dragDistance = hypot(delta.width, delta.height)
+
+                    if dragDistance > 0.5 { // any movement begins interaction
+                        if !pushedDragUndo { pushUndoSnapshot(); pushedDragUndo = true }
+                        switch objects[idx] {
+                        case .badge(var o):
+                            let updated = (activeHandle == .none) ? o.moved(by: delta) : o.resizing(activeHandle, to: p)
+                            let clamped = clampRect(updated.rect, in: author)
+                            var u = updated; u.rect = clamped
+                            objects[idx] = .badge(u)
+                        default:
+                            break
+                        }
+                        dragStartPoint = p
+                    }
+                }
+            }
+            .onEnded { value in
+                let endFit = CGPoint(x: value.location.x - insetOrigin.x, y: value.location.y - insetOrigin.y)
+                let startFit = CGPoint(x: value.startLocation.x - insetOrigin.x, y: value.startLocation.y - insetOrigin.y)
+                let pEnd = fittedToAuthorPoint(endFit, fitted: fitted, author: author)
+                let pStart = fittedToAuthorPoint(startFit, fitted: fitted, author: author)
+
+                let dx = pEnd.x - pStart.x
+                let dy = pEnd.y - pStart.y
+                let moved = hypot(dx, dy) > 5 // threshold similar to text/pointer
+
+                defer { dragStartPoint = nil; pushedDragUndo = false; activeHandle = .none }
+
+                // If we interacted with an existing badge (moved/resized), do not create a new one
+                if moved, selectedObjectID != nil {
+                    return
+                }
+
+                // If we started on a badge but didn’t move enough, just select it and return
+                if let sel = selectedObjectID, let idx = objects.firstIndex(where: { $0.id == sel }) {
+                    if case .badge(let o) = objects[idx], o.hitTest(pStart) || o.handleHitTest(pStart) != .none {
+                        return
+                    }
+                }
+
+                // Otherwise, create a new badge at the click location
                 let diameter: CGFloat = 32
-                let rect = CGRect(x: max(0, p.x - diameter/2),
-                                  y: max(0, p.y - diameter/2),
+                let rect = CGRect(x: max(0, pEnd.x - diameter/2),
+                                  y: max(0, pEnd.y - diameter/2),
                                   width: diameter,
                                   height: diameter)
                 let rectClamped = clampRect(rect, in: author)
@@ -1400,6 +1464,42 @@ struct ContentView: View {
                 let oy = max(0, (geo.size.height - fittedSize.height) / 2)
 
                 // Corner handles in fitted space + inset
+                let pts = [
+                    CGPoint(x: rf.minX + ox, y: rf.minY + oy),
+                    CGPoint(x: rf.maxX + ox, y: rf.minY + oy),
+                    CGPoint(x: rf.minX + ox, y: rf.maxY + oy),
+                    CGPoint(x: rf.maxX + ox, y: rf.maxY + oy)
+                ]
+                ForEach(Array(pts.enumerated()), id: \.offset) { pair in
+                    let pt = pair.element
+                    Circle()
+                        .stroke(.blue, lineWidth: 1)
+                        .background(Circle().fill(.white))
+                        .frame(width: 12, height: 12)
+                        .position(pt)
+                }
+            }
+        }
+    }
+    
+    @ViewBuilder private func selectionForBadge(_ o: BadgeObject) -> some View {
+        GeometryReader { geo in
+            ZStack {
+                // Map author rect to fitted (onscreen) coordinates
+                let fittedSize = lastFittedSize ?? objectSpaceSize ?? .zero
+                let authorSize = objectSpaceSize ?? fittedSize
+                let sx = fittedSize.width / max(1, authorSize.width)
+                let sy = fittedSize.height / max(1, authorSize.height)
+                let rf = CGRect(x: o.rect.origin.x * sx,
+                                y: o.rect.origin.y * sy,
+                                width: o.rect.size.width * sx,
+                                height: o.rect.size.height * sy)
+
+                // Inset (image centered within canvas)
+                let ox = max(0, (geo.size.width  - fittedSize.width)  / 2)
+                let oy = max(0, (geo.size.height - fittedSize.height) / 2)
+
+                // Corner handles in fitted space + inset (same look as rect/text)
                 let pts = [
                     CGPoint(x: rf.minX + ox, y: rf.minY + oy),
                     CGPoint(x: rf.maxX + ox, y: rf.minY + oy),
