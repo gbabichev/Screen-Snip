@@ -39,18 +39,20 @@ struct ContentView: View {
         get { SaveFormat(rawValue: preferredSaveFormatRaw) ?? .png }
         set { preferredSaveFormatRaw = newValue.rawValue }
     }
-
-    @AppStorage("saveQuality") private var saveQuality: Double = 0.9 // used for JPEG & HEIC (0.4...1.0)
+    
+    @AppStorage("saveQuality") private var saveQuality: Double = 0.9
+    @AppStorage("saveDirectoryPath") private var saveDirectoryPath: String = ""
+    private enum ImporterKind { case image, folder }
+    @State private var activeImporter: ImporterKind? = nil
     
     @FocusState private var isTextEditorFocused: Bool
-
+    
     @State private var focusedTextID: UUID? = nil
     @State private var lastCapture: NSImage? = nil
     @State private var showCopiedHUD = false
     @State private var selectedTool: Tool = .pointer
     // Removed lines buffer; we now auto-commit each line on mouse-up.
     @State private var draft: Line? = nil
-    @State private var isImportingImage = false
     @State private var draftRect: CGRect? = nil
     @State private var cropDraftRect: CGRect? = nil
     @State private var cropRect: CGRect? = nil
@@ -401,7 +403,7 @@ struct ContentView: View {
         .toolbar {
             ToolbarItemGroup(placement: .navigation) {
                 Button {
-                    isImportingImage = true
+                    activeImporter = .image
                 } label: {
                     Label("Open File", systemImage: "doc")
                 }
@@ -420,7 +422,7 @@ struct ContentView: View {
                             Text("HEIC").tag(SaveFormat.heic.rawValue)
                         }
                         .pickerStyle(.segmented)
-
+                        
                         if preferredSaveFormat == .jpeg || preferredSaveFormat == .heic {
                             HStack {
                                 Text("Quality")
@@ -429,11 +431,30 @@ struct ContentView: View {
                                     .frame(width: 44, alignment: .trailing)
                             }
                         }
-
+                        
                         HStack {
                             Spacer()
                             Button("Close") { showSettingsPopover = false }
                         }
+                        
+                        Divider()
+                        VStack(alignment: .leading, spacing: 6) {
+                            Text("Save destination").font(.subheadline)
+                            HStack(spacing: 8) {
+                                let pathText = saveDirectoryPath.isEmpty ? "Default (Pictures/Screen Snap)" : saveDirectoryPath
+                                Image(systemName: "folder")
+                                Text(pathText)
+                                    .lineLimit(1)
+                                    .truncationMode(.middle)
+                                    .foregroundStyle(.secondary)
+                                Spacer()
+                                Button("Change…") { activeImporter = .folder }
+                                if !saveDirectoryPath.isEmpty {
+                                    Button("Reset") { saveDirectoryPath = ""; loadExistingSnaps() }
+                                }
+                            }
+                        }
+                        
                     }
                     .padding(16)
                     .frame(minWidth: 320)
@@ -471,7 +492,7 @@ struct ContentView: View {
                     Button(action: { selectedTool = .pointer
                         selectedObjectID = nil; activeHandle = .none; cropDraftRect = nil; cropRect = nil; cropHandle = .none
                         focusedTextID = nil
-
+                        
                     }) {
                         Label("Pointer", systemImage: "cursorarrow")
                             .foregroundStyle(selectedTool == .pointer ? Color.white : Color.primary)
@@ -510,7 +531,7 @@ struct ContentView: View {
                         selectedTool = .line
                         selectedObjectID = nil; activeHandle = .none; cropDraftRect = nil; cropRect = nil; cropHandle = .none
                         focusedTextID = nil
-
+                        
                     }
                     .glassEffect(selectedTool == .line ? .regular.tint(.blue) : .regular)
                     
@@ -583,7 +604,7 @@ struct ContentView: View {
                         selectedTool = .rect
                         selectedObjectID = nil; activeHandle = .none; cropDraftRect = nil; cropRect = nil; cropHandle = .none
                         focusedTextID = nil
-
+                        
                     }
                     
                     Menu {
@@ -608,13 +629,13 @@ struct ContentView: View {
                     }
                     .glassEffect(selectedTool == .highlighter ? .regular.tint(.blue) : .regular)
                     .help("Drag to add a highlight box")
-
+                    
                     Button(action: {
                         selectedTool = .crop
                         selectedObjectID = nil
                         activeHandle = .none
                         focusedTextID = nil
-
+                        
                     }) {
                         Label("Crop", systemImage: "crop")
                             .foregroundStyle(selectedTool == .crop ? Color.white : Color.primary)
@@ -642,7 +663,7 @@ struct ContentView: View {
                         selectedTool = .badge
                         selectedObjectID = nil; activeHandle = .none; cropDraftRect = nil; cropRect = nil; cropHandle = .none
                         focusedTextID = nil
-
+                        
                     }
                     .glassEffect(selectedTool == .badge ? .regular.tint(.blue) : .regular)
                     .help("Click to place numbered badge")
@@ -666,34 +687,48 @@ struct ContentView: View {
             }
         }
         .fileImporter(
-            isPresented: $isImportingImage,
-            allowedContentTypes: [.png, .jpeg, .heic],
+            isPresented: Binding(
+                get: { activeImporter != nil },
+                set: { if $0 == false { activeImporter = nil } }
+            ),
+            allowedContentTypes: (activeImporter == .folder) ? [.folder] : [.image],
             allowsMultipleSelection: false
         ) { result in
             switch result {
             case .success(let urls):
-                if let url = urls.first, let img = NSImage(contentsOf: url) {
-                    undoStack.removeAll()
-                    redoStack.removeAll()
-                    lastCapture = img
-                    selectedSnapURL = url
-                    objects.removeAll()
-                    objectSpaceSize = nil
-                    selectedObjectID = nil
-                    activeHandle = .none
-                    cropRect = nil
-                    cropDraftRect = nil
-                    cropHandle = .none
-                    if let dir = snapsDirectory(), url.path.hasPrefix(dir.path) {
-                        insertSnapURL(url)
+                if activeImporter == .folder {
+                    if let url = urls.first {
+                        saveDirectoryPath = url.path
+                        loadExistingSnaps()
+                    }
+                } else {
+                    if let url = urls.first, let img = NSImage(contentsOf: url) {
+                        undoStack.removeAll()
+                        redoStack.removeAll()
+                        lastCapture = img
+                        selectedSnapURL = url
+                        objects.removeAll()
+                        objectSpaceSize = nil
+                        selectedObjectID = nil
+                        activeHandle = .none
+                        cropRect = nil
+                        cropDraftRect = nil
+                        cropHandle = .none
+                        if let dir = snapsDirectory(), url.path.hasPrefix(dir.path) {
+                            insertSnapURL(url)
+                        }
                     }
                 }
             case .failure(let error):
-                print("Image import canceled/failed: \(error)")
+                if activeImporter == .folder {
+                    print("Folder selection canceled/failed: \(error)")
+                } else {
+                    print("Image import canceled/failed: \(error)")
+                }
             }
         }
-        }
-
+    }
+    
     
     @ViewBuilder
     private func selectionForText(_ o: TextObject) -> some View {
@@ -711,7 +746,7 @@ struct ContentView: View {
                 // Inset (image centered within canvas)
                 let ox = max(0, (geo.size.width  - fittedSize.width)  / 2)
                 let oy = max(0, (geo.size.height - fittedSize.height) / 2)
-
+                
                 // Corner handles (use fitted rect corners + inset)
                 let pts = [
                     CGPoint(x: rf.minX + ox, y: rf.minY + oy),
@@ -727,7 +762,7 @@ struct ContentView: View {
                         .frame(width: 12, height: 12)
                         .position(pt)
                 }
-
+                
                 // Show inline editor when focused; otherwise show invisible hit area
                 if focusedTextID == o.id {
                     TextEditor(text: Binding(
@@ -763,7 +798,7 @@ struct ContentView: View {
                         // Update focus state when focusedTextID changes
                         isTextEditorFocused = (newValue == o.id)
                     }
-
+                    
                 } else {
                     // Invisible hit area for when not editing
                     Rectangle()
@@ -799,7 +834,7 @@ struct ContentView: View {
             .onChanged { value in
                 let pFit = CGPoint(x: value.location.x - insetOrigin.x, y: value.location.y - insetOrigin.y)
                 let p = fittedToAuthorPoint(pFit, fitted: fitted, author: author)
-
+                
                 if dragStartPoint == nil {
                     dragStartPoint = p
                     // If starting on a badge, select it and decide handle (resize vs move)
@@ -822,7 +857,7 @@ struct ContentView: View {
                 {
                     let delta = CGSize(width: p.x - start.x, height: p.y - start.y)
                     let dragDistance = hypot(delta.width, delta.height)
-
+                    
                     if dragDistance > 0.5 { // any movement begins interaction
                         if !pushedDragUndo { pushUndoSnapshot(); pushedDragUndo = true }
                         switch objects[idx] {
@@ -843,25 +878,25 @@ struct ContentView: View {
                 let startFit = CGPoint(x: value.startLocation.x - insetOrigin.x, y: value.startLocation.y - insetOrigin.y)
                 let pEnd = fittedToAuthorPoint(endFit, fitted: fitted, author: author)
                 let pStart = fittedToAuthorPoint(startFit, fitted: fitted, author: author)
-
+                
                 let dx = pEnd.x - pStart.x
                 let dy = pEnd.y - pStart.y
                 let moved = hypot(dx, dy) > 5 // threshold similar to text/pointer
-
+                
                 defer { dragStartPoint = nil; pushedDragUndo = false; activeHandle = .none }
-
+                
                 // If we interacted with an existing badge (moved/resized), do not create a new one
                 if moved, selectedObjectID != nil {
                     return
                 }
-
+                
                 // If we started on a badge but didn’t move enough, just select it and return
                 if let sel = selectedObjectID, let idx = objects.firstIndex(where: { $0.id == sel }) {
                     if case .badge(let o) = objects[idx], o.hitTest(pStart) || o.handleHitTest(pStart) != .none {
                         return
                     }
                 }
-
+                
                 // Otherwise, create a new badge at the click location
                 let diameter: CGFloat = 32
                 let rect = CGRect(x: max(0, pEnd.x - diameter/2),
@@ -1088,7 +1123,7 @@ struct ContentView: View {
         pb.clearContents()
         pb.writeObjects([image])
     }
-        
+    
     private func pushUndoSnapshot() {
         undoStack.append(Snapshot(image: lastCapture, objects: objects))
         redoStack.removeAll()
@@ -1107,7 +1142,7 @@ struct ContentView: View {
     private func writeImage(_ image: NSImage, to url: URL, format: SaveFormat, jpegQuality: CGFloat? = nil) -> Bool {
         guard let tiff = image.tiffRepresentation,
               let rep = NSBitmapImageRep(data: tiff) else { return false }
-
+        
         let data: Data?
         switch format {
         case .png:
@@ -1130,15 +1165,15 @@ struct ContentView: View {
                 data = nil
                 break
             }
-
+            
             let q = (jpegQuality ?? 0.9) as CGFloat
             // Pass lossy compression quality (0.0 ... 1.0)
             let props: CFDictionary = [kCGImageDestinationLossyCompressionQuality: q] as CFDictionary
             CGImageDestinationAddImage(dest, cgimg, props)
-
+            
             data = CGImageDestinationFinalize(dest) ? (mutable as Data) : nil
         }
-
+        
         guard let data else { return false }
         do {
             try data.write(to: url, options: .atomic)
@@ -1155,6 +1190,9 @@ struct ContentView: View {
         panel.allowedContentTypes = [preferredSaveFormat.utType]
         panel.canCreateDirectories = true
         panel.isExtensionHidden = false
+        if !saveDirectoryPath.isEmpty {
+            panel.directoryURL = URL(fileURLWithPath: saveDirectoryPath, isDirectory: true)
+        }
         if let sel = selectedSnapURL {
             panel.directoryURL = sel.deletingLastPathComponent()
             panel.nameFieldStringValue = sel.lastPathComponent
@@ -1190,7 +1228,7 @@ struct ContentView: View {
             insertSnapURL(url)
         }
     }
-
+    
     
     private func lineGesture(insetOrigin: CGPoint, fitted: CGSize, author: CGSize) -> some Gesture {
         DragGesture(minimumDistance: 0)
@@ -1338,7 +1376,7 @@ struct ContentView: View {
                 let start = fittedToAuthorPoint(startFit, fitted: fitted, author: author)
                 let current = fittedToAuthorPoint(currentFit, fitted: fitted, author: author)
                 let shift = NSEvent.modifierFlags.contains(.shift)
-
+                
                 func rectFrom(_ a: CGPoint, _ b: CGPoint, square: Bool) -> CGRect {
                     var x0 = min(a.x, b.x)
                     var y0 = min(a.y, b.y)
@@ -1352,7 +1390,7 @@ struct ContentView: View {
                     }
                     return CGRect(x: x0, y: y0, width: w, height: h)
                 }
-
+                
                 draftRect = rectFrom(start, current, square: shift)
             }
             .onEnded { _ in
@@ -1392,7 +1430,7 @@ struct ContentView: View {
                         selectedObjectID = nil
                         activeHandle = .none
                         focusedTextID = nil
-
+                        
                     }
                 } else if
                     let sel = selectedObjectID,
@@ -1406,7 +1444,7 @@ struct ContentView: View {
                     if dragDistance > 5 {
                         // Now we know it's a drag - clear focus to prevent editing during drag
                         focusedTextID = nil
-
+                        
                         
                         if !pushedDragUndo {
                             pushUndoSnapshot()
@@ -1470,7 +1508,7 @@ struct ContentView: View {
                     } else {
                         // Single click: just select, don't edit
                         focusedTextID = nil
-
+                        
                     }
                     return
                 }
@@ -1495,7 +1533,7 @@ struct ContentView: View {
                     selectedObjectID = newObj.id
                     activeHandle = .none
                     focusedTextID = nil
-
+                    
                     // Auto-switch to Pointer after placing a text box
                     selectedTool = .pointer
                 }
@@ -1530,12 +1568,12 @@ struct ContentView: View {
                         }
                         // On single click or drag, always clear focus (do not enter edit mode)
                         focusedTextID = nil
-
+                        
                     } else {
                         selectedObjectID = nil
                         activeHandle = .none
                         focusedTextID = nil
-
+                        
                     }
                 } else if let sel = selectedObjectID, let start = dragStartPoint, let idx = objects.firstIndex(where: { $0.id == sel }) {
                     let delta = CGSize(width: p.x - start.x, height: p.y - start.y)
@@ -1596,15 +1634,15 @@ struct ContentView: View {
                 } else {
                     print("🔥 No current event")
                 }
-
+                
                 let isDoubleClick = if let event = NSApp.currentEvent {
                     event.clickCount >= 2
                 } else {
                     false
                 }
-
+                
                 print("🔥 Is double click: \(isDoubleClick)")
-
+                
                 if !moved && isDoubleClick {
                     print("🔥 Processing double-click logic")
                     print("🔥 Current focusedTextID before change: \(String(describing: focusedTextID))")
@@ -1642,17 +1680,17 @@ struct ContentView: View {
                 let sy = fittedSize.height / max(1, authorSize.height)
                 let sF = CGPoint(x: o.start.x * sx, y: o.start.y * sy)
                 let eF = CGPoint(x: o.end.x   * sx, y: o.end.y   * sy)
-
+                
                 // Inset (image centered within canvas)
                 let ox = max(0, (geo.size.width  - fittedSize.width)  / 2)
                 let oy = max(0, (geo.size.height - fittedSize.height) / 2)
-
+                
                 // Endpoint handles (in fitted space + inset)
                 Circle().stroke(.blue, lineWidth: 1)
                     .background(Circle().fill(.white))
                     .frame(width: 12, height: 12)
                     .position(x: sF.x + ox, y: sF.y + oy)
-
+                
                 Circle().stroke(.blue, lineWidth: 1)
                     .background(Circle().fill(.white))
                     .frame(width: 12, height: 12)
@@ -1660,7 +1698,7 @@ struct ContentView: View {
             }
         }
     }
-
+    
     @ViewBuilder private func selectionForRect(_ o: RectObject) -> some View {
         GeometryReader { geo in
             ZStack {
@@ -1676,7 +1714,7 @@ struct ContentView: View {
                 // Inset (image centered within canvas)
                 let ox = max(0, (geo.size.width  - fittedSize.width)  / 2)
                 let oy = max(0, (geo.size.height - fittedSize.height) / 2)
-
+                
                 // Corner handles in fitted space + inset
                 let pts = [
                     CGPoint(x: rf.minX + ox, y: rf.minY + oy),
@@ -1739,11 +1777,11 @@ struct ContentView: View {
                                 y: o.rect.origin.y * sy,
                                 width: o.rect.size.width * sx,
                                 height: o.rect.size.height * sy)
-
+                
                 // Inset (image centered within canvas)
                 let ox = max(0, (geo.size.width  - fittedSize.width)  / 2)
                 let oy = max(0, (geo.size.height - fittedSize.height) / 2)
-
+                
                 // Corner handles in fitted space + inset (same look as rect/text)
                 let pts = [
                     CGPoint(x: rf.minX + ox, y: rf.minY + oy),
@@ -1774,10 +1812,10 @@ struct ContentView: View {
                                 y: o.rect.origin.y * sy,
                                 width: o.rect.size.width * sx,
                                 height: o.rect.size.height * sy)
-
+                
                 let ox = max(0, (geo.size.width  - fittedSize.width)  / 2)
                 let oy = max(0, (geo.size.height - fittedSize.height) / 2)
-
+                
                 let pts = [
                     CGPoint(x: rf.minX + ox, y: rf.minY + oy),
                     CGPoint(x: rf.maxX + ox, y: rf.minY + oy),
@@ -1940,7 +1978,7 @@ struct ContentView: View {
         selectedObjectID = nil
         activeHandle = .none
     }
-        
+    
     private func performUndo() {
         guard let prev = undoStack.popLast() else { return }
         let current = Snapshot(image: lastCapture, objects: objects)
@@ -2020,28 +2058,28 @@ struct ContentView: View {
     private func pasteFromClipboard() {
         // If a TextEditor is focused, let it handle paste itself.
         if isTextEditorFocused { return }
-
+        
         let pb = NSPasteboard.general
         if let imgs = pb.readObjects(forClasses: [NSImage.self]) as? [NSImage],
            let img = imgs.first {
             // Choose author space (object coord system)
             let author = objectSpaceSize ?? lastFittedSize ?? lastCapture?.size ?? CGSize(width: 1200, height: 800)
-
+            
             let natural = img.size
             let aspect = (natural.height == 0) ? 1 : (natural.width / natural.height)
-
+            
             // Sensible default size
             var w = min(480, author.width * 0.6)
             var h = w / aspect
             if h > author.height * 0.6 { h = author.height * 0.6; w = h * aspect }
-
+            
             // Center in author space
             let rect = CGRect(
                 x: max(0, (author.width - w)/2),
                 y: max(0, (author.height - h)/2),
                 width: w, height: h
             )
-
+            
             let obj = PastedImageObject(rect: rect, image: img)
             pushUndoSnapshot()
             objects.append(.image(obj))
@@ -2051,16 +2089,34 @@ struct ContentView: View {
             // no focus change for text
         }
     }
-
+    
     // MARK: - Snaps Persistence
     
-    /// Directory where we store PNG snaps.
+    //    /// Directory where we store PNG snaps.
+    //    private func snapsDirectory() -> URL? {
+    //        let fm = FileManager.default
+    //        if let pics = fm.urls(for: .picturesDirectory, in: .userDomainMask).first {
+    //            let dir = pics.appendingPathComponent("screenshotG Snaps", isDirectory: true)
+    //            if !fm.fileExists(atPath: dir.path) {
+    //                do { try fm.createDirectory(at: dir, withIntermediateDirectories: true) } catch { return nil }
+    //            }
+    //            return dir
+    //        }
+    //        return nil
+    //    }
+    
     private func snapsDirectory() -> URL? {
+        // If the user has chosen a custom destination, use it
+        if !saveDirectoryPath.isEmpty {
+            let custom = URL(fileURLWithPath: saveDirectoryPath, isDirectory: true)
+            return custom
+        }
+        // Default: ~/Pictures/Screen Snap
         let fm = FileManager.default
-        if let pics = fm.urls(for: .picturesDirectory, in: .userDomainMask).first {
-            let dir = pics.appendingPathComponent("screenshotG Snaps", isDirectory: true)
+        if let pictures = fm.urls(for: .picturesDirectory, in: .userDomainMask).first {
+            let dir = pictures.appendingPathComponent("Screen Snap", isDirectory: true)
             if !fm.fileExists(atPath: dir.path) {
-                do { try fm.createDirectory(at: dir, withIntermediateDirectories: true) } catch { return nil }
+                try? fm.createDirectory(at: dir, withIntermediateDirectories: true)
             }
             return dir
         }
@@ -2435,23 +2491,23 @@ private struct HighlightObject: DrawableObject {
     let id: UUID
     var rect: CGRect
     var color: NSColor // include alpha for the “marker” look
-
+    
     init(id: UUID = UUID(),
          rect: CGRect,
          color: NSColor = NSColor.systemYellow.withAlphaComponent(0.35)) {
         self.id = id; self.rect = rect; self.color = color
     }
-
+    
     static func == (lhs: HighlightObject, rhs: HighlightObject) -> Bool {
         lhs.id == rhs.id && lhs.rect == rhs.rect && lhs.color == rhs.color
     }
-
+    
     func drawPath(in _: CGSize) -> Path { Rectangle().path(in: rect) }
-
+    
     func hitTest(_ p: CGPoint) -> Bool {
         rect.insetBy(dx: -6, dy: -6).contains(p)
     }
-
+    
     func handleHitTest(_ p: CGPoint) -> Handle {
         let r: CGFloat = 8
         let tl = CGRect(x: rect.minX-r, y: rect.minY-r, width: 2*r, height: 2*r)
@@ -2464,14 +2520,14 @@ private struct HighlightObject: DrawableObject {
         if br.contains(p) { return .rectBottomRight }
         return .none
     }
-
+    
     func moved(by d: CGSize) -> HighlightObject {
         var c = self
         c.rect.origin.x += d.width
         c.rect.origin.y += d.height
         return c
     }
-
+    
     func resizing(_ handle: Handle, to p: CGPoint) -> HighlightObject {
         var c = self
         switch handle {
@@ -2617,7 +2673,7 @@ private struct PastedImageObject: DrawableObject {
     var image: NSImage
     /// Natural aspect ratio (w / h) for Shift-resize.
     let aspect: CGFloat
-
+    
     init(id: UUID = UUID(), rect: CGRect, image: NSImage) {
         self.id = id
         self.rect = rect
@@ -2625,15 +2681,15 @@ private struct PastedImageObject: DrawableObject {
         let s = image.size
         self.aspect = (s.height == 0) ? 1 : (s.width / s.height)
     }
-
+    
     static func == (lhs: PastedImageObject, rhs: PastedImageObject) -> Bool {
         lhs.id == rhs.id && lhs.rect == rhs.rect && lhs.image == rhs.image
     }
-
+    
     func drawPath(in _: CGSize) -> Path { Rectangle().path(in: rect) }
-
+    
     func hitTest(_ p: CGPoint) -> Bool { rect.insetBy(dx: -6, dy: -6).contains(p) }
-
+    
     func handleHitTest(_ p: CGPoint) -> Handle {
         let r: CGFloat = 8
         let tl = CGRect(x: rect.minX - r, y: rect.minY - r, width: 2*r, height: 2*r)
@@ -2646,18 +2702,18 @@ private struct PastedImageObject: DrawableObject {
         if br.contains(p) { return .rectBottomRight }
         return .none
     }
-
+    
     func moved(by d: CGSize) -> PastedImageObject {
         var c = self
         c.rect.origin.x += d.width
         c.rect.origin.y += d.height
         return c
     }
-
+    
     func resizing(_ handle: Handle, to p: CGPoint) -> PastedImageObject {
         var c = self
         let keepAspect = NSEvent.modifierFlags.contains(.shift)
-
+        
         switch handle {
         case .rectTopLeft:
             c.rect = CGRect(x: p.x, y: p.y, width: rect.maxX - p.x, height: rect.maxY - p.y)
@@ -2670,12 +2726,12 @@ private struct PastedImageObject: DrawableObject {
         default:
             break
         }
-
+        
         c.rect.size.width  = max(8, c.rect.size.width)
         c.rect.size.height = max(8, c.rect.size.height)
-
+        
         guard keepAspect else { return c }
-
+        
         // Snap to original aspect by adjusting the dimension that needs the smallest change.
         let targetW = c.rect.height * aspect
         let targetH = c.rect.width / aspect
@@ -2684,7 +2740,7 @@ private struct PastedImageObject: DrawableObject {
         } else {
             c.rect.size.height = targetH
         }
-
+        
         // Re-anchor based on which corner moved so the opposite corner stays fixed.
         switch handle {
         case .rectTopLeft:
@@ -2708,7 +2764,7 @@ private enum Drawable: Identifiable, Equatable {
     case badge(BadgeObject)
     case highlight(HighlightObject)
     case image(PastedImageObject)
-
+    
     var id: UUID {
         switch self {
         case .line(let o): return o.id

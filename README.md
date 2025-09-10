@@ -16,6 +16,10 @@ Inspired by Greenshot on Windows - the goal is to make a tiny app that can do th
 </div>
 
 ## Work in Progress
+- Hotkeys for tools 
+- Global system hotkey for screenshots. 
+
+### Completed 
 - <del>Undo & Redo
 - <del>Add Text fields with font colors, sizes, and background fill.
    - Click onto text area to adjust it. Not spwan new text boxes.
@@ -25,14 +29,11 @@ Inspired by Greenshot on Windows - the goal is to make a tiny app that can do th
 - <del>Add Crop.
 - <del>Lines, Arrows, Shapes, numbers, etc should all be moveable objects. 
 - <del>Add a highlighter
-- Hotkeys for tools 
 - <del>Open existing file
 - <del>Paste on top & move stuff around. 
-- Add User Settings 
-  - User defined save folder. 
+- <del>Add User Settings 
+  - <del>User defined save folder. 
   - <del>User defined output type (PNG / JPG / HEIC) & quality slider. 
-- Global system hotkey for screenshots. 
-- More as I think of it. 😊
 
 
 ## 🖥️ Screenshots 
