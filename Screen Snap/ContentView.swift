@@ -6,10 +6,17 @@ import AppKit
 import VideoToolbox
 import UniformTypeIdentifiers
 
+// File-scope helpers for robust double-click detection
+private var _lastClickTime: TimeInterval = 0
+private var _lastClickPoint: CGPoint = .zero
+
 private enum Tool { case pointer, line, rect, text, crop, badge }
 
 struct ContentView: View {
-    @FocusState private var focusedTextID: UUID?
+    
+    @FocusState private var isTextEditorFocused: Bool
+
+    @State private var focusedTextID: UUID? = nil
     @State private var lastCapture: NSImage? = nil
     @State private var showCopiedHUD = false
     @State private var selectedTool: Tool = .pointer
@@ -103,13 +110,16 @@ struct ContentView: View {
                                             o.drawPath(in: author)
                                                 .stroke(Color(nsColor: strokeColor), style: StrokeStyle(lineWidth: o.width))
                                         case .text(let o):
-                                            Text(o.text.isEmpty ? " " : o.text)
-                                                .font(.system(size: o.fontSize))
-                                                .foregroundStyle(Color(nsColor: o.textColor))
-                                                .frame(width: o.rect.width, height: o.rect.height, alignment: .topLeading)
-                                                .padding(4)
-                                                .background(o.bgEnabled ? Color(nsColor: o.bgColor) : Color.clear)
-                                                .position(x: o.rect.midX, y: o.rect.midY)
+                                            // Only render static text if it's not currently being edited
+                                            if focusedTextID != o.id {
+                                                Text(o.text.isEmpty ? " " : o.text)
+                                                    .font(.system(size: o.fontSize))
+                                                    .foregroundStyle(Color(nsColor: o.textColor))
+                                                    .frame(width: o.rect.width, height: o.rect.height, alignment: .topLeading)
+                                                    .padding(4)
+                                                    .background(o.bgEnabled ? Color(nsColor: o.bgColor) : Color.clear)
+                                                    .position(x: o.rect.midX, y: o.rect.midY)
+                                            }
                                         case .badge(let o):
                                             Circle()
                                                 .fill(Color(nsColor: o.fillColor))
@@ -288,12 +298,14 @@ struct ContentView: View {
                 }
                 
                 // Delete or Forward Delete to remove selected object (no Command modifier)
-                if !event.modifierFlags.contains(.command) {
-                    if event.keyCode == 51 || event.keyCode == 117 { // delete/backspace or forward delete
-                        if selectedObjectID != nil {
-                            deleteSelectedObject()
-                            return nil // consume
-                        }
+                if !event.modifierFlags.contains(.command) && (event.keyCode == 51 || event.keyCode == 117) {
+                    // If a TextEditor is focused, let it handle character deletion
+                    if isTextEditorFocused {
+                        return event // do not consume; pass to TextEditor
+                    }
+                    if selectedObjectID != nil {
+                        deleteSelectedObject()
+                        return nil // consume so we don't propagate/beep
                     }
                 }
                 
@@ -380,6 +392,7 @@ struct ContentView: View {
                     Button(action: { selectedTool = .pointer
                         selectedObjectID = nil; activeHandle = .none; cropDraftRect = nil; cropRect = nil; cropHandle = .none
                         focusedTextID = nil
+
                     }) {
                         Label("Pointer", systemImage: "cursorarrow")
                             .foregroundStyle(selectedTool == .pointer ? Color.white : Color.primary)
@@ -418,6 +431,7 @@ struct ContentView: View {
                         selectedTool = .line
                         selectedObjectID = nil; activeHandle = .none; cropDraftRect = nil; cropRect = nil; cropHandle = .none
                         focusedTextID = nil
+
                     }
                     .glassEffect(selectedTool == .line ? .regular.tint(.blue) : .regular)
                     
@@ -490,6 +504,7 @@ struct ContentView: View {
                         selectedTool = .rect
                         selectedObjectID = nil; activeHandle = .none; cropDraftRect = nil; cropRect = nil; cropHandle = .none
                         focusedTextID = nil
+
                     }
                     
                     Button(action: {
@@ -497,6 +512,7 @@ struct ContentView: View {
                         selectedObjectID = nil
                         activeHandle = .none
                         focusedTextID = nil
+
                     }) {
                         Label("Crop", systemImage: "crop")
                             .foregroundStyle(selectedTool == .crop ? Color.white : Color.primary)
@@ -524,6 +540,7 @@ struct ContentView: View {
                         selectedTool = .badge
                         selectedObjectID = nil; activeHandle = .none; cropDraftRect = nil; cropRect = nil; cropHandle = .none
                         focusedTextID = nil
+
                     }
                     .glassEffect(selectedTool == .badge ? .regular.tint(.blue) : .regular)
                     .help("Click to place numbered badge")
@@ -581,18 +598,7 @@ struct ContentView: View {
                         .position(pt)
                 }
 
-                // Invisible hit area covering the text box to reliably capture taps/double-clicks
-                Rectangle()
-                    .fill(Color.clear)
-                    .frame(width: rf.width, height: rf.height)
-                    .position(x: rf.midX + ox, y: rf.midY + oy)
-                    .contentShape(Rectangle())
-                    .onTapGesture(count: 2) {
-                        if selectedObjectID != o.id { selectedObjectID = o.id }
-                        focusedTextID = o.id
-                    }
-                
-                // Show inline editor only when focused; otherwise just show the handles
+                // Show inline editor when focused; otherwise show invisible hit area
                 if focusedTextID == o.id {
                     TextEditor(text: Binding(
                         get: { o.text },
@@ -609,12 +615,50 @@ struct ContentView: View {
                     .foregroundStyle(Color(nsColor: o.textColor))
                     .background(o.bgEnabled ? Color(nsColor: o.bgColor) : Color.clear)
                     .scrollContentBackground(.hidden)
-                    .focused($focusedTextID, equals: o.id)
                     .frame(width: rf.width, height: rf.height)
                     .position(x: rf.midX + ox, y: rf.midY + oy)
                     .overlay(RoundedRectangle(cornerRadius: 4)
                         .stroke(.blue.opacity(0.6), lineWidth: 1))
                     .contentShape(Rectangle())
+                    .focused($isTextEditorFocused)  // Add this line
+                    .onAppear {
+                        print("🔥 TextEditor appeared for object \(o.id)")
+                        // Automatically focus when appearing
+                        DispatchQueue.main.async {
+                            isTextEditorFocused = true
+                        }
+                    }
+                    .onChange(of: focusedTextID) { newValue in
+                        print("🔥 TextEditor focus changed to: \(String(describing: newValue))")
+                        // Update focus state when focusedTextID changes
+                        isTextEditorFocused = (newValue == o.id)
+                    }
+
+                } else {
+                    // Invisible hit area for when not editing
+                    Rectangle()
+                        .fill(Color.clear)
+                        .frame(width: rf.width, height: rf.height)
+                        .position(x: rf.midX + ox, y: rf.midY + oy)
+                        .contentShape(Rectangle())
+                        .onTapGesture(count: 2) {
+                            print("🔥 Double-click on invisible rectangle for object \(o.id)")
+                            print("🔥 Before setting: focusedTextID = \(String(describing: focusedTextID))")
+                            if selectedObjectID != o.id {
+                                selectedObjectID = o.id
+                                print("🔥 Set selectedObjectID to \(o.id)")
+                            }
+                            focusedTextID = o.id
+                            print("🔥 After setting: focusedTextID = \(String(describing: focusedTextID))")
+                            
+                            // Force keyboard focus
+                            DispatchQueue.main.async {
+                                isTextEditorFocused = true
+                            }
+                        }
+                        .onAppear {
+                            print("🔥 Invisible rectangle appeared for object \(o.id)")
+                        }
                 }
             }
         }
@@ -1063,6 +1107,7 @@ struct ContentView: View {
             .onChanged { value in
                 let pFit = CGPoint(x: value.location.x - insetOrigin.x, y: value.location.y - insetOrigin.y)
                 let p = fittedToAuthorPoint(pFit, fitted: fitted, author: author)
+                
                 if dragStartPoint == nil {
                     dragStartPoint = p
                     // If starting on a text object, select it and decide handle
@@ -1078,11 +1123,12 @@ struct ContentView: View {
                         } else {
                             activeHandle = .none
                         }
-                        focusedTextID = nil // don’t edit while dragging
+                        // Don't clear focus immediately - wait to see if this is a drag or click
                     } else {
                         selectedObjectID = nil
                         activeHandle = .none
                         focusedTextID = nil
+
                     }
                 } else if
                     let sel = selectedObjectID,
@@ -1090,20 +1136,29 @@ struct ContentView: View {
                     let idx = objects.firstIndex(where: { $0.id == sel })
                 {
                     let delta = CGSize(width: p.x - start.x, height: p.y - start.y)
-                    if !pushedDragUndo {
-                        pushUndoSnapshot()
-                        pushedDragUndo = true
+                    let dragDistance = hypot(delta.width, delta.height)
+                    
+                    // Only start actual dragging if we've moved a reasonable distance
+                    if dragDistance > 5 {
+                        // Now we know it's a drag - clear focus to prevent editing during drag
+                        focusedTextID = nil
+
+                        
+                        if !pushedDragUndo {
+                            pushUndoSnapshot()
+                            pushedDragUndo = true
+                        }
+                        switch objects[idx] {
+                        case .text(var o):
+                            let updated = (activeHandle == .none) ? o.moved(by: delta) : o.resizing(activeHandle, to: p)
+                            let clamped = clampRect(updated.rect, in: author)
+                            var u = updated; u.rect = clamped
+                            objects[idx] = .text(u)
+                        default:
+                            break
+                        }
+                        dragStartPoint = p
                     }
-                    switch objects[idx] {
-                    case .text(var o):
-                        let updated = (activeHandle == .none) ? o.moved(by: delta) : o.resizing(activeHandle, to: p)
-                        let clamped = clampRect(updated.rect, in: author)
-                        var u = updated; u.rect = clamped
-                        objects[idx] = .text(u)
-                    default:
-                        break
-                    }
-                    dragStartPoint = p
                 }
             }
             .onEnded { value in
@@ -1115,10 +1170,10 @@ struct ContentView: View {
                 
                 let dx = pEnd.x - pStart.x
                 let dy = pEnd.y - pStart.y
-                let moved = hypot(dx, dy) > 3 // threshold in author space
+                let moved = hypot(dx, dy) > 5 // threshold in author space
                 
                 if moved {
-                    // We were dragging — finish and clean up
+                    // We were dragging – finish and clean up
                     dragStartPoint = nil
                     pushedDragUndo = false
                     return
@@ -1128,7 +1183,14 @@ struct ContentView: View {
                 dragStartPoint = nil
                 pushedDragUndo = false
                 
-                // 1) If click is on an existing TEXT object, select or enter edit mode
+                // Check for double-click first, before other click handling
+                let isDoubleClick = if let event = NSApp.currentEvent {
+                    event.clickCount >= 2
+                } else {
+                    false
+                }
+                
+                // 1) If click is on an existing TEXT object
                 if let idx = objects.lastIndex(where: { obj in
                     switch obj {
                     case .text(let o): return o.handleHitTest(pEnd) != .none || o.hitTest(pEnd)
@@ -1137,33 +1199,42 @@ struct ContentView: View {
                 }) {
                     selectedObjectID = objects[idx].id
                     activeHandle = .none
-                    if let ev = NSApp.currentEvent, ev.clickCount >= 2 {
+                    
+                    if isDoubleClick {
+                        // Double-click: enter edit mode
                         focusedTextID = objects[idx].id
                     } else {
+                        // Single click: just select, don't edit
                         focusedTextID = nil
+
                     }
                     return
                 }
                 
-                // 2) Otherwise, create a new text box at the click point (single click only)
-                let defaultSize = CGSize(width: 240, height: 80)
-                let rect = CGRect(x: max(0, pEnd.x - defaultSize.width/2),
-                                  y: max(0, pEnd.y - defaultSize.height/2),
-                                  width: defaultSize.width,
-                                  height: defaultSize.height)
-                let rectClamped = clampRect(rect, in: author)
-                let newObj = TextObject(rect: rectClamped,
-                                        text: "Text",
-                                        fontSize: textFontSize,
-                                        textColor: textColor,
-                                        bgEnabled: textBGEnabled,
-                                        bgColor: textBGColor)
-                pushUndoSnapshot()
-                objects.append(.text(newObj))
-                if objectSpaceSize == nil { objectSpaceSize = author }
-                selectedObjectID = newObj.id
-                activeHandle = .none
-                focusedTextID = nil
+                // 2) Create new text box only on single click in empty space
+                if !isDoubleClick {
+                    let defaultSize = CGSize(width: 240, height: 80)
+                    let rect = CGRect(x: max(0, pEnd.x - defaultSize.width/2),
+                                      y: max(0, pEnd.y - defaultSize.height/2),
+                                      width: defaultSize.width,
+                                      height: defaultSize.height)
+                    let rectClamped = clampRect(rect, in: author)
+                    let newObj = TextObject(rect: rectClamped,
+                                            text: "Text",
+                                            fontSize: textFontSize,
+                                            textColor: textColor,
+                                            bgEnabled: textBGEnabled,
+                                            bgColor: textBGColor)
+                    pushUndoSnapshot()
+                    objects.append(.text(newObj))
+                    if objectSpaceSize == nil { objectSpaceSize = author }
+                    selectedObjectID = newObj.id
+                    activeHandle = .none
+                    focusedTextID = nil
+
+                    // Auto-switch to Pointer after placing a text box
+                    selectedTool = .pointer
+                }
             }
     }
     
@@ -1191,10 +1262,12 @@ struct ContentView: View {
                         }
                         // On single click or drag, always clear focus (do not enter edit mode)
                         focusedTextID = nil
+
                     } else {
                         selectedObjectID = nil
                         activeHandle = .none
                         focusedTextID = nil
+
                     }
                 } else if let sel = selectedObjectID, let start = dragStartPoint, let idx = objects.firstIndex(where: { $0.id == sel }) {
                     let delta = CGSize(width: p.x - start.x, height: p.y - start.y)
@@ -1228,22 +1301,54 @@ struct ContentView: View {
                     dragStartPoint = p
                 }
             }
-            .onEnded { _ in
-                // If this was a double-click and a text object is selected, enter edit mode.
-                if let ev = NSApp.currentEvent, ev.clickCount >= 2,
-                   let sel = selectedObjectID,
-                   let idx = objects.firstIndex(where: { $0.id == sel }) {
-                    if case .text(_) = objects[idx] {
-                        focusedTextID = sel
-                        dragStartPoint = nil
-                        pushedDragUndo = false
-                        return
+            .onEnded { value in  // Add 'value in' parameter here
+                let endFit = CGPoint(x: value.location.x - insetOrigin.x, y: value.location.y - insetOrigin.y)
+                let startFit = CGPoint(x: value.startLocation.x - insetOrigin.x, y: value.startLocation.y - insetOrigin.y)
+                let pEnd = fittedToAuthorPoint(endFit, fitted: fitted, author: author)
+                let pStart = fittedToAuthorPoint(startFit, fitted: fitted, author: author)
+                
+                let dx = pEnd.x - pStart.x
+                let dy = pEnd.y - pStart.y
+                let moved = hypot(dx, dy) > 5
+                
+                // Check for double-click
+                print("🔥 Pointer gesture ended, moved: \(moved)")
+                if let event = NSApp.currentEvent {
+                    print("🔥 Click count: \(event.clickCount)")
+                } else {
+                    print("🔥 No current event")
+                }
+
+                let isDoubleClick = if let event = NSApp.currentEvent {
+                    event.clickCount >= 2
+                } else {
+                    false
+                }
+
+                print("🔥 Is double click: \(isDoubleClick)")
+
+                if !moved && isDoubleClick {
+                    print("🔥 Processing double-click logic")
+                    print("🔥 Current focusedTextID before change: \(String(describing: focusedTextID))")
+                    // Check ALL text objects, not just selected ones
+                    for (index, obj) in objects.enumerated() {
+                        if case .text(let textObj) = obj {
+                            let hit = textObj.hitTest(pEnd)
+                            print("🔥 Text object \(index) hit test: \(hit), rect: \(textObj.rect)")
+                            if hit {
+                                print("🔥 Setting focus to text object \(index)")
+                                selectedObjectID = textObj.id
+                                focusedTextID = textObj.id
+                                print("🔥 focusedTextID after setting: \(String(describing: focusedTextID))")
+                                break
+                            }
+                        }
                     }
                 }
+                
                 dragStartPoint = nil
                 pushedDragUndo = false
-            }
-    }
+            }    }
     
     // MARK: - Commit & Undo/Redo
     private func commitChange(_ newImage: NSImage) {
@@ -1416,23 +1521,6 @@ struct ContentView: View {
                 ]
                 NSString(string: o.text).draw(in: r.insetBy(dx: 4 * scaleW, dy: 4 * scaleW), withAttributes: attrs)
                 
-// In your canvas drawing loop, update the .text(let o) case as follows:
-// (Find the ForEach(objects) { obj in ... } and update the .text(let o) case)
-// (The actual ForEach is not included in this snippet, but the replacement is below.)
-// Replace:
-// case .text(let o):
-//     ... (old code)
-// With:
-// case .text(let o):
-//     if selectedObjectID != o.id {
-//         Text(o.text.isEmpty ? " " : o.text)
-//             .font(.system(size: o.fontSize))
-//             .foregroundStyle(Color(nsColor: o.textColor))
-//             .frame(width: o.rect.width, height: o.rect.height, alignment: .topLeading)
-//             .padding(4)
-//             .background(o.bgEnabled ? Color(nsColor: o.bgColor) : Color.clear)
-//             .position(x: o.rect.midX, y: o.rect.midY)
-//     }
             case .badge(let o):
                 let r = uiRectToImageRect(o.rect, fitted: fitted, image: imgSize)
                 let circlePath = NSBezierPath(ovalIn: r)
@@ -1454,6 +1542,11 @@ struct ContentView: View {
     }
     
     private func deleteSelectedObject() {
+        // If the inline TextEditor has keyboard focus, do NOT delete the text object.
+        // This lets the Delete/Backspace key edit text content instead of removing the box.
+        if isTextEditorFocused {
+            return
+        }
         guard let sel = selectedObjectID, let idx = objects.firstIndex(where: { $0.id == sel }) else { return }
         pushUndoSnapshot()
         objects.remove(at: idx)
