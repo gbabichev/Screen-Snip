@@ -137,6 +137,12 @@ struct ContentView: View {
                                                 .fill(Color(nsColor: o.color))
                                                 .frame(width: o.rect.width, height: o.rect.height)
                                                 .position(x: o.rect.midX, y: o.rect.midY)
+                                        case .image(let o):
+                                            Image(nsImage: o.image)
+                                                .resizable()
+                                                .interpolation(.high)
+                                                .frame(width: o.rect.width, height: o.rect.height)
+                                                .position(x: o.rect.midX, y: o.rect.midY)
                                         }
                                     }
                                     // Draft feedback while creating (draft is stored in author space)
@@ -193,6 +199,7 @@ struct ContentView: View {
                                         case .text(let o):  selectionForText(o)   // interactive TextEditor now outside drawingGroup
                                         case .badge(let o): selectionForBadge(o)
                                         case .highlight(let o): selectionForHighlight(o)
+                                        case .image(let o): selectionForImage(o)
                                         }
                                     }
                                 }
@@ -302,6 +309,15 @@ struct ContentView: View {
                             performUndo()
                         }
                         return nil // consume
+                    }
+                    if chars == "v" {
+                        // Allow TextEditor to handle paste when editing text; otherwise paste onto canvas
+                        if isTextEditorFocused {
+                            return event // don't consume; let TextEditor handle paste
+                        } else {
+                            pasteFromClipboard()
+                            return nil // consume
+                        }
                     }
                 }
                 
@@ -989,7 +1005,7 @@ struct ContentView: View {
         pb.clearContents()
         pb.writeObjects([image])
     }
-    
+        
     private func pushUndoSnapshot() {
         undoStack.append(Snapshot(image: lastCapture, objects: objects))
         redoStack.removeAll()
@@ -1384,6 +1400,7 @@ struct ContentView: View {
                         case .text(let o): return o.handleHitTest(p) != .none || o.hitTest(p)
                         case .badge(let o): return o.handleHitTest(p) != .none || o.hitTest(p)
                         case .highlight(let o): return o.handleHitTest(p) != .none || o.hitTest(p)
+                        case .image(let o): return o.handleHitTest(p) != .none || o.hitTest(p)
                         }
                     }) {
                         selectedObjectID = objects[idx].id
@@ -1393,6 +1410,7 @@ struct ContentView: View {
                         case .text(let o): activeHandle = o.handleHitTest(p)
                         case .badge(let o): activeHandle = o.handleHitTest(p)
                         case .highlight(let o): activeHandle = o.handleHitTest(p)
+                        case .image(let o): activeHandle = o.handleHitTest(p)
                         }
                         // On single click or drag, always clear focus (do not enter edit mode)
                         focusedTextID = nil
@@ -1436,6 +1454,11 @@ struct ContentView: View {
                         let clamped = clampRect(updated.rect, in: author)
                         var u = updated; u.rect = clamped
                         objects[idx] = .highlight(u)
+                    case .image(let o):
+                        let updated = (activeHandle == .none) ? o.moved(by: delta) : o.resizing(activeHandle, to: p)
+                        let clamped = clampRect(updated.rect, in: author)
+                        var u = updated; u.rect = clamped
+                        objects[idx] = .image(u)
                     }
                     dragStartPoint = p
                 }
@@ -1624,6 +1647,39 @@ struct ContentView: View {
         }
     }
     
+    @ViewBuilder private func selectionForImage(_ o: PastedImageObject) -> some View {
+        GeometryReader { geo in
+            ZStack {
+                let fittedSize = lastFittedSize ?? objectSpaceSize ?? .zero
+                let authorSize = objectSpaceSize ?? fittedSize
+                let sx = fittedSize.width / max(1, authorSize.width)
+                let sy = fittedSize.height / max(1, authorSize.height)
+                let rf = CGRect(x: o.rect.origin.x * sx,
+                                y: o.rect.origin.y * sy,
+                                width: o.rect.size.width * sx,
+                                height: o.rect.size.height * sy)
+
+                let ox = max(0, (geo.size.width  - fittedSize.width)  / 2)
+                let oy = max(0, (geo.size.height - fittedSize.height) / 2)
+
+                let pts = [
+                    CGPoint(x: rf.minX + ox, y: rf.minY + oy),
+                    CGPoint(x: rf.maxX + ox, y: rf.minY + oy),
+                    CGPoint(x: rf.minX + ox, y: rf.maxY + oy),
+                    CGPoint(x: rf.maxX + ox, y: rf.maxY + oy)
+                ]
+                ForEach(Array(pts.enumerated()), id: \.offset) { pair in
+                    let pt = pair.element
+                    Circle()
+                        .stroke(.blue, lineWidth: 1)
+                        .background(Circle().fill(.white))
+                        .frame(width: 12, height: 12)
+                        .position(pt)
+                }
+            }
+        }
+    }
+    
     private func flattenAndSaveInPlace() {
         guard let img = lastCapture else { return }
         if objectSpaceSize == nil { objectSpaceSize = lastFittedSize ?? img.size }
@@ -1744,6 +1800,9 @@ struct ContentView: View {
                 let r = uiRectToImageRect(o.rect, fitted: fitted, image: imgSize)
                 o.color.setFill()
                 NSBezierPath(rect: r).fill()
+            case .image(let o):
+                let r = uiRectToImageRect(o.rect, fitted: fitted, image: imgSize)
+                o.image.draw(in: r)
             }
         }
         
@@ -1763,7 +1822,7 @@ struct ContentView: View {
         selectedObjectID = nil
         activeHandle = .none
     }
-    
+        
     private func performUndo() {
         guard let prev = undoStack.popLast() else { return }
         let current = Snapshot(image: lastCapture, objects: objects)
@@ -1840,6 +1899,41 @@ struct ContentView: View {
         }
     }
     
+    private func pasteFromClipboard() {
+        // If a TextEditor is focused, let it handle paste itself.
+        if isTextEditorFocused { return }
+
+        let pb = NSPasteboard.general
+        if let imgs = pb.readObjects(forClasses: [NSImage.self]) as? [NSImage],
+           let img = imgs.first {
+            // Choose author space (object coord system)
+            let author = objectSpaceSize ?? lastFittedSize ?? lastCapture?.size ?? CGSize(width: 1200, height: 800)
+
+            let natural = img.size
+            let aspect = (natural.height == 0) ? 1 : (natural.width / natural.height)
+
+            // Sensible default size
+            var w = min(480, author.width * 0.6)
+            var h = w / aspect
+            if h > author.height * 0.6 { h = author.height * 0.6; w = h * aspect }
+
+            // Center in author space
+            let rect = CGRect(
+                x: max(0, (author.width - w)/2),
+                y: max(0, (author.height - h)/2),
+                width: w, height: h
+            )
+
+            let obj = PastedImageObject(rect: rect, image: img)
+            pushUndoSnapshot()
+            objects.append(.image(obj))
+            if objectSpaceSize == nil { objectSpaceSize = author }
+            selectedObjectID = obj.id
+            activeHandle = .none
+            // no focus change for text
+        }
+    }
+
     // MARK: - Snaps Persistence
     
     /// Directory where we store PNG snaps.
@@ -2020,9 +2114,10 @@ struct ContentView: View {
             }
         }
     }
+    
 }
 
-// MARK: - Selection Overlay
+
 
 /// A full-desktop translucent overlay that lets the user click–drag to choose a rectangle.
 private struct SelectionOverlay: View {
@@ -2411,13 +2506,104 @@ private struct BadgeObject: DrawableObject {
     }
 }
 
+private struct PastedImageObject: DrawableObject {
+    let id: UUID
+    var rect: CGRect
+    var image: NSImage
+    /// Natural aspect ratio (w / h) for Shift-resize.
+    let aspect: CGFloat
+
+    init(id: UUID = UUID(), rect: CGRect, image: NSImage) {
+        self.id = id
+        self.rect = rect
+        self.image = image
+        let s = image.size
+        self.aspect = (s.height == 0) ? 1 : (s.width / s.height)
+    }
+
+    static func == (lhs: PastedImageObject, rhs: PastedImageObject) -> Bool {
+        lhs.id == rhs.id && lhs.rect == rhs.rect && lhs.image == rhs.image
+    }
+
+    func drawPath(in _: CGSize) -> Path { Rectangle().path(in: rect) }
+
+    func hitTest(_ p: CGPoint) -> Bool { rect.insetBy(dx: -6, dy: -6).contains(p) }
+
+    func handleHitTest(_ p: CGPoint) -> Handle {
+        let r: CGFloat = 8
+        let tl = CGRect(x: rect.minX - r, y: rect.minY - r, width: 2*r, height: 2*r)
+        let tr = CGRect(x: rect.maxX - r, y: rect.minY - r, width: 2*r, height: 2*r)
+        let bl = CGRect(x: rect.minX - r, y: rect.maxY - r, width: 2*r, height: 2*r)
+        let br = CGRect(x: rect.maxX - r, y: rect.maxY - r, width: 2*r, height: 2*r)
+        if tl.contains(p) { return .rectTopLeft }
+        if tr.contains(p) { return .rectTopRight }
+        if bl.contains(p) { return .rectBottomLeft }
+        if br.contains(p) { return .rectBottomRight }
+        return .none
+    }
+
+    func moved(by d: CGSize) -> PastedImageObject {
+        var c = self
+        c.rect.origin.x += d.width
+        c.rect.origin.y += d.height
+        return c
+    }
+
+    func resizing(_ handle: Handle, to p: CGPoint) -> PastedImageObject {
+        var c = self
+        let keepAspect = NSEvent.modifierFlags.contains(.shift)
+
+        switch handle {
+        case .rectTopLeft:
+            c.rect = CGRect(x: p.x, y: p.y, width: rect.maxX - p.x, height: rect.maxY - p.y)
+        case .rectTopRight:
+            c.rect = CGRect(x: rect.minX, y: p.y, width: p.x - rect.minX, height: rect.maxY - p.y)
+        case .rectBottomLeft:
+            c.rect = CGRect(x: p.x, y: rect.minY, width: rect.maxX - p.x, height: p.y - rect.minY)
+        case .rectBottomRight:
+            c.rect = CGRect(x: rect.minX, y: rect.minY, width: p.x - rect.minX, height: p.y - rect.minY)
+        default:
+            break
+        }
+
+        c.rect.size.width  = max(8, c.rect.size.width)
+        c.rect.size.height = max(8, c.rect.size.height)
+
+        guard keepAspect else { return c }
+
+        // Snap to original aspect by adjusting the dimension that needs the smallest change.
+        let targetW = c.rect.height * aspect
+        let targetH = c.rect.width / aspect
+        if abs(targetW - c.rect.width) < abs(targetH - c.rect.height) {
+            c.rect.size.width = targetW
+        } else {
+            c.rect.size.height = targetH
+        }
+
+        // Re-anchor based on which corner moved so the opposite corner stays fixed.
+        switch handle {
+        case .rectTopLeft:
+            c.rect.origin.x = rect.maxX - c.rect.size.width
+            c.rect.origin.y = rect.maxY - c.rect.size.height
+        case .rectTopRight:
+            c.rect.origin.y = rect.maxY - c.rect.size.height
+        case .rectBottomLeft:
+            c.rect.origin.x = rect.maxX - c.rect.size.width
+        default:
+            break
+        }
+        return c
+    }
+}
+
 private enum Drawable: Identifiable, Equatable {
     case line(LineObject)
     case rect(RectObject)
     case text(TextObject)
     case badge(BadgeObject)
     case highlight(HighlightObject)
-    
+    case image(PastedImageObject)
+
     var id: UUID {
         switch self {
         case .line(let o): return o.id
@@ -2425,6 +2611,7 @@ private enum Drawable: Identifiable, Equatable {
         case .text(let o): return o.id
         case .badge(let o): return o.id
         case .highlight(let o): return o.id
+        case .image(let o): return o.id
         }
     }
 }
@@ -2586,7 +2773,6 @@ final class SelectionWindowManager {
     }
 }
 
-
 private extension CGRect {
     var area: CGFloat { max(0, width) * max(0, height) }
 }
@@ -2647,6 +2833,11 @@ private func scaleDrawable(_ d: Drawable, sx: CGFloat, sy: CGFloat) -> Drawable 
         c.rect.origin.x *= sx; c.rect.origin.y *= sy
         c.rect.size.width  *= sx; c.rect.size.height *= sy
         return .highlight(c)
+    case .image(let o):
+        var c = o
+        c.rect.origin.x *= sx; c.rect.origin.y *= sy
+        c.rect.size.width  *= sx; c.rect.size.height *= sy
+        return .image(c)
     }
 }
 
