@@ -16,10 +16,16 @@ Inspired by Greenshot on Windows - the goal is to make a tiny app that can do th
 </div>
 
 ## Work in Progress
+- Multi-Monitor snaps. 
+- Adjustable 1x, 2x snaps. 
+  - User defined setting? 
+- Zoom ?
+- User friendly menus. 
+- Adjust liquid glass in app icon.
 - Hotkeys for tools.
 - Working Menu Bar commands with icons. 
-- Global system hotkey for screenshots. 
-
+- <del>Global system hotkey for screenshots.</del> 
+  - User adjustable hotkey. 
 ### Completed 
 - <del>Undo & Redo
 - <del>Add Text fields with font colors, sizes, and background fill.

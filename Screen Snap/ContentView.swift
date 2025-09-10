@@ -442,7 +442,7 @@ struct ContentView: View {
                     }
                 }
                 
-                // Enter/Return to commit crop when Crop tool is active
+                // Enter/Return to commit  when Crop tool is active
                 if selectedTool == .crop, let rect = cropRect, !event.modifierFlags.contains(.command) {
                     if event.keyCode == 36 || event.keyCode == 76 { // Return or Keypad Enter
                         // Perform destructive crop with current overlay
@@ -810,7 +810,7 @@ struct ContentView: View {
         }
 //        .onChange(of: lastCapture) { _, newValue in
 //            guard newValue != nil else { return }
-//            
+//
 //            // Add a small delay to ensure the selection overlay is fully dismissed
 //            DispatchQueue.main.asyncAfter(deadline: .now() + 0.1) {
 //                self.ensureMainEditorWindow()
@@ -1119,7 +1119,7 @@ struct ContentView: View {
                         insertSnapURL(savedURL)
                         selectedSnapURL = savedURL
                     }
-                    copyToPasteboard(img)
+                    //copyToPasteboard(img)
                     
                     // Bring app to foreground after capture
                     DispatchQueue.main.async {
@@ -1135,14 +1135,15 @@ struct ContentView: View {
                         }
                     }
                     
-                    withAnimation { showCopiedHUD = true }
-                    DispatchQueue.main.asyncAfter(deadline: .now() + 1.2) {
-                        withAnimation { showCopiedHUD = false }
-                    }
+//                    withAnimation { showCopiedHUD = true }
+//                    DispatchQueue.main.asyncAfter(deadline: .now() + 1.2) {
+//                        withAnimation { showCopiedHUD = false }
+//                    }
                 }
             }
         })
     }
+    
     private func endSelectionCleanup() {
         SelectionWindowManager.shared.dismiss()
     }
@@ -1253,6 +1254,12 @@ struct ContentView: View {
         let pb = NSPasteboard.general
         pb.clearContents()
         pb.writeObjects([image])
+        
+        withAnimation { showCopiedHUD = true }
+        DispatchQueue.main.asyncAfter(deadline: .now() + 1.2) {
+            withAnimation { showCopiedHUD = false }
+        }
+        
     }
     
     private func pushUndoSnapshot() {
@@ -2549,6 +2556,17 @@ extension ContentView {
                 self.startSelection()
             }
     }
+
+}
+
+
+// MARK: - Geometry/Screen Helpers
+
+private func screenForGlobalRect(_ r: CGRect) -> NSScreen? {
+    // Pick the screen with the largest intersection area with the selection rect
+    NSScreen.screens.max { a, b in
+        a.frame.intersection(r).area < b.frame.intersection(r).area
+    }
 }
 
 
@@ -2871,10 +2889,9 @@ private struct SelectionOverlay: View {
 /// Creates a cut-out effect by punching a clear rectangle in an opaque layer.
 private struct SelectionShape: Shape {
     var rect: CGRect
-    func path(in _: CGRect) -> Path {
-        var p = Path(CGRect(x: 0, y: 0, width: NSScreen.screens.map { $0.frame.maxX }.max() ?? 0,
-                            height: NSScreen.screens.map { $0.frame.maxY }.max() ?? 0))
-        p.addRect(rect)
+    func path(in bounds: CGRect) -> Path {
+        var p = Path(bounds) // fill the window’s bounds
+        p.addRect(rect)      // punch the selection rect out
         return p
     }
 }
@@ -3307,10 +3324,16 @@ final class ScreenCapturer: NSObject, SCStreamOutput {
     
     private var stream: SCStream?
     private var continuation: CheckedContinuation<CGImage?, Never>?
+    private var didDeliverFirstFrame = false
+    private var isStopping = false
+    private var frameTimeoutTask: Task<Void, Never>?
     
     /// Captures a single CGImage of the main display using ScreenCaptureKit.
     func captureMainDisplayImage() async -> CGImage? {
         do {
+            didDeliverFirstFrame = false
+            isStopping = false
+            frameTimeoutTask?.cancel(); frameTimeoutTask = nil
             let content = try await SCShareableContent.current
             guard let display = content.displays.first else { return nil }
             
@@ -3326,18 +3349,46 @@ final class ScreenCapturer: NSObject, SCStreamOutput {
             self.stream = stream
             
             try stream.addStreamOutput(self, type: SCStreamOutputType.screen, sampleHandlerQueue: DispatchQueue.main)
+            // Start a one-shot timeout in case no frames ever arrive
+            frameTimeoutTask?.cancel()
+            frameTimeoutTask = Task { [weak self] in
+                try? await Task.sleep(nanoseconds: 2_000_000_000) // 2s
+                guard let self = self else { return }
+                if self.didDeliverFirstFrame || self.isStopping { return }
+                self.isStopping = true
+                let cont = self.continuation
+                self.continuation = nil
+                cont?.resume(returning: nil)
+                let s = self.stream
+                Task { [weak self] in
+                    do { try await s?.stopCapture() } catch { }
+                    do { if let s = s, let self = self { try s.removeStreamOutput(self, type: .screen) } } catch { }
+                    self?.stream = nil
+                    self?.isStopping = false
+                }
+            }
             try await stream.startCapture()
             
             return await withCheckedContinuation { (cont: CheckedContinuation<CGImage?, Never>) in
                 self.continuation = cont
             }
         } catch {
+            frameTimeoutTask?.cancel(); frameTimeoutTask = nil
+            if let s = stream {
+                Task { [weak self] in
+                    do { try await s.stopCapture() } catch { }
+                    do { try s.removeStreamOutput(self!, type: .screen) } catch { }
+                }
+            }
             return nil
         }
     }
     
     func captureImage(using filter: SCContentFilter, display: SCDisplay) async -> CGImage? {
         do {
+            didDeliverFirstFrame = false
+            isStopping = false
+            frameTimeoutTask?.cancel(); frameTimeoutTask = nil
             let cfg = SCStreamConfiguration()
             
             // Get the backing scale factor from the screen that matches this display
@@ -3353,12 +3404,37 @@ final class ScreenCapturer: NSObject, SCStreamOutput {
             let stream = SCStream(filter: filter, configuration: cfg, delegate: nil)
             self.stream = stream
             try stream.addStreamOutput(self, type: .screen, sampleHandlerQueue: .main)
+            // Start a one-shot timeout in case no frames ever arrive
+            frameTimeoutTask?.cancel()
+            frameTimeoutTask = Task { [weak self] in
+                try? await Task.sleep(nanoseconds: 2_000_000_000) // 2s
+                guard let self = self else { return }
+                if self.didDeliverFirstFrame || self.isStopping { return }
+                self.isStopping = true
+                let cont = self.continuation
+                self.continuation = nil
+                cont?.resume(returning: nil)
+                let s = self.stream
+                Task { [weak self] in
+                    do { try await s?.stopCapture() } catch { }
+                    do { if let s = s, let self = self { try s.removeStreamOutput(self, type: .screen) } } catch { }
+                    self?.stream = nil
+                    self?.isStopping = false
+                }
+            }
             try await stream.startCapture()
             
             return await withCheckedContinuation { (cont: CheckedContinuation<CGImage?, Never>) in
                 self.continuation = cont
             }
         } catch {
+            frameTimeoutTask?.cancel(); frameTimeoutTask = nil
+            if let s = stream {
+                Task { [weak self] in
+                    do { try await s.stopCapture() } catch { }
+                    do { try s.removeStreamOutput(self!, type: .screen) } catch { }
+                }
+            }
             return nil
         }
     }
@@ -3381,19 +3457,27 @@ final class ScreenCapturer: NSObject, SCStreamOutput {
         guard outputType == .screen,
               let pixelBuffer = CMSampleBufferGetImageBuffer(sampleBuffer) else { return }
         
+        if didDeliverFirstFrame || isStopping {
+            return
+        }
+        
         var cgImage: CGImage?
         VTCreateCGImageFromCVPixelBuffer(pixelBuffer, options: nil, imageOut: &cgImage)
         
         if let cgImage {
+            // Ensure we only fulfill once and stop the stream a single time
+            didDeliverFirstFrame = true
             continuation?.resume(returning: cgImage)
             continuation = nil
-            
-            Task { [weak self] in
-                do {
-                    try await self?.stream?.stopCapture()
-                    if let self { try self.stream?.removeStreamOutput(self, type: .screen) }
-                } catch { }
-                self?.stream = nil
+            if !isStopping {
+                isStopping = true
+                frameTimeoutTask?.cancel(); frameTimeoutTask = nil
+                let s = self.stream
+                Task { [weak self] in
+                    defer { self?.stream = nil; self?.isStopping = false }
+                    do { try await s?.stopCapture() } catch { /* ignore -3808 etc */ }
+                    do { if let s = s, let self = self { try s.removeStreamOutput(self, type: .screen) } } catch { }
+                }
             }
         }
     }
@@ -3404,47 +3488,55 @@ final class ScreenCapturer: NSObject, SCStreamOutput {
 
 final class SelectionWindowManager {
     static let shared = SelectionWindowManager()
-    private var panel: NSPanel?
+    private var panels: [NSPanel] = []
     private var keyMonitor: Any?
     
     func present(onComplete: @escaping (CGRect) -> Void) {
-        guard panel == nil else { return }
-        guard let screen = NSScreen.main else { return }
-        
-        let frame = screen.frame
-        let panel = NSPanel(contentRect: frame,
-                            styleMask: [.borderless, .nonactivatingPanel],
-                            backing: .buffered,
-                            defer: false,
-                            screen: screen)
-        panel.level = .screenSaver
-        panel.backgroundColor = .clear
-        panel.isOpaque = false
-        panel.ignoresMouseEvents = false
-        panel.isMovable = false
-        panel.collectionBehavior = [.canJoinAllSpaces, .fullScreenAuxiliary]
-        panel.titleVisibility = .hidden
-        panel.titlebarAppearsTransparent = true
-        
-        // SwiftUI overlay content
-        let root = SelectionOverlay(windowOrigin: frame.origin,
-                                    onComplete: { rect in
-            onComplete(rect)
-            self.dismiss()
-        },
-                                    onCancel: { self.dismiss() })
+        // Prevent re-entrancy
+        guard panels.isEmpty else { return }
+
+        for screen in NSScreen.screens {
+            let frame = screen.frame
+            let panel = NSPanel(contentRect: frame,
+                                styleMask: [.borderless, .nonactivatingPanel],
+                                backing: .buffered,
+                                defer: false)
+            panel.level = .screenSaver
+            panel.backgroundColor = .clear
+            panel.isOpaque = false
+            panel.ignoresMouseEvents = false
+            panel.isMovable = false
+            panel.collectionBehavior = [.canJoinAllSpaces, .fullScreenAuxiliary]
+            panel.titleVisibility = .hidden
+            panel.titlebarAppearsTransparent = true
+            panel.acceptsMouseMovedEvents = true
+            panel.hidesOnDeactivate = false
+            panel.hasShadow = false
+            panel.isExcludedFromWindowsMenu = true
+            panel.setFrame(frame, display: false) // ensure the window sits at the global screen frame
+
+            let root = SelectionOverlay(
+                windowOrigin: frame.origin,
+                onComplete: { rect in
+                    onComplete(rect)
+                    self.dismiss()
+                },
+                onCancel: { self.dismiss() }
+            )
             .ignoresSafeArea()
-        
-        panel.contentView = NSHostingView(rootView: root)
-        panel.makeKeyAndOrderFront(nil)
-        // NSApp.activate(ignoringOtherApps: true) // Removed to prevent app from coming to foreground
-        self.panel = panel
-        
-        // Listen for ESC to cancel selection
+
+            panel.contentView = NSHostingView(rootView: root)
+            panel.makeKeyAndOrderFront(nil)
+            panels.append(panel)
+        }
+
+        // Activate the app so non-activating panels on all displays accept events
+        NSApp.activate(ignoringOtherApps: true)
+
+        // ESC to cancel selection (all panels)
         keyMonitor = NSEvent.addLocalMonitorForEvents(matching: .keyDown) { [weak self] event in
             guard let self else { return event }
-            // 53 is the ESC key on macOS
-            if event.keyCode == 53 {
+            if event.keyCode == 53 { // ESC
                 self.dismiss()
                 return nil // consume event
             }
@@ -3453,8 +3545,10 @@ final class SelectionWindowManager {
     }
     
     func dismiss() {
-        panel?.orderOut(nil)
-        panel = nil
+        for p in panels {
+            p.orderOut(nil)
+        }
+        panels.removeAll()
         if let keyMonitor {
             NSEvent.removeMonitor(keyMonitor)
             self.keyMonitor = nil
