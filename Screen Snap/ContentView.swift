@@ -209,7 +209,7 @@ struct ContentView: View {
                                     lastFittedSize = fitted
                                     if objectSpaceSize == nil { objectSpaceSize = fitted }
                                 }
-                                .onChange(of: geo.size) { _ in
+                                .onChange(of: geo.size) { _,_ in
                                     // Track latest fitted size for rasterization; do not mutate objects during live resize
                                     lastFittedSize = fitted
                                     if objectSpaceSize == nil { objectSpaceSize = fitted }
@@ -659,7 +659,7 @@ struct ContentView: View {
                             isTextEditorFocused = true
                         }
                     }
-                    .onChange(of: focusedTextID) { newValue in
+                    .onChange(of: focusedTextID) { _,newValue in
                         print("🔥 TextEditor focus changed to: \(String(describing: newValue))")
                         // Update focus state when focusedTextID changes
                         isTextEditorFocused = (newValue == o.id)
@@ -727,7 +727,7 @@ struct ContentView: View {
                     if dragDistance > 0.5 { // any movement begins interaction
                         if !pushedDragUndo { pushUndoSnapshot(); pushedDragUndo = true }
                         switch objects[idx] {
-                        case .badge(var o):
+                        case .badge(let o):
                             let updated = (activeHandle == .none) ? o.moved(by: delta) : o.resizing(activeHandle, to: p)
                             let clamped = clampRect(updated.rect, in: author)
                             var u = updated; u.rect = clamped
@@ -790,7 +790,7 @@ struct ContentView: View {
                 let current = fittedToAuthorPoint(currentFit, fitted: fitted, author: author)
                 
                 // If we already have a cropRect, interpret drags as edits (handles or move)
-                if var existing = cropRect {
+                if let existing = cropRect {
                     if cropDragStart == nil {
                         cropDragStart = start
                         cropOriginalRect = existing
@@ -829,7 +829,7 @@ struct ContentView: View {
             }
             .onEnded { value in
                 let currentFit = CGPoint(x: value.location.x - insetOrigin.x, y: value.location.y - insetOrigin.y)
-                let current = fittedToAuthorPoint(currentFit, fitted: fitted, author: author)
+                _ = fittedToAuthorPoint(currentFit, fitted: fitted, author: author)
                 
                 if let _ = cropOriginalRect {
                     // Finish edit
@@ -1281,7 +1281,7 @@ struct ContentView: View {
                             pushedDragUndo = true
                         }
                         switch objects[idx] {
-                        case .text(var o):
+                        case .text(let o):
                             let updated = (activeHandle == .none) ? o.moved(by: delta) : o.resizing(activeHandle, to: p)
                             let clamped = clampRect(updated.rect, in: author)
                             var u = updated; u.rect = clamped
@@ -1410,28 +1410,28 @@ struct ContentView: View {
                         pushedDragUndo = true
                     }
                     switch objects[idx] {
-                    case .line(var o):
+                    case .line(let o):
                         let updated = (activeHandle == .none) ? o.moved(by: delta) : o.resizing(activeHandle, to: p)
                         var u = updated
                         u.start = clampPoint(u.start, in: author)
                         u.end   = clampPoint(u.end,   in: author)
                         objects[idx] = .line(u)
-                    case .rect(var o):
+                    case .rect(let o):
                         let updated = (activeHandle == .none) ? o.moved(by: delta) : o.resizing(activeHandle, to: p)
                         let clamped = clampRect(updated.rect, in: author)
                         var u = updated; u.rect = clamped
                         objects[idx] = .rect(u)
-                    case .text(var o):
+                    case .text(let o):
                         let updated = (activeHandle == .none) ? o.moved(by: delta) : o.resizing(activeHandle, to: p)
                         let clamped = clampRect(updated.rect, in: author)
                         var u = updated; u.rect = clamped
                         objects[idx] = .text(u)
-                    case .badge(var o):
+                    case .badge(let o):
                         let updated = (activeHandle == .none) ? o.moved(by: delta) : o.resizing(activeHandle, to: p)
                         let clamped = clampRect(updated.rect, in: author)
                         var u = updated; u.rect = clamped
                         objects[idx] = .badge(u)
-                    case .highlight(var o):
+                    case .highlight(let o):
                         let updated = (activeHandle == .none) ? o.moved(by: delta) : o.resizing(activeHandle, to: p)
                         let clamped = clampRect(updated.rect, in: author)
                         var u = updated; u.rect = clamped
@@ -1785,10 +1785,10 @@ struct ContentView: View {
                 y: min(max(0, p.y), fitted.height))
     }
     private func clampRect(_ r: CGRect, in fitted: CGSize) -> CGRect {
-        var x = max(0, min(r.origin.x, fitted.width))
-        var y = max(0, min(r.origin.y, fitted.height))
-        var w = max(0, min(r.width,  fitted.width  - x))
-        var h = max(0, min(r.height, fitted.height - y))
+        let x = max(0, min(r.origin.x, fitted.width))
+        let y = max(0, min(r.origin.y, fitted.height))
+        let w = max(0, min(r.width,  fitted.width  - x))
+        let h = max(0, min(r.height, fitted.height - y))
         return CGRect(x: x, y: y, width: w, height: h)
     }
     
@@ -2015,7 +2015,7 @@ struct ContentView: View {
                     image = NSImage(contentsOf: url)
                 }
             }
-            .onChange(of: url) { newURL in
+            .onChange(of: url) { _, newURL in
                 image = NSImage(contentsOf: newURL)
             }
         }
@@ -2466,7 +2466,7 @@ final class ScreenCapturer: NSObject, SCStreamOutput {
             let stream = SCStream(filter: filter, configuration: config, delegate: nil)
             self.stream = stream
             
-            try await stream.addStreamOutput(self, type: SCStreamOutputType.screen, sampleHandlerQueue: DispatchQueue.main)
+            try stream.addStreamOutput(self, type: SCStreamOutputType.screen, sampleHandlerQueue: DispatchQueue.main)
             try await stream.startCapture()
             
             return await withCheckedContinuation { (cont: CheckedContinuation<CGImage?, Never>) in
@@ -2489,7 +2489,7 @@ final class ScreenCapturer: NSObject, SCStreamOutput {
             
             let stream = SCStream(filter: filter, configuration: cfg, delegate: nil)
             self.stream = stream
-            try await stream.addStreamOutput(self, type: .screen, sampleHandlerQueue: .main)
+            try stream.addStreamOutput(self, type: .screen, sampleHandlerQueue: .main)
             try await stream.startCapture()
             
             return await withCheckedContinuation { (cont: CheckedContinuation<CGImage?, Never>) in
@@ -2515,7 +2515,7 @@ final class ScreenCapturer: NSObject, SCStreamOutput {
             Task { [weak self] in
                 do {
                     try await self?.stream?.stopCapture()
-                    if let self { try await self.stream?.removeStreamOutput(self, type: .screen) }
+                    if let self { try self.stream?.removeStreamOutput(self, type: .screen) }
                 } catch { }
                 self?.stream = nil
             }
