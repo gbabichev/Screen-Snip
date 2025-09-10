@@ -22,6 +22,7 @@ struct ContentView: View {
     @State private var selectedTool: Tool = .pointer
     // Removed lines buffer; we now auto-commit each line on mouse-up.
     @State private var draft: Line? = nil
+    @State private var isImportingImage = false
     @State private var draftRect: CGRect? = nil
     @State private var cropDraftRect: CGRect? = nil
     @State private var cropRect: CGRect? = nil
@@ -372,9 +373,9 @@ struct ContentView: View {
         .toolbar {
             ToolbarItemGroup(placement: .navigation) {
                 Button {
-                    //selectFolders()
+                    isImportingImage = true
                 } label: {
-                    Label("Open Folder", systemImage: "folder")
+                    Label("Open File", systemImage: "doc")
                 }
                 .keyboardShortcut("o", modifiers: [.command])
                 
@@ -610,7 +611,35 @@ struct ContentView: View {
                 .keyboardShortcut("2", modifiers: [.command, .shift])
             }
         }
-    }
+        .fileImporter(
+            isPresented: $isImportingImage,
+            allowedContentTypes: [.png, .jpeg, .heic],
+            allowsMultipleSelection: false
+        ) { result in
+            switch result {
+            case .success(let urls):
+                if let url = urls.first, let img = NSImage(contentsOf: url) {
+                    undoStack.removeAll()
+                    redoStack.removeAll()
+                    lastCapture = img
+                    selectedSnapURL = url
+                    objects.removeAll()
+                    objectSpaceSize = nil
+                    selectedObjectID = nil
+                    activeHandle = .none
+                    cropRect = nil
+                    cropDraftRect = nil
+                    cropHandle = .none
+                    if let dir = snapsDirectory(), url.path.hasPrefix(dir.path) {
+                        insertSnapURL(url)
+                    }
+                }
+            case .failure(let error):
+                print("Image import canceled/failed: \(error)")
+            }
+        }
+        }
+
     
     @ViewBuilder
     private func selectionForText(_ o: TextObject) -> some View {
@@ -1075,6 +1104,7 @@ struct ContentView: View {
             insertSnapURL(url)
         }
     }
+
     
     private func lineGesture(insetOrigin: CGPoint, fitted: CGSize, author: CGSize) -> some Gesture {
         DragGesture(minimumDistance: 0)

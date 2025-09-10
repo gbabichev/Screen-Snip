@@ -24,11 +24,10 @@ Inspired by Greenshot on Windows - the goal is to make a tiny app that can do th
 - <del>Add auto increment numbers. 
 - <del>Add Crop.
 - <del>Lines, Arrows, Shapes, numbers, etc should all be moveable objects. 
-- Add a highlighter
+- <del>Add a highlighter
 - Hotkeys for tools 
-- Open existing file
-- Paste on top & move stuff around. 
-- Image browser. 
+- <del>Open existing file
+- <del>Paste on top & move stuff around. 
 - Add User Settings 
   - User defined save folder. 
   - User defined output type (PNG / JPG / HEIC)
