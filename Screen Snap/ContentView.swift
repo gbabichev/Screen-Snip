@@ -474,13 +474,42 @@ struct ContentView: View {
                 }
                 return event
             }
+            // Wire ContentView's selection function into the always-on coordinator
+            SelectionCoordinator.shared.register { completion in
+                print("[DEBUG] ContentView: register handler -> startSelection()")
+                startSelection()
+                // We don't need to return a URL here because startSelection() handles opening the editor.
+                completion(nil)
+            }
         }
         .onDisappear {
             if let keyMonitor { NSEvent.removeMonitor(keyMonitor); self.keyMonitor = nil }
         }
-        .onReceive(NotificationCenter.default.publisher(for: Notification.Name("com.xantrion.screensnap.beginSnapFromIntent"))) { _ in
-            startSelection()
+        .onReceive(NotificationCenter.default.publisher(for: Notification.Name("LoadSpecificSnap"))) { note in
+            guard let url = note.object as? URL else { return }
+            if let img = NSImage(contentsOf: url) {
+                lastCapture = img
+                selectedSnapURL = url
+                undoStack.removeAll()
+                redoStack.removeAll()
+                objects.removeAll()
+                objectSpaceSize = nil
+                selectedObjectID = nil
+                activeHandle = .none
+            }
         }
+//        .onReceive(NotificationCenter.default.publisher(for: Notification.Name("com.georgebabichev.screensnap.beginSnapFromIntent"))) { _ in
+//            print("test")
+//            startSelection()
+//        }
+//        .onReceive(NotificationCenter.default.publisher(for: Notification.Name("StartSelectionFromHotkey"))) { note in
+//            print("[DEBUG] ContentView: StartSelectionFromHotkey received")
+//            startSelection()
+//            if let completion = note.object as? ((URL?) -> Void) {
+//                // startSelection manages UI and saving; we don't provide a URL back
+//                completion(nil)
+//            }
+//        }
         .toolbar {
             ToolbarItemGroup(placement: .navigation) {
                 Button {
@@ -2261,10 +2290,26 @@ struct ContentView: View {
         return nil
     }
     
+    @State private var openEditorAfterCapture: Bool = false
+    
     private func saveSnapToDisk(_ image: NSImage) -> URL? {
         guard let dir = snapsDirectory() else { return nil }
         let url = dir.appendingPathComponent(defaultSnapFilename())
-        return writeImage(image, to: url, format: preferredSaveFormat, jpegQuality: CGFloat(saveQuality)) ? url : nil
+        if writeImage(image, to: url, format: preferredSaveFormat, jpegQuality: CGFloat(saveQuality)) {
+            // Insert at head of recent list
+            insertSnapURL(url)
+            // If the hotkey initiated this capture (window may be closed), open the editor with the new snap
+            if openEditorAfterCapture {
+                let img = image
+                selectedSnapURL = url
+                lastCapture = img
+                presentEditor(url: url, image: img)
+                openEditorAfterCapture = false
+            }
+            return url
+        } else {
+            return nil
+        }
     }
     
     /// Loads existing snaps on disk (PNG files), newest first.
@@ -2481,6 +2526,20 @@ struct ContentView: View {
 }
 
 
+// MARK: - Preload initializer for opening editor with an image
+//extension ContentView {
+//    init(preloadURL: URL?, preloadImage: NSImage?) {
+//        //self.init()
+//        
+//        self._selectedSnapURL = State(initialValue: preloadURL)
+//        self._lastCapture = State(initialValue: preloadImage)
+//        self._snapURLs = State(initialValue: [])
+//        self.init()
+//        _selectedSnapURL = State(initialValue: preloadURL)
+//        _lastCapture = State(initialValue: preloadImage)
+//    }
+//}
+
 // MARK: - Root View Modifier for Global Hotkey
 
 extension ContentView {
@@ -2513,7 +2572,7 @@ extension ContentView {
     }
     
     /// Creates a new main editor window with proper setup
-    private func createNewMainEditorWindow() {
+    private func createNewMainEditorWindow(preloadURL: URL? = nil, preloadImage: NSImage? = nil) {
         let newWindow = NSWindow(
             contentRect: NSRect(x: 0, y: 0, width: 1000, height: 700),
             styleMask: [.titled, .closable, .miniaturizable, .resizable, .fullSizeContentView],
@@ -2530,7 +2589,7 @@ extension ContentView {
         
         // Create a fresh ContentView instance for the new window
         let newContentView = ContentView()
-        newWindow.contentViewController = NSHostingController(rootView: newContentView.rootViewWithHotkey)
+        newWindow.contentViewController = NSHostingController(rootView: newContentView)
         
         // Set up window controller for better management
         let windowController = NSWindowController(window: newWindow)
@@ -2547,16 +2606,48 @@ extension ContentView {
         // Store reference to prevent deallocation
         WindowManager.shared.registerWindow(windowController)
     }
-    
-    var rootViewWithHotkey: some View {
-        body
-            .onReceive(NotificationCenter.default.publisher(for: Notification.Name("com.xantrion.screensnap.beginSnapFromIntent"))) { _ in
-                // When hotkey is triggered, don't bring window forward immediately
-                // Let the capture complete first, then bring it forward
-                self.startSelection()
-            }
-    }
 
+    /// Presents the editor with the given image. Reuses existing window if available; otherwise creates a new one preloaded.
+    private func presentEditor(url: URL?, image: NSImage?) {
+        // Try to find an existing ContentView-hosting window first
+        for window in NSApp.windows {
+            if let hosting = window.contentViewController as? NSHostingController<ContentView>,
+               window.styleMask.contains(.titled),
+               !window.isSheet {
+                
+                // Just bring the existing window forward and let it load the new snap normally
+                if window.isMiniaturized {
+                    window.deminiaturize(nil)
+                }
+                
+                window.makeKeyAndOrderFront(nil)
+                window.orderFrontRegardless()
+                NSApp.activate(ignoringOtherApps: true)
+                
+                // Post a notification to load the specific snap
+                if let url = url {
+                    NotificationCenter.default.post(
+                        name: Notification.Name("LoadSpecificSnap"),
+                        object: url
+                    )
+                }
+                return
+            }
+        }
+        
+        // No existing window — create a new one and load the snap after creation
+        createNewMainEditorWindow()
+        
+        // Post notification to load the snap after window creation
+        if let url = url {
+            DispatchQueue.main.asyncAfter(deadline: .now() + 0.1) {
+                NotificationCenter.default.post(
+                    name: Notification.Name("LoadSpecificSnap"),
+                    object: url
+                )
+            }
+        }
+    }
 }
 
 
@@ -2568,9 +2659,6 @@ private func screenForGlobalRect(_ r: CGRect) -> NSScreen? {
         a.frame.intersection(r).area < b.frame.intersection(r).area
     }
 }
-
-
-
 
 
 // MARK: - Gallery Window + View
@@ -3500,6 +3588,7 @@ final class SelectionWindowManager {
             panel.contentView = NSHostingView(rootView: root)
             panel.makeKeyAndOrderFront(nil)
             panels.append(panel)
+            NSLog("[DEBUG] Selection complete rect")
         }
 
         // Activate the app so non-activating panels on all displays accept events
