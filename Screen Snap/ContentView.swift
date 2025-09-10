@@ -12,7 +12,35 @@ private var _lastClickPoint: CGPoint = .zero
 
 private enum Tool { case pointer, line, rect, text, crop, badge, highlighter }
 
+private enum SaveFormat: String, CaseIterable, Identifiable {
+    case png, jpeg, heic
+    var id: String { rawValue }
+    var utType: UTType {
+        switch self {
+        case .png:  return .png
+        case .jpeg: return .jpeg
+        case .heic: return .heic
+        }
+    }
+    var fileExtension: String {
+        switch self {
+        case .png:  return "png"
+        case .jpeg: return "jpg"
+        case .heic: return "heic"
+        }
+    }
+}
+
 struct ContentView: View {
+    
+    @State private var showSettingsPopover = false
+    @AppStorage("preferredSaveFormat") private var preferredSaveFormatRaw: String = SaveFormat.png.rawValue
+    private var preferredSaveFormat: SaveFormat {
+        get { SaveFormat(rawValue: preferredSaveFormatRaw) ?? .png }
+        set { preferredSaveFormatRaw = newValue.rawValue }
+    }
+
+    @AppStorage("saveQuality") private var saveQuality: Double = 0.9 // used for JPEG & HEIC (0.4...1.0)
     
     @FocusState private var isTextEditorFocused: Bool
 
@@ -379,10 +407,36 @@ struct ContentView: View {
                 }
                 .keyboardShortcut("o", modifiers: [.command])
                 
-                Button {
-                    //showSettingsPopover = true
-                } label: {
+                Button { showSettingsPopover = true } label: {
                     Label("Settings", systemImage: "gearshape")
+                }
+                .popover(isPresented: $showSettingsPopover, arrowEdge: .bottom) {
+                    VStack(alignment: .leading, spacing: 12) {
+                        Text("Settings").font(.headline)
+                        Divider()
+                        Picker("Save format", selection: $preferredSaveFormatRaw) {
+                            Text("PNG").tag(SaveFormat.png.rawValue)
+                            Text("JPEG").tag(SaveFormat.jpeg.rawValue)
+                            Text("HEIC").tag(SaveFormat.heic.rawValue)
+                        }
+                        .pickerStyle(.segmented)
+
+                        if preferredSaveFormat == .jpeg || preferredSaveFormat == .heic {
+                            HStack {
+                                Text("Quality")
+                                Slider(value: $saveQuality, in: 0.4...1.0)
+                                Text(String(format: "%.0f%%", saveQuality * 100))
+                                    .frame(width: 44, alignment: .trailing)
+                            }
+                        }
+
+                        HStack {
+                            Spacer()
+                            Button("Close") { showSettingsPopover = false }
+                        }
+                    }
+                    .padding(16)
+                    .frame(minWidth: 320)
                 }
             }
             
@@ -1045,17 +1099,49 @@ struct ContentView: View {
     private func defaultSnapFilename() -> String {
         let formatter = DateFormatter()
         formatter.dateFormat = "yyyyMMdd_HHmmss_SSS"
-        return "snap_\(formatter.string(from: Date())).png"
+        return "snap_\(formatter.string(from: Date())).\(preferredSaveFormat.fileExtension)"
     }
     
-    /// Writes the image as PNG to a URL. Returns true on success.
+    
     @discardableResult
-    private func writePNG(_ image: NSImage, to url: URL) -> Bool {
+    private func writeImage(_ image: NSImage, to url: URL, format: SaveFormat, jpegQuality: CGFloat? = nil) -> Bool {
         guard let tiff = image.tiffRepresentation,
-              let rep = NSBitmapImageRep(data: tiff),
-              let png = rep.representation(using: .png, properties: [:]) else { return false }
+              let rep = NSBitmapImageRep(data: tiff) else { return false }
+
+        let data: Data?
+        switch format {
+        case .png:
+            data = rep.representation(using: .png, properties: [:])
+        case .jpeg:
+            let q = (jpegQuality ?? 0.9)
+            data = rep.representation(using: .jpeg, properties: [.compressionFactor: q])
+        case .heic:
+            guard let cgimg = image.cgImage(forProposedRect: nil, context: nil, hints: nil) else {
+                data = nil
+                break
+            }
+            let mutable = NSMutableData()
+            guard let dest = CGImageDestinationCreateWithData(
+                mutable as CFMutableData,
+                UTType.heic.identifier as CFString,
+                1,
+                nil
+            ) else {
+                data = nil
+                break
+            }
+
+            let q = (jpegQuality ?? 0.9) as CGFloat
+            // Pass lossy compression quality (0.0 ... 1.0)
+            let props: CFDictionary = [kCGImageDestinationLossyCompressionQuality: q] as CFDictionary
+            CGImageDestinationAddImage(dest, cgimg, props)
+
+            data = CGImageDestinationFinalize(dest) ? (mutable as Data) : nil
+        }
+
+        guard let data else { return false }
         do {
-            try png.write(to: url, options: .atomic)
+            try data.write(to: url, options: .atomic)
             return true
         } catch {
             return false
@@ -1066,7 +1152,7 @@ struct ContentView: View {
     private func saveAsCurrent() {
         guard let img = lastCapture else { return }
         let panel = NSSavePanel()
-        panel.allowedContentTypes = [UTType.png]
+        panel.allowedContentTypes = [preferredSaveFormat.utType]
         panel.canCreateDirectories = true
         panel.isExtensionHidden = false
         if let sel = selectedSnapURL {
@@ -1079,7 +1165,7 @@ struct ContentView: View {
             panel.nameFieldStringValue = defaultSnapFilename()
         }
         if panel.runModal() == .OK, let url = panel.url {
-            if writePNG(img, to: url) {
+            if writeImage(img, to: url, format: preferredSaveFormat, jpegQuality: CGFloat(saveQuality)) {
                 selectedSnapURL = url
                 refreshGalleryAfterSaving(to: url)
             }
@@ -1090,7 +1176,7 @@ struct ContentView: View {
     private func saveCurrentOverwrite() {
         guard let img = lastCapture else { return }
         if let url = selectedSnapURL {
-            if writePNG(img, to: url) {
+            if writeImage(img, to: url, format: preferredSaveFormat, jpegQuality: CGFloat(saveQuality)) {
                 refreshGalleryAfterSaving(to: url)
             }
         } else {
@@ -1718,7 +1804,9 @@ struct ContentView: View {
             lastCapture = flattened
             objects.removeAll()
             if let url = selectedSnapURL {
-                if writePNG(flattened, to: url) { refreshGalleryAfterSaving(to: url) }
+                if writeImage(flattened, to: url, format: preferredSaveFormat, jpegQuality: CGFloat(saveQuality)) {
+                    refreshGalleryAfterSaving(to: url)
+                }
             } else {
                 saveAsCurrent()
             }
@@ -1733,12 +1821,12 @@ struct ContentView: View {
             lastCapture = flattened
             objects.removeAll()
             let panel = NSSavePanel()
-            panel.allowedContentTypes = [UTType.png]
+            panel.allowedContentTypes = [preferredSaveFormat.utType]
             panel.canCreateDirectories = true
             panel.isExtensionHidden = false
             panel.nameFieldStringValue = selectedSnapURL?.lastPathComponent ?? defaultSnapFilename()
             if panel.runModal() == .OK, let url = panel.url {
-                if writePNG(flattened, to: url) {
+                if writeImage(flattened, to: url, format: preferredSaveFormat, jpegQuality: CGFloat(saveQuality)) {
                     selectedSnapURL = url
                     refreshGalleryAfterSaving(to: url)
                 }
@@ -1979,23 +2067,10 @@ struct ContentView: View {
         return nil
     }
     
-    /// Saves an NSImage as PNG to disk; returns the file URL if successful.
     private func saveSnapToDisk(_ image: NSImage) -> URL? {
         guard let dir = snapsDirectory() else { return nil }
-        let formatter = DateFormatter()
-        formatter.dateFormat = "yyyyMMdd_HHmmss_SSS"
-        let name = "snap_\(formatter.string(from: Date())).png"
-        let url = dir.appendingPathComponent(name)
-        
-        guard let tiff = image.tiffRepresentation,
-              let rep = NSBitmapImageRep(data: tiff),
-              let png = rep.representation(using: .png, properties: [:]) else { return nil }
-        do {
-            try png.write(to: url, options: .atomic)
-            return url
-        } catch {
-            return nil
-        }
+        let url = dir.appendingPathComponent(defaultSnapFilename())
+        return writeImage(image, to: url, format: preferredSaveFormat, jpegQuality: CGFloat(saveQuality)) ? url : nil
     }
     
     /// Loads existing snaps on disk (PNG files), newest first.
@@ -2896,5 +2971,3 @@ private func cropImage(_ image: NSImage, toBottomLeftRect rBL: CGRect) -> NSImag
     guard let sub = cg.cropping(to: rectTL) else { return nil }
     return NSImage(cgImage: sub, size: NSSize(width: rectTL.width, height: rectTL.height))
 }
-
-

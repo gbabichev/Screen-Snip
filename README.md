@@ -30,7 +30,7 @@ Inspired by Greenshot on Windows - the goal is to make a tiny app that can do th
 - <del>Paste on top & move stuff around. 
 - Add User Settings 
   - User defined save folder. 
-  - User defined output type (PNG / JPG / HEIC)
+  - <del>User defined output type (PNG / JPG / HEIC) & quality slider. 
 - Global system hotkey for screenshots. 
 - More as I think of it. 😊
 
