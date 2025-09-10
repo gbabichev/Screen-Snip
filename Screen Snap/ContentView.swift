@@ -33,6 +33,9 @@ private enum SaveFormat: String, CaseIterable, Identifiable {
 
 struct ContentView: View {
     
+    @State private var missingSnapURLs: Set<URL> = []
+    
+    
     @State private var showSettingsPopover = false
     @AppStorage("preferredSaveFormat") private var preferredSaveFormatRaw: String = SaveFormat.png.rawValue
     private var preferredSaveFormat: SaveFormat {
@@ -256,13 +259,37 @@ struct ContentView: View {
                         }
                         .frame(maxWidth: .infinity, maxHeight: .infinity)
                     } else {
-                        VStack(spacing: 8) {
-                            Image(systemName: "camera")
-                                .imageScale(.large)
-                                .foregroundStyle(.tint)
-                            Text("Press ⇧⌘2 or click ‘Capture Region’ to begin.")
-                                .multilineTextAlignment(.center)
-                                .foregroundStyle(.secondary)
+                        VStack(spacing: 12) {
+                            // Show different content based on whether we have snaps but they're missing
+                            if !missingSnapURLs.isEmpty {
+                                // We had snaps but some are missing - show error state
+                                VStack(spacing: 8) {
+                                    Image(systemName: "exclamationmark.triangle")
+                                        .imageScale(.large)
+                                        .foregroundStyle(.orange)
+                                    Text("Some images were deleted from disk")
+                                        .fontWeight(.medium)
+                                    Text("Press ⇧⌘2 to capture a new screenshot")
+                                        .font(.caption)
+                                        .foregroundStyle(.secondary)
+                                }
+                            } else if !snapURLs.isEmpty {
+                                // We have snaps, but no image selected - show the camera icon
+                                Image(systemName: "camera")
+                                    .imageScale(.large)
+                                    .foregroundStyle(.tint)
+                                Text("Press ⇧⌘2 or click 'Capture Region' to begin.")
+                                    .multilineTextAlignment(.center)
+                                    .foregroundStyle(.secondary)
+                            } else {
+                                // No snaps at all - show normal empty state
+                                Image(systemName: "camera")
+                                    .imageScale(.large)
+                                    .foregroundStyle(.tint)
+                                Text("Press ⇧⌘2 or click 'Capture Region' to begin.")
+                                    .multilineTextAlignment(.center)
+                                    .foregroundStyle(.secondary)
+                            }
                         }
                         .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .center)
                     }
@@ -295,22 +322,22 @@ struct ContentView: View {
                         .help("Refresh snaps")
                         
                         Button(action: {
-                                openSnapsInFinder()
-                            }) {
-                                Image(systemName: "folder")
-                                    .imageScale(.small)
-                            }
-                            .buttonStyle(.plain)
-                            .help("Open Snaps in Finder")
+                            openSnapsInFinder()
+                        }) {
+                            Image(systemName: "folder")
+                                .imageScale(.small)
+                        }
+                        .buttonStyle(.plain)
+                        .help("Open Snaps in Finder")
                         
                         Button(action: {
-                                openSnapsInGallery()
-                            }) {
-                                Image(systemName: "square.grid.2x2")
-                                    .imageScale(.small)
-                            }
-                            .buttonStyle(.plain)
-                            .help("Open Snaps Gallery")
+                            openSnapsInGallery()
+                        }) {
+                            Image(systemName: "square.grid.2x2")
+                                .imageScale(.small)
+                        }
+                        .buttonStyle(.plain)
+                        .help("Open Snaps Gallery")
                         
                         
                     }
@@ -337,12 +364,28 @@ struct ContentView: View {
                                 }
                                 .contentShape(Rectangle())
                                 .onTapGesture {
+                                    // Check if file exists before trying to load
+                                    let fm = FileManager.default
+                                    if !fm.fileExists(atPath: url.path) {
+                                        // File is missing - add to missing set and remove from snapURLs
+                                        missingSnapURLs.insert(url)
+                                        if let index = snapURLs.firstIndex(of: url) {
+                                            snapURLs.remove(at: index)
+                                        }
+                                        // If this was the selected snap, clear selection and show error
+                                        if selectedSnapURL == url {
+                                            selectedSnapURL = nil
+                                            lastCapture = nil
+                                        }
+                                        return
+                                    }
+                                    
+                                    // File exists - proceed normally
                                     if let img = NSImage(contentsOf: url) {
                                         lastCapture = img
                                         selectedSnapURL = url
                                         undoStack.removeAll(); redoStack.removeAll()
                                         objects.removeAll()
-                                        // Reset object space size when loading a different image
                                         objectSpaceSize = nil
                                         selectedObjectID = nil
                                         activeHandle = .none
@@ -2177,9 +2220,14 @@ struct ContentView: View {
             }
             let sorted = dated.sorted { $0.1 > $1.1 }.map { $0.0 }
             snapURLs = Array(sorted.prefix(10))
-            // If nothing currently selected, keep nil; else preserve selection if still present.
+            
+            // Clean up missing URLs from our tracking set
+            missingSnapURLs = missingSnapURLs.filter { !sorted.contains($0) }
+            
+            // If currently selected snap no longer exists, clear selection
             if let sel = selectedSnapURL, !sorted.contains(sel) {
                 selectedSnapURL = nil
+                lastCapture = nil
             }
         } catch {
             snapURLs = []
@@ -2192,58 +2240,58 @@ struct ContentView: View {
         NSWorkspace.shared.open(dir)
     }
     
-private func openSnapsInGallery() {
-    guard let dir = snapsDirectory() else { return }
-    let fm = FileManager.default
-    var urls: [URL] = []
-    do {
-        let all = try fm.contentsOfDirectory(at: dir,
-                                             includingPropertiesForKeys: [.contentModificationDateKey, .isRegularFileKey],
-                                             options: [.skipsHiddenFiles])
-        // Allow common raster image types
-        let allowedExts: Set<String> = ["png", "jpg", "jpeg", "heic"]
-        let filtered = all.filter { allowedExts.contains($0.pathExtension.lowercased()) }
-        let dated: [(URL, Date)] = filtered.compactMap {
-            let vals = try? $0.resourceValues(forKeys: [.contentModificationDateKey])
-            return ($0, vals?.contentModificationDate ?? .distantPast)
-        }
-        urls = dated.sorted { $0.1 > $1.1 }.map { $0.0 }
-    } catch {
-        urls = []
-    }
-
-    // Fallback: if we failed to enumerate, do nothing
-    guard !urls.isEmpty else { return }
-
-    GalleryWindow.shared.present(
-        urls: urls,
-        onSelect: { url in
-            if let img = NSImage(contentsOf: url) {
-                selectedSnapURL = url
-                lastCapture = img
-                GalleryWindow.shared.close()
+    private func openSnapsInGallery() {
+        guard let dir = snapsDirectory() else { return }
+        let fm = FileManager.default
+        var urls: [URL] = []
+        do {
+            let all = try fm.contentsOfDirectory(at: dir,
+                                                 includingPropertiesForKeys: [.contentModificationDateKey, .isRegularFileKey],
+                                                 options: [.skipsHiddenFiles])
+            // Allow common raster image types
+            let allowedExts: Set<String> = ["png", "jpg", "jpeg", "heic"]
+            let filtered = all.filter { allowedExts.contains($0.pathExtension.lowercased()) }
+            let dated: [(URL, Date)] = filtered.compactMap {
+                let vals = try? $0.resourceValues(forKeys: [.contentModificationDateKey])
+                return ($0, vals?.contentModificationDate ?? .distantPast)
             }
-        },
-        onReload: {
-            let fm = FileManager.default
-            guard let dir = snapsDirectory() else { return [] }
-            do {
-                let all = try fm.contentsOfDirectory(at: dir,
-                                                     includingPropertiesForKeys: [.contentModificationDateKey, .isRegularFileKey],
-                                                     options: [.skipsHiddenFiles])
-                let allowedExts: Set<String> = ["png", "jpg", "jpeg", "heic"]
-                let filtered = all.filter { allowedExts.contains($0.pathExtension.lowercased()) }
-                let dated: [(URL, Date)] = filtered.compactMap {
-                    let vals = try? $0.resourceValues(forKeys: [.contentModificationDateKey])
-                    return ($0, vals?.contentModificationDate ?? .distantPast)
+            urls = dated.sorted { $0.1 > $1.1 }.map { $0.0 }
+        } catch {
+            urls = []
+        }
+        
+        // Fallback: if we failed to enumerate, do nothing
+        guard !urls.isEmpty else { return }
+        
+        GalleryWindow.shared.present(
+            urls: urls,
+            onSelect: { url in
+                if let img = NSImage(contentsOf: url) {
+                    selectedSnapURL = url
+                    lastCapture = img
+                    GalleryWindow.shared.close()
                 }
-                return dated.sorted { $0.1 > $1.1 }.map { $0.0 }
-            } catch {
-                return []
+            },
+            onReload: {
+                let fm = FileManager.default
+                guard let dir = snapsDirectory() else { return [] }
+                do {
+                    let all = try fm.contentsOfDirectory(at: dir,
+                                                         includingPropertiesForKeys: [.contentModificationDateKey, .isRegularFileKey],
+                                                         options: [.skipsHiddenFiles])
+                    let allowedExts: Set<String> = ["png", "jpg", "jpeg", "heic"]
+                    let filtered = all.filter { allowedExts.contains($0.pathExtension.lowercased()) }
+                    let dated: [(URL, Date)] = filtered.compactMap {
+                        let vals = try? $0.resourceValues(forKeys: [.contentModificationDateKey])
+                        return ($0, vals?.contentModificationDate ?? .distantPast)
+                    }
+                    return dated.sorted { $0.1 > $1.1 }.map { $0.0 }
+                } catch {
+                    return []
+                }
             }
-        }
-    )
-}
+        )
+    }
     
     /// Inserts a newly saved URL at the start of the list (leftmost), de-duplicating if necessary.
     private func insertSnapURL(_ url: URL) {
@@ -2289,7 +2337,7 @@ private func openSnapsInGallery() {
         @State private var hovering = false
         @State private var hoverDebounce = 0
         @State private var image: NSImage? = nil
-        
+
         var body: some View {
             ZStack {
                 if let img = image {
@@ -2320,13 +2368,13 @@ private func openSnapsInGallery() {
                     }
                 }
             }
-            // Selection border calculated at final size
+            // Simple selection border
             .overlay(
                 RoundedRectangle(cornerRadius: 6)
                     .stroke(selected ? Color.accentColor : Color.secondary.opacity(0.3),
                             lineWidth: selected ? 2 : 1)
             )
-            // Hover controls + selected checkmark pinned to top trailing of final bounds
+            // Hover controls + selected checkmark
             .overlay(alignment: .topTrailing) {
                 HStack(spacing: 6) {
                     Button(action: onDelete) {
@@ -2335,15 +2383,13 @@ private func openSnapsInGallery() {
                     }
                     .buttonStyle(.plain)
                     .help("Delete")
-                    .opacity(hovering ? 1 : 0.001)          // keep in layout, nearly invisible when not hovering
-                    .allowsHitTesting(hovering)             // only clickable when hovering
+                    .opacity(hovering ? 1 : 0.001)
+                    .allowsHitTesting(hovering)
                     .onHover { isIn in
                         if isIn {
-                            // Keep hover alive and cancel any pending exit
                             hovering = true
                             hoverDebounce &+= 1
                         } else {
-                            // Mirror the container's debounced exit to avoid flicker when moving off the icon
                             let token = hoverDebounce
                             DispatchQueue.main.asyncAfter(deadline: .now() + 0.12) {
                                 if token == hoverDebounce {
@@ -2369,6 +2415,8 @@ private func openSnapsInGallery() {
             }
         }
     }
+    
+
     
 }
 
