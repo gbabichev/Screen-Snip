@@ -478,6 +478,9 @@ struct ContentView: View {
         .onDisappear {
             if let keyMonitor { NSEvent.removeMonitor(keyMonitor); self.keyMonitor = nil }
         }
+        .onReceive(NotificationCenter.default.publisher(for: Notification.Name("com.xantrion.screensnap.beginSnapFromIntent"))) { _ in
+            startSelection()
+        }
         .toolbar {
             ToolbarItemGroup(placement: .navigation) {
                 Button {
@@ -805,6 +808,14 @@ struct ContentView: View {
                 }
             }
         }
+//        .onChange(of: lastCapture) { _, newValue in
+//            guard newValue != nil else { return }
+//            
+//            // Add a small delay to ensure the selection overlay is fully dismissed
+//            DispatchQueue.main.asyncAfter(deadline: .now() + 0.1) {
+//                self.ensureMainEditorWindow()
+//            }
+//        }
     }
     
     
@@ -1099,9 +1110,8 @@ struct ContentView: View {
                 if let img = await captureAsync(rect: rect) {
                     undoStack.removeAll(); redoStack.removeAll()
                     lastCapture = img
-                    // Reset object space size when loading a new image
                     objectSpaceSize = nil
-                    objects.removeAll() // Clear objects from previous image
+                    objects.removeAll()
                     selectedObjectID = nil
                     activeHandle = .none
                     
@@ -1110,6 +1120,21 @@ struct ContentView: View {
                         selectedSnapURL = savedURL
                     }
                     copyToPasteboard(img)
+                    
+                    // Bring app to foreground after capture
+                    DispatchQueue.main.async {
+                        // Force app activation first
+                        NSApp.activate(ignoringOtherApps: true)
+                        
+                        // Try to bring existing window to front
+                        WindowManager.shared.bringToFront()
+                        
+                        // If no window was found, create one
+                        if !WindowManager.shared.hasVisibleWindows() {
+                            self.ensureMainEditorWindow()
+                        }
+                    }
+                    
                     withAnimation { showCopiedHUD = true }
                     DispatchQueue.main.asyncAfter(deadline: .now() + 1.2) {
                         withAnimation { showCopiedHUD = false }
@@ -1118,7 +1143,6 @@ struct ContentView: View {
             }
         })
     }
-    
     private func endSelectionCleanup() {
         SelectionWindowManager.shared.dismiss()
     }
@@ -2421,6 +2445,87 @@ struct ContentView: View {
 }
 
 
+// MARK: - Root View Modifier for Global Hotkey
+
+extension ContentView {
+    
+    /// Ensures a main editor window is present and visible, creating one if necessary
+    private func ensureMainEditorWindow() {
+        DispatchQueue.main.async {
+            // Look for ANY existing ContentView windows
+            for window in NSApp.windows {
+                if let _ = window.contentViewController as? NSHostingController<ContentView>,
+                   window.styleMask.contains(.titled),
+                   !window.isSheet {
+                    
+                    // If minimized, deminiaturize first
+                    if window.isMiniaturized {
+                        window.deminiaturize(nil)
+                    }
+                    
+                    // DON'T refresh the rootView - just bring the existing window forward
+                    window.makeKeyAndOrderFront(nil)
+                    window.orderFrontRegardless()
+                    NSApp.activate(ignoringOtherApps: true)
+                    return
+                }
+            }
+            
+            // Only create new window if no suitable window exists
+            self.createNewMainEditorWindow()
+        }
+    }
+    
+    /// Creates a new main editor window with proper setup
+    private func createNewMainEditorWindow() {
+        let newWindow = NSWindow(
+            contentRect: NSRect(x: 0, y: 0, width: 1000, height: 700),
+            styleMask: [.titled, .closable, .miniaturizable, .resizable, .fullSizeContentView],
+            backing: .buffered,
+            defer: false
+        )
+        
+        newWindow.titlebarAppearsTransparent = true
+        newWindow.isMovableByWindowBackground = true
+        newWindow.tabbingMode = .disallowed
+        newWindow.isReleasedWhenClosed = false
+        newWindow.contentMinSize = NSSize(width: 900, height: 600)
+        newWindow.title = "Screen Snap"
+        
+        // Create a fresh ContentView instance for the new window
+        let newContentView = ContentView()
+        newWindow.contentViewController = NSHostingController(rootView: newContentView.rootViewWithHotkey)
+        
+        // Set up window controller for better management
+        let windowController = NSWindowController(window: newWindow)
+        windowController.windowFrameAutosaveName = "MainEditorWindow"
+        
+        // Center and show the window
+        newWindow.center()
+        newWindow.makeKeyAndOrderFront(nil)
+        newWindow.orderFrontRegardless()
+        
+        // Force app activation
+        NSApp.activate(ignoringOtherApps: true)
+        
+        // Store reference to prevent deallocation
+        WindowManager.shared.registerWindow(windowController)
+    }
+    
+    var rootViewWithHotkey: some View {
+        body
+            .onReceive(NotificationCenter.default.publisher(for: Notification.Name("com.xantrion.screensnap.beginSnapFromIntent"))) { _ in
+                // When hotkey is triggered, don't bring window forward immediately
+                // Let the capture complete first, then bring it forward
+                self.startSelection()
+            }
+    }
+}
+
+
+
+
+
 // MARK: - Gallery Window + View
 
 /// Simple NSWindow wrapper to present a SwiftUI gallery of thumbnails.
@@ -3286,7 +3391,7 @@ final class SelectionWindowManager {
         
         panel.contentView = NSHostingView(rootView: root)
         panel.makeKeyAndOrderFront(nil)
-        NSApp.activate(ignoringOtherApps: true)
+        // NSApp.activate(ignoringOtherApps: true) // Removed to prevent app from coming to foreground
         self.panel = panel
         
         // Listen for ESC to cancel selection
@@ -3403,4 +3508,67 @@ private func cropImage(_ image: NSImage, toBottomLeftRect rBL: CGRect) -> NSImag
     guard rectTL.width > 1, rectTL.height > 1 else { return nil }
     guard let sub = cg.cropping(to: rectTL) else { return nil }
     return NSImage(cgImage: sub, size: NSSize(width: rectTL.width, height: rectTL.height))
+}
+
+
+final class WindowManager {
+    static let shared = WindowManager()
+    private var windowControllers: Set<NSWindowController> = []
+    
+    private init() {
+        setupAppBehavior()
+    }
+    
+    func registerWindow(_ controller: NSWindowController) {
+        windowControllers.insert(controller)
+        
+        // Set up cleanup when window closes
+        if let window = controller.window {
+            NotificationCenter.default.addObserver(
+                forName: NSWindow.willCloseNotification,
+                object: window,
+                queue: .main
+            ) { [weak self] notification in
+                if let closingWindow = notification.object as? NSWindow,
+                   let closingController = self?.windowControllers.first(where: { $0.window === closingWindow }) {
+                    self?.windowControllers.remove(closingController)
+                }
+            }
+        }
+    }
+    
+    func hasVisibleWindows() -> Bool {
+        for window in NSApp.windows {
+            if window.title == "Screen Snap" &&
+               window.styleMask.contains(.titled) &&
+               !window.isSheet &&
+               window.isVisible &&
+               !window.isMiniaturized {
+                return true
+            }
+        }
+        return false
+    }
+
+    func bringToFront() {
+        for window in NSApp.windows {
+            if window.title == "Screen Snap" &&
+               window.styleMask.contains(.titled) &&
+               !window.isSheet {
+                
+                if window.isMiniaturized {
+                    window.deminiaturize(nil)
+                }
+                
+                window.makeKeyAndOrderFront(nil)
+                window.orderFrontRegardless()
+                NSApp.activate(ignoringOtherApps: true)
+                return
+            }
+        }
+    }
+    
+    private func setupAppBehavior() {
+        // This would be handled by your app delegate
+    }
 }
