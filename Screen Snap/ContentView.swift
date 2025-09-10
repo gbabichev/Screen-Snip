@@ -279,10 +279,45 @@ struct ContentView: View {
         .safeAreaInset(edge: .bottom) {
             if !snapURLs.isEmpty {
                 VStack(alignment: .leading, spacing: 6) {
-                    Text("Snaps")
-                        .font(.caption)
-                        .foregroundStyle(.secondary)
-                        .padding(.leading, 8)
+                    
+                    HStack(spacing: 6) {
+                        Text("Snaps")
+                            .font(.caption)
+                            .foregroundStyle(.secondary)
+                        
+                        Button(action: {
+                            loadExistingSnaps()
+                        }) {
+                            Image(systemName: "arrow.clockwise")
+                                .imageScale(.small)
+                        }
+                        .buttonStyle(.plain)
+                        .help("Refresh snaps")
+                        
+                        Button(action: {
+                                openSnapsInFinder()
+                            }) {
+                                Image(systemName: "square.grid.2x2")
+                                    .imageScale(.small)
+                            }
+                            .buttonStyle(.plain)
+                            .help("Open snaps gallery")
+                        
+                        Button(action: {
+                                openSnapsInGallery()
+                            }) {
+                                Image(systemName: "square.grid.2x2")
+                                    .imageScale(.small)
+                            }
+                            .buttonStyle(.plain)
+                            .help("Open snaps gallery")
+                        
+                        
+                    }
+                    .padding(.leading, 8)
+                    
+                    
+                    
                     ScrollView(.horizontal, showsIndicators: true) {
                         HStack(spacing: 8) {
                             ForEach(snapURLs, id: \.self) { url in
@@ -2141,13 +2176,53 @@ struct ContentView: View {
                 return ($0, vals?.contentModificationDate ?? .distantPast)
             }
             let sorted = dated.sorted { $0.1 > $1.1 }.map { $0.0 }
-            snapURLs = sorted
+            snapURLs = Array(sorted.prefix(10))
             // If nothing currently selected, keep nil; else preserve selection if still present.
             if let sel = selectedSnapURL, !sorted.contains(sel) {
                 selectedSnapURL = nil
             }
         } catch {
             snapURLs = []
+        }
+    }
+    
+    /// Opens the snaps directory in Finder as a simple "gallery" view.
+    private func openSnapsInFinder() {
+        guard let dir = snapsDirectory() else { return }
+        NSWorkspace.shared.open(dir)
+    }
+    
+    private func openSnapsInGallery() {
+        guard let dir = snapsDirectory() else { return }
+        let fm = FileManager.default
+        var urls: [URL] = []
+        do {
+            let all = try fm.contentsOfDirectory(at: dir,
+                                                 includingPropertiesForKeys: [.contentModificationDateKey, .isRegularFileKey],
+                                                 options: [.skipsHiddenFiles])
+            // Allow common raster image types
+            let allowedExts: Set<String> = ["png", "jpg", "jpeg", "heic"]
+            let filtered = all.filter { allowedExts.contains($0.pathExtension.lowercased()) }
+            let dated: [(URL, Date)] = filtered.compactMap {
+                let vals = try? $0.resourceValues(forKeys: [.contentModificationDateKey])
+                return ($0, vals?.contentModificationDate ?? .distantPast)
+            }
+            urls = dated.sorted { $0.1 > $1.1 }.map { $0.0 }
+        } catch {
+            urls = []
+        }
+        
+        // Fallback: if we failed to enumerate, do nothing
+        guard !urls.isEmpty else { return }
+        
+        GalleryWindow.shared.present(urls: urls) { url in
+            if let img = NSImage(contentsOf: url) {
+                // Load into editor
+                selectedSnapURL = url
+                lastCapture = img
+                // Close the gallery after selection
+                GalleryWindow.shared.close()
+            }
         }
     }
     
@@ -2276,6 +2351,197 @@ struct ContentView: View {
         }
     }
     
+}
+
+
+// MARK: - Gallery Window + View
+
+/// Simple NSWindow wrapper to present a SwiftUI gallery of thumbnails.
+private final class GalleryWindow {
+    static let shared = GalleryWindow()
+    private var window: NSWindow?
+    private var windowDelegate: NSWindowDelegate?
+    private var controller: NSWindowController?
+    private let frameDefaultsKey = "SnapGalleryManualFrame"
+    
+    func present(urls: [URL], onSelect: @escaping (URL) -> Void) {
+        // If already visible, just bring to front and update content
+        if let win = window {
+            // Refresh content in the existing window
+            if let hosting = win.contentViewController as? NSHostingController<GalleryView> {
+                hosting.rootView = GalleryView(urls: urls, onSelect: onSelect)
+            } else {
+                win.contentViewController = NSHostingController(rootView: GalleryView(urls: urls, onSelect: onSelect))
+            }
+            // Enforce a sane size if it somehow got too small
+            win.minSize = NSSize(width: 480, height: 360)
+            var f = win.frame
+            if f.width < 600 || f.height < 400 {
+                f.size.width = max(f.width, 820)
+                f.size.height = max(f.height, 620)
+                win.setFrame(f, display: false)
+            }
+            win.makeKeyAndOrderFront(nil)
+            NSApp.activate(ignoringOtherApps: true)
+            return
+        }
+        
+        let content = GalleryView(urls: urls, onSelect: onSelect)
+        let hosting = NSHostingController(rootView: content)
+
+        let win = NSWindow(
+            contentRect: NSRect(x: 0, y: 0, width: 820, height: 620),
+            styleMask: [.titled, .closable, .miniaturizable, .resizable, .fullSizeContentView],
+            backing: .buffered,
+            defer: false
+        )
+        win.titleVisibility = .hidden
+        win.titlebarAppearsTransparent = true
+        win.isMovableByWindowBackground = true
+        win.tabbingMode = .disallowed
+        win.isReleasedWhenClosed = false
+        win.contentMinSize = NSSize(width: 900, height: 600)
+        win.contentViewController = hosting
+        
+        // Create controller and set up autosave through the controller
+        let controller = NSWindowController(window: win)
+        let autosaveName = "SnapGalleryWindowV2"
+        controller.windowFrameAutosaveName = autosaveName
+        
+        // Only use the controller's autosave mechanism - remove conflicting calls
+        // Remove: win.setFrameAutosaveName(autosaveName)
+        // Remove: win.setFrameUsingName(autosaveName)
+        
+        self.controller = controller
+        self.window = win
+        
+        // Set up close handler
+        let closeHandler = WindowCloseHandler(key: frameDefaultsKey) { [weak self] in
+            self?.window = nil
+            self?.controller = nil
+            self?.windowDelegate = nil
+        }
+        win.delegate = closeHandler
+        self.windowDelegate = closeHandler
+        
+        // Show the window - this will trigger automatic frame restoration
+        controller.showWindow(nil)
+        NSApp.activate(ignoringOtherApps: true)
+        
+        // Post-show validation and adjustment
+        DispatchQueue.main.async {
+            let minW: CGFloat = 900
+            let minH: CGFloat = 600
+            let vf = (win.screen ?? NSScreen.main)?.visibleFrame ?? NSRect(x: 0, y: 0, width: 1440, height: 900)
+            let frame = win.frame
+            let tooSmall = frame.width < minW || frame.height < minH
+            let padding: CGFloat = 20
+            let safeVisible = vf.insetBy(dx: padding, dy: padding)
+            let center = NSPoint(x: frame.midX, y: frame.midY)
+            let offscreen = !safeVisible.contains(center)
+            
+            if tooSmall || offscreen {
+                let targetW = max(minW, min(vf.width * 0.8, 1800))
+                let targetH = max(minH, min(vf.height * 0.85, 1200))
+                let targetX = vf.midX - targetW / 2
+                let targetY = vf.midY - targetH / 2
+                win.setFrame(NSRect(x: targetX, y: targetY, width: targetW, height: targetH), display: true)
+            }
+        }
+    }
+
+    // Also update the WindowCloseHandler to not save manually since autosave handles it
+    private final class WindowCloseHandler: NSObject, NSWindowDelegate {
+        let onClose: () -> Void
+        let key: String // Keep for compatibility but don't use
+        
+        init(key: String, onClose: @escaping () -> Void) {
+            self.key = key
+            self.onClose = onClose
+        }
+        
+        func windowWillClose(_ notification: Notification) {
+            // Remove manual frame saving - let autosave handle it
+            // if let win = notification.object as? NSWindow {
+            //     let rectString = NSStringFromRect(win.frame)
+            //     UserDefaults.standard.set(rectString, forKey: key)
+            // }
+            onClose()
+        }
+    }
+    func close() {
+        window?.close()
+        window = nil
+    }
+    
+}
+
+/// SwiftUI gallery view: scrollable grid of thumbnails that calls `onSelect(url)` when tapped.
+private struct GalleryView: View {
+    let urls: [URL]
+    let onSelect: (URL) -> Void
+    
+    // Basic grid: adapts to window size
+    private var columns: [GridItem] {
+        [GridItem(.adaptive(minimum: 180), spacing: 10)]
+    }
+    
+    var body: some View {
+        ScrollView {
+            LazyVGrid(columns: columns, spacing: 10) {
+                ForEach(urls, id: \.self) { url in
+                    GalleryThumb(url: url)
+                        .onTapGesture { onSelect(url) }
+                }
+            }
+            .padding(16)
+        }
+        .frame(minWidth: 480, maxWidth: .infinity,
+               minHeight: 360, maxHeight: .infinity)
+        .background(Color(NSColor.windowBackgroundColor))
+    }
+}
+
+/// A single thumbnail cell with a quick NSImage load.
+private struct GalleryThumb: View {
+    let url: URL
+    @State private var image: NSImage? = nil
+    
+    var body: some View {
+        ZStack {
+            if let img = image {
+                Image(nsImage: img)
+                    .resizable()
+                    .interpolation(.low)
+                    .aspectRatio(contentMode: .fill)
+            } else {
+                ZStack {
+                    RoundedRectangle(cornerRadius: 8).fill(.secondary.opacity(0.12))
+                    Image(systemName: "photo")
+                        .imageScale(.large)
+                        .foregroundStyle(.secondary)
+                }
+            }
+        }
+        .frame(width: 180, height: 120)
+        .clipShape(RoundedRectangle(cornerRadius: 8))
+        .overlay(
+            RoundedRectangle(cornerRadius: 8)
+                .stroke(.secondary.opacity(0.35), lineWidth: 1)
+        )
+        .contentShape(RoundedRectangle(cornerRadius: 8))
+        .onAppear {
+            if image == nil {
+                image = NSImage(contentsOf: url)
+            }
+        }
+        .help(url.lastPathComponent)
+        .contextMenu {
+            Button("Reveal in Finder") {
+                NSWorkspace.shared.activateFileViewerSelecting([url])
+            }
+        }
+    }
 }
 
 

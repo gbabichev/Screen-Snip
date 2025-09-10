@@ -34,6 +34,10 @@ Inspired by Greenshot on Windows - the goal is to make a tiny app that can do th
 - <del>Add User Settings 
   - <del>User defined save folder. 
   - <del>User defined output type (PNG / JPG / HEIC) & quality slider. 
+- <del>Refresh snaps button. 
+- <del> Limit snap previews to ~10 and add a snap browser. 
+
+
 
 
 ## 🖥️ Screenshots 
