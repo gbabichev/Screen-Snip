@@ -1169,13 +1169,22 @@ struct ContentView: View {
             guard let scDisplay = content.displays.first(where: { $0.displayID == cgID }) else { return nil }
             
             // Compute precise pixels-per-point per axis from SCDisplay + NSScreen
-            let pxPerPtX = CGFloat(scDisplay.width) / screenFramePts.width
-            let pxPerPtY = CGFloat(scDisplay.height) / screenFramePts.height
+            let scale = bestScreen.backingScaleFactor
+            let pxPerPtX = scale
+            let pxPerPtY = scale
+            
+            print("🔍 Scale Factor Debug:")
+            print("  scDisplay.width: \(scDisplay.width)")
+            print("  scDisplay.height: \(scDisplay.height)")
+            print("  screenFramePts.width: \(screenFramePts.width)")
+            print("  screenFramePts.height: \(screenFramePts.height)")
+            print("  bestScreen.backingScaleFactor: \(bestScreen.backingScaleFactor)")
             
             // 4) Build a filter for that display and capture one frame.
             let filter = SCContentFilter(display: scDisplay, excludingWindows: [])
             guard let fullCG = await ScreenCapturer.shared.captureImage(using: filter, display: scDisplay) else { return nil }
-            
+            print("Full capture dimensions: \(fullCG.width) × \(fullCG.height)")
+            print("Expected for 5K display: should be around 5120 × 2880")
             // 5) Convert the intersected rect (points) to pixel crop in the captured image space.
             let cropPx = cropRectPixels(intersectPts,
                                         withinScreenFramePts: screenFramePts,
@@ -1190,7 +1199,27 @@ struct ContentView: View {
             guard clamped.width > 1, clamped.height > 1 else { return nil }
             
             guard let cropped = fullCG.cropping(to: clamped) else { return nil }
-            return NSImage(cgImage: cropped, size: .zero)
+
+            let rep = NSBitmapImageRep(cgImage: cropped)
+            let pointSize = CGSize(
+                width: CGFloat(cropped.width) / pxPerPtX,
+                height: CGFloat(cropped.height) / pxPerPtY
+            )
+            rep.size = pointSize
+
+            let nsImage = NSImage(size: pointSize)
+            nsImage.addRepresentation(rep)
+
+            // Debug logging
+            print("🔍 Capture Debug:")
+            print("  Screen scale factors: pxPerPtX=\(pxPerPtX), pxPerPtY=\(pxPerPtY)")
+            print("  CGImage pixel size: \(cropped.width) × \(cropped.height)")
+            print("  Calculated point size: \(pointSize.width) × \(pointSize.height)")
+            print("  NSImage.size: \(nsImage.size.width) × \(nsImage.size.height)")
+            print("  Rep.size: \(rep.size.width) × \(rep.size.height)")
+            print("  Rep pixels: \(rep.pixelsWide) × \(rep.pixelsHigh)")
+
+            return nsImage
         } catch {
             return nil
         }
@@ -3310,12 +3339,16 @@ final class ScreenCapturer: NSObject, SCStreamOutput {
     func captureImage(using filter: SCContentFilter, display: SCDisplay) async -> CGImage? {
         do {
             let cfg = SCStreamConfiguration()
-            // Use the display's native pixel size to avoid point/pixel mismatches on Retina and multi-display setups.
-            cfg.width = display.width
-            cfg.height = display.height
+            
+            // Get the backing scale factor from the screen that matches this display
+            let backingScale = getBackingScaleForDisplay(display) ?? 1.0
+            cfg.width = Int(CGFloat(display.width) * backingScale)
+            cfg.height = Int(CGFloat(display.height) * backingScale)
             cfg.pixelFormat = kCVPixelFormatType_32BGRA
             cfg.showsCursor = false
             cfg.minimumFrameInterval = CMTime(value: 1, timescale: 60)
+            
+            print("🎯 Display backing scale: \(backingScale), forcing capture size to: \(cfg.width) × \(cfg.height)")
             
             let stream = SCStream(filter: filter, configuration: cfg, delegate: nil)
             self.stream = stream
@@ -3328,6 +3361,19 @@ final class ScreenCapturer: NSObject, SCStreamOutput {
         } catch {
             return nil
         }
+    }
+
+    private func getBackingScaleForDisplay(_ scDisplay: SCDisplay) -> CGFloat? {
+        // Match SCDisplay to NSScreen by CGDisplayID
+        for screen in NSScreen.screens {
+            if let cgIDNum = screen.deviceDescription[NSDeviceDescriptionKey("NSScreenNumber")] as? NSNumber {
+                let cgID = CGDirectDisplayID(truncating: cgIDNum)
+                if cgID == scDisplay.displayID {
+                    return screen.backingScaleFactor
+                }
+            }
+        }
+        return nil
     }
     
     // MARK: - SCStreamOutput
