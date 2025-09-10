@@ -16,7 +16,8 @@ Inspired by Greenshot on Windows - the goal is to make a tiny app that can do th
 </div>
 
 ## Work in Progress
-- Hotkeys for tools 
+- Hotkeys for tools.
+- Working Menu Bar commands with icons. 
 - Global system hotkey for screenshots. 
 
 ### Completed 
@@ -35,8 +36,8 @@ Inspired by Greenshot on Windows - the goal is to make a tiny app that can do th
   - <del>User defined save folder. 
   - <del>User defined output type (PNG / JPG / HEIC) & quality slider. 
 - <del>Refresh snaps button. 
-- <del> Limit snap previews to ~10 and add a snap browser. 
-
+- <del> Limit snap previews to ~10.
+- <del> Add a Snap Browser 
 
 
 

@@ -297,11 +297,11 @@ struct ContentView: View {
                         Button(action: {
                                 openSnapsInFinder()
                             }) {
-                                Image(systemName: "square.grid.2x2")
+                                Image(systemName: "folder")
                                     .imageScale(.small)
                             }
                             .buttonStyle(.plain)
-                            .help("Open snaps gallery")
+                            .help("Open Snaps in Finder")
                         
                         Button(action: {
                                 openSnapsInGallery()
@@ -310,7 +310,7 @@ struct ContentView: View {
                                     .imageScale(.small)
                             }
                             .buttonStyle(.plain)
-                            .help("Open snaps gallery")
+                            .help("Open Snaps Gallery")
                         
                         
                     }
@@ -2192,39 +2192,58 @@ struct ContentView: View {
         NSWorkspace.shared.open(dir)
     }
     
-    private func openSnapsInGallery() {
-        guard let dir = snapsDirectory() else { return }
-        let fm = FileManager.default
-        var urls: [URL] = []
-        do {
-            let all = try fm.contentsOfDirectory(at: dir,
-                                                 includingPropertiesForKeys: [.contentModificationDateKey, .isRegularFileKey],
-                                                 options: [.skipsHiddenFiles])
-            // Allow common raster image types
-            let allowedExts: Set<String> = ["png", "jpg", "jpeg", "heic"]
-            let filtered = all.filter { allowedExts.contains($0.pathExtension.lowercased()) }
-            let dated: [(URL, Date)] = filtered.compactMap {
-                let vals = try? $0.resourceValues(forKeys: [.contentModificationDateKey])
-                return ($0, vals?.contentModificationDate ?? .distantPast)
-            }
-            urls = dated.sorted { $0.1 > $1.1 }.map { $0.0 }
-        } catch {
-            urls = []
+private func openSnapsInGallery() {
+    guard let dir = snapsDirectory() else { return }
+    let fm = FileManager.default
+    var urls: [URL] = []
+    do {
+        let all = try fm.contentsOfDirectory(at: dir,
+                                             includingPropertiesForKeys: [.contentModificationDateKey, .isRegularFileKey],
+                                             options: [.skipsHiddenFiles])
+        // Allow common raster image types
+        let allowedExts: Set<String> = ["png", "jpg", "jpeg", "heic"]
+        let filtered = all.filter { allowedExts.contains($0.pathExtension.lowercased()) }
+        let dated: [(URL, Date)] = filtered.compactMap {
+            let vals = try? $0.resourceValues(forKeys: [.contentModificationDateKey])
+            return ($0, vals?.contentModificationDate ?? .distantPast)
         }
-        
-        // Fallback: if we failed to enumerate, do nothing
-        guard !urls.isEmpty else { return }
-        
-        GalleryWindow.shared.present(urls: urls) { url in
+        urls = dated.sorted { $0.1 > $1.1 }.map { $0.0 }
+    } catch {
+        urls = []
+    }
+
+    // Fallback: if we failed to enumerate, do nothing
+    guard !urls.isEmpty else { return }
+
+    GalleryWindow.shared.present(
+        urls: urls,
+        onSelect: { url in
             if let img = NSImage(contentsOf: url) {
-                // Load into editor
                 selectedSnapURL = url
                 lastCapture = img
-                // Close the gallery after selection
                 GalleryWindow.shared.close()
             }
+        },
+        onReload: {
+            let fm = FileManager.default
+            guard let dir = snapsDirectory() else { return [] }
+            do {
+                let all = try fm.contentsOfDirectory(at: dir,
+                                                     includingPropertiesForKeys: [.contentModificationDateKey, .isRegularFileKey],
+                                                     options: [.skipsHiddenFiles])
+                let allowedExts: Set<String> = ["png", "jpg", "jpeg", "heic"]
+                let filtered = all.filter { allowedExts.contains($0.pathExtension.lowercased()) }
+                let dated: [(URL, Date)] = filtered.compactMap {
+                    let vals = try? $0.resourceValues(forKeys: [.contentModificationDateKey])
+                    return ($0, vals?.contentModificationDate ?? .distantPast)
+                }
+                return dated.sorted { $0.1 > $1.1 }.map { $0.0 }
+            } catch {
+                return []
+            }
         }
-    }
+    )
+}
     
     /// Inserts a newly saved URL at the start of the list (leftmost), de-duplicating if necessary.
     private func insertSnapURL(_ url: URL) {
@@ -2363,15 +2382,15 @@ private final class GalleryWindow {
     private var windowDelegate: NSWindowDelegate?
     private var controller: NSWindowController?
     private let frameDefaultsKey = "SnapGalleryManualFrame"
-    
-    func present(urls: [URL], onSelect: @escaping (URL) -> Void) {
+
+    func present(urls: [URL], onSelect: @escaping (URL) -> Void, onReload: @escaping () -> [URL]) {
         // If already visible, just bring to front and update content
         if let win = window {
             // Refresh content in the existing window
             if let hosting = win.contentViewController as? NSHostingController<GalleryView> {
-                hosting.rootView = GalleryView(urls: urls, onSelect: onSelect)
+                hosting.rootView = GalleryView(urls: urls, onSelect: onSelect, onReload: onReload)
             } else {
-                win.contentViewController = NSHostingController(rootView: GalleryView(urls: urls, onSelect: onSelect))
+                win.contentViewController = NSHostingController(rootView: GalleryView(urls: urls, onSelect: onSelect, onReload: onReload))
             }
             // Enforce a sane size if it somehow got too small
             win.minSize = NSSize(width: 480, height: 360)
@@ -2385,8 +2404,8 @@ private final class GalleryWindow {
             NSApp.activate(ignoringOtherApps: true)
             return
         }
-        
-        let content = GalleryView(urls: urls, onSelect: onSelect)
+
+        let content = GalleryView(urls: urls, onSelect: onSelect, onReload: onReload)
         let hosting = NSHostingController(rootView: content)
 
         let win = NSWindow(
@@ -2395,26 +2414,27 @@ private final class GalleryWindow {
             backing: .buffered,
             defer: false
         )
-        win.titleVisibility = .hidden
+        //win.titleVisibility = .hidden
+        win.title = "Snap Gallery"
         win.titlebarAppearsTransparent = true
         win.isMovableByWindowBackground = true
         win.tabbingMode = .disallowed
         win.isReleasedWhenClosed = false
         win.contentMinSize = NSSize(width: 900, height: 600)
         win.contentViewController = hosting
-        
+
         // Create controller and set up autosave through the controller
         let controller = NSWindowController(window: win)
         let autosaveName = "SnapGalleryWindowV2"
         controller.windowFrameAutosaveName = autosaveName
-        
+
         // Only use the controller's autosave mechanism - remove conflicting calls
         // Remove: win.setFrameAutosaveName(autosaveName)
         // Remove: win.setFrameUsingName(autosaveName)
-        
+
         self.controller = controller
         self.window = win
-        
+
         // Set up close handler
         let closeHandler = WindowCloseHandler(key: frameDefaultsKey) { [weak self] in
             self?.window = nil
@@ -2423,11 +2443,11 @@ private final class GalleryWindow {
         }
         win.delegate = closeHandler
         self.windowDelegate = closeHandler
-        
+
         // Show the window - this will trigger automatic frame restoration
         controller.showWindow(nil)
         NSApp.activate(ignoringOtherApps: true)
-        
+
         // Post-show validation and adjustment
         DispatchQueue.main.async {
             let minW: CGFloat = 900
@@ -2439,7 +2459,7 @@ private final class GalleryWindow {
             let safeVisible = vf.insetBy(dx: padding, dy: padding)
             let center = NSPoint(x: frame.midX, y: frame.midY)
             let offscreen = !safeVisible.contains(center)
-            
+
             if tooSmall || offscreen {
                 let targetW = max(minW, min(vf.width * 0.8, 1800))
                 let targetH = max(minH, min(vf.height * 0.85, 1200))
@@ -2478,23 +2498,66 @@ private final class GalleryWindow {
 
 /// SwiftUI gallery view: scrollable grid of thumbnails that calls `onSelect(url)` when tapped.
 private struct GalleryView: View {
-    let urls: [URL]
     let onSelect: (URL) -> Void
-    
+    let onReload: () -> [URL]
+    @State private var urlsLocal: [URL]
+
+    @AppStorage("saveDirectoryPath") private var saveDirectoryPath: String = ""
+
+    private func snapsDirectoryFromSettings() -> URL? {
+        if !saveDirectoryPath.isEmpty {
+            return URL(fileURLWithPath: saveDirectoryPath, isDirectory: true)
+        }
+        let fm = FileManager.default
+        if let pictures = fm.urls(for: .picturesDirectory, in: .userDomainMask).first {
+            let dir = pictures.appendingPathComponent("Screen Snap", isDirectory: true)
+            if !fm.fileExists(atPath: dir.path) {
+                try? fm.createDirectory(at: dir, withIntermediateDirectories: true)
+            }
+            return dir
+        }
+        return nil
+    }
+
+    private func openSnapsInFinder() {
+        guard let dir = snapsDirectoryFromSettings() else { return }
+        NSWorkspace.shared.open(dir)
+    }
+
+    init(urls: [URL], onSelect: @escaping (URL) -> Void, onReload: @escaping () -> [URL]) {
+        self.onSelect = onSelect
+        self.onReload = onReload
+        _urlsLocal = State(initialValue: urls)
+    }
+
     // Basic grid: adapts to window size
     private var columns: [GridItem] {
         [GridItem(.adaptive(minimum: 180), spacing: 10)]
     }
-    
+
     var body: some View {
         ScrollView {
             LazyVGrid(columns: columns, spacing: 10) {
-                ForEach(urls, id: \.self) { url in
+                ForEach(urlsLocal, id: \.self) { url in
                     GalleryThumb(url: url)
                         .onTapGesture { onSelect(url) }
                 }
             }
             .padding(16)
+        }
+        .toolbar {
+            ToolbarItemGroup(placement: .navigation) {
+                Button {
+                    urlsLocal = onReload()
+                } label: {
+                    Label("Reload", systemImage: "arrow.clockwise")
+                }
+                Button {
+                    openSnapsInFinder()
+                } label: {
+                    Label("Open in Finder", systemImage: "folder")
+                }
+            }
         }
         .frame(minWidth: 480, maxWidth: .infinity,
                minHeight: 360, maxHeight: .infinity)
