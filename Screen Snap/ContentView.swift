@@ -3319,21 +3319,18 @@ private struct Box: Identifiable {
     var width: CGFloat
 }
 
+
 final class ScreenCapturer: NSObject, SCStreamOutput {
     static let shared = ScreenCapturer()
     
-    private var stream: SCStream?
-    private var continuation: CheckedContinuation<CGImage?, Never>?
-    private var didDeliverFirstFrame = false
-    private var isStopping = false
-    private var frameTimeoutTask: Task<Void, Never>?
+    private var currentStream: SCStream?
+    private var captureResult: CGImage?
+    private var captureError: Error?
+    private var isCapturing = false
     
     /// Captures a single CGImage of the main display using ScreenCaptureKit.
     func captureMainDisplayImage() async -> CGImage? {
         do {
-            didDeliverFirstFrame = false
-            isStopping = false
-            frameTimeoutTask?.cancel(); frameTimeoutTask = nil
             let content = try await SCShareableContent.current
             guard let display = content.displays.first else { return nil }
             
@@ -3345,102 +3342,93 @@ final class ScreenCapturer: NSObject, SCStreamOutput {
             config.showsCursor = false
             config.minimumFrameInterval = CMTime(value: 1, timescale: 60)
             
-            let stream = SCStream(filter: filter, configuration: config, delegate: nil)
-            self.stream = stream
-            
-            try stream.addStreamOutput(self, type: SCStreamOutputType.screen, sampleHandlerQueue: DispatchQueue.main)
-            // Start a one-shot timeout in case no frames ever arrive
-            frameTimeoutTask?.cancel()
-            frameTimeoutTask = Task { [weak self] in
-                try? await Task.sleep(nanoseconds: 2_000_000_000) // 2s
-                guard let self = self else { return }
-                if self.didDeliverFirstFrame || self.isStopping { return }
-                self.isStopping = true
-                let cont = self.continuation
-                self.continuation = nil
-                cont?.resume(returning: nil)
-                let s = self.stream
-                Task { [weak self] in
-                    do { try await s?.stopCapture() } catch { }
-                    do { if let s = s, let self = self { try s.removeStreamOutput(self, type: .screen) } } catch { }
-                    self?.stream = nil
-                    self?.isStopping = false
-                }
-            }
-            try await stream.startCapture()
-            
-            return await withCheckedContinuation { (cont: CheckedContinuation<CGImage?, Never>) in
-                self.continuation = cont
-            }
+            return await performCapture(filter: filter, config: config)
         } catch {
-            frameTimeoutTask?.cancel(); frameTimeoutTask = nil
-            if let s = stream {
-                Task { [weak self] in
-                    do { try await s.stopCapture() } catch { }
-                    do { try s.removeStreamOutput(self!, type: .screen) } catch { }
-                }
-            }
             return nil
         }
     }
     
     func captureImage(using filter: SCContentFilter, display: SCDisplay) async -> CGImage? {
+        let cfg = SCStreamConfiguration()
+        
+        let backingScale = getBackingScaleForDisplay(display) ?? 1.0
+        cfg.width = Int(CGFloat(display.width) * backingScale)
+        cfg.height = Int(CGFloat(display.height) * backingScale)
+        cfg.pixelFormat = kCVPixelFormatType_32BGRA
+        cfg.showsCursor = false
+        cfg.minimumFrameInterval = CMTime(value: 1, timescale: 60)
+        
+        print("Display backing scale: \(backingScale), forcing capture size to: \(cfg.width) × \(cfg.height)")
+        
+        return await performCapture(filter: filter, config: cfg)
+    }
+    
+    private func performCapture(filter: SCContentFilter, config: SCStreamConfiguration) async -> CGImage? {
+        // Prevent concurrent captures
+        guard !isCapturing else { return nil }
+        isCapturing = true
+        defer { isCapturing = false }
+        
+        // Reset state
+        captureResult = nil
+        captureError = nil
+        currentStream = nil
+        
         do {
-            didDeliverFirstFrame = false
-            isStopping = false
-            frameTimeoutTask?.cancel(); frameTimeoutTask = nil
-            let cfg = SCStreamConfiguration()
+            let stream = SCStream(filter: filter, configuration: config, delegate: nil)
+            currentStream = stream
             
-            // Get the backing scale factor from the screen that matches this display
-            let backingScale = getBackingScaleForDisplay(display) ?? 1.0
-            cfg.width = Int(CGFloat(display.width) * backingScale)
-            cfg.height = Int(CGFloat(display.height) * backingScale)
-            cfg.pixelFormat = kCVPixelFormatType_32BGRA
-            cfg.showsCursor = false
-            cfg.minimumFrameInterval = CMTime(value: 1, timescale: 60)
-            
-            print("🎯 Display backing scale: \(backingScale), forcing capture size to: \(cfg.width) × \(cfg.height)")
-            
-            let stream = SCStream(filter: filter, configuration: cfg, delegate: nil)
-            self.stream = stream
             try stream.addStreamOutput(self, type: .screen, sampleHandlerQueue: .main)
-            // Start a one-shot timeout in case no frames ever arrive
-            frameTimeoutTask?.cancel()
-            frameTimeoutTask = Task { [weak self] in
-                try? await Task.sleep(nanoseconds: 2_000_000_000) // 2s
-                guard let self = self else { return }
-                if self.didDeliverFirstFrame || self.isStopping { return }
-                self.isStopping = true
-                let cont = self.continuation
-                self.continuation = nil
-                cont?.resume(returning: nil)
-                let s = self.stream
-                Task { [weak self] in
-                    do { try await s?.stopCapture() } catch { }
-                    do { if let s = s, let self = self { try s.removeStreamOutput(self, type: .screen) } } catch { }
-                    self?.stream = nil
-                    self?.isStopping = false
-                }
-            }
             try await stream.startCapture()
             
-            return await withCheckedContinuation { (cont: CheckedContinuation<CGImage?, Never>) in
-                self.continuation = cont
-            }
-        } catch {
-            frameTimeoutTask?.cancel(); frameTimeoutTask = nil
-            if let s = stream {
-                Task { [weak self] in
-                    do { try await s.stopCapture() } catch { }
-                    do { try s.removeStreamOutput(self!, type: .screen) } catch { }
+            // Wait for result with timeout using polling
+            let startTime = CACurrentMediaTime()
+            let timeout: TimeInterval = 4.0
+            
+            while captureResult == nil && captureError == nil {
+                if CACurrentMediaTime() - startTime > timeout {
+                    break
                 }
+                try await Task.sleep(nanoseconds: 50_000_000) // 50ms polling
+            }
+            
+            // Clean shutdown
+            await shutdownStream(stream)
+            
+            if let error = captureError {
+                throw error
+            }
+            
+            return captureResult
+            
+        } catch {
+            if let stream = currentStream {
+                await shutdownStream(stream)
             }
             return nil
         }
     }
+    
+    private func shutdownStream(_ stream: SCStream) async {
+        do {
+            try stream.removeStreamOutput(self, type: .screen)
+        } catch {
+            // Ignore removal errors
+        }
+        
+        do {
+            try await stream.stopCapture()
+        } catch let error as NSError {
+            // Ignore "already stopped" errors
+            if error.code != -3808 {
+                print("Stream shutdown error: \(error)")
+            }
+        }
+        
+        currentStream = nil
+    }
 
     private func getBackingScaleForDisplay(_ scDisplay: SCDisplay) -> CGFloat? {
-        // Match SCDisplay to NSScreen by CGDisplayID
         for screen in NSScreen.screens {
             if let cgIDNum = screen.deviceDescription[NSDeviceDescriptionKey("NSScreenNumber")] as? NSNumber {
                 let cgID = CGDirectDisplayID(truncating: cgIDNum)
@@ -3455,34 +3443,18 @@ final class ScreenCapturer: NSObject, SCStreamOutput {
     // MARK: - SCStreamOutput
     func stream(_ stream: SCStream, didOutputSampleBuffer sampleBuffer: CMSampleBuffer, of outputType: SCStreamOutputType) {
         guard outputType == .screen,
+              captureResult == nil, // Only capture the first frame
               let pixelBuffer = CMSampleBufferGetImageBuffer(sampleBuffer) else { return }
-        
-        if didDeliverFirstFrame || isStopping {
-            return
-        }
         
         var cgImage: CGImage?
         VTCreateCGImageFromCVPixelBuffer(pixelBuffer, options: nil, imageOut: &cgImage)
         
-        if let cgImage {
-            // Ensure we only fulfill once and stop the stream a single time
-            didDeliverFirstFrame = true
-            continuation?.resume(returning: cgImage)
-            continuation = nil
-            if !isStopping {
-                isStopping = true
-                frameTimeoutTask?.cancel(); frameTimeoutTask = nil
-                let s = self.stream
-                Task { [weak self] in
-                    defer { self?.stream = nil; self?.isStopping = false }
-                    do { try await s?.stopCapture() } catch { /* ignore -3808 etc */ }
-                    do { if let s = s, let self = self { try s.removeStreamOutput(self, type: .screen) } } catch { }
-                }
-            }
+        if let cgImage = cgImage {
+            captureResult = cgImage
         }
     }
-    
 }
+
 
 
 

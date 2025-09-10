@@ -16,16 +16,22 @@ Inspired by Greenshot on Windows - the goal is to make a tiny app that can do th
 </div>
 
 ## Work in Progress
-- Multi-Monitor snaps. 
-- Adjustable 1x, 2x snaps. 
-  - User defined setting? 
-- Zoom ?
-- User friendly menus. 
-- Adjust liquid glass in app icon.
-- Hotkeys for tools.
-- Working Menu Bar commands with icons. 
+- <del>Handle 1x, 2x (Retina) snaps.</del>
+  - User defined setting for copy. 
 - <del>Global system hotkey for screenshots.</del> 
   - User adjustable hotkey. 
+
+
+- Allow for zoom / don't fill view with snap? 
+
+- User friendly menus. 
+- Hotkeys for tools.
+- Working Menu Bar commands with icons. 
+
+- Adjust liquid glass in app icon.
+
+
+
 ### Completed 
 - <del>Undo & Redo
 - <del>Add Text fields with font colors, sizes, and background fill.
@@ -43,7 +49,9 @@ Inspired by Greenshot on Windows - the goal is to make a tiny app that can do th
   - <del>User defined output type (PNG / JPG / HEIC) & quality slider. 
 - <del>Refresh snaps button. 
 - <del> Limit snap previews to ~10.
-- <del> Add a Snap Browser 
+- <del> Add a Snap Browser
+- <del>Multi-Monitor snaps. 
+
 
 
 
