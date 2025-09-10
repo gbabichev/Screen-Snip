@@ -17,13 +17,15 @@ Inspired by Greenshot on Windows - the goal is to make a tiny app that can do th
 
 ## Work in Progress
 - <del>Undo & Redo
-- <del>Add Text fields with font colors, sizes, and background fill.</del>
+- <del>Add Text fields with font colors, sizes, and background fill.
    - Click onto text area to adjust it. Not spwan new text boxes.
 - <del>Add lines with arrows. 
 - <del>Objects should be eraseable with delete key.
 - <del>Add auto increment numbers. 
 - <del>Add Crop.
 - <del>Lines, Arrows, Shapes, numbers, etc should all be moveable objects. 
+- Add a highlighter
+- Hotkeys for tools 
 - Open existing file
 - Paste on top & move stuff around. 
 - Image browser. 
@@ -41,7 +43,7 @@ Inspired by Greenshot on Windows - the goal is to make a tiny app that can do th
     <a href="Documentation/App2.png"><img src="Documentation/App2.png" width="45%"></a>
 </p> -->
 
-## 🖥️ User Interface
+## 🖥️ Tools
 
 
 
@@ -55,14 +57,14 @@ Inspired by Greenshot on Windows - the goal is to make a tiny app that can do th
 
 ## 🖥️ Install & Minimum Requirements
 
-- macOS 15.0 or later  
+- macOS 26.0 or later  
 - Apple Silicon & Intel (Not tested on Intel)
 - ~20 MB free disk space  
 
 
 ### ⚙️ Installation
 
-Download from Releases. It's signed & notarized!
+(when released) Download from Releases. It's signed & notarized!
 
 ### ⚙️ Build it yourself!
 

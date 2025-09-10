@@ -10,7 +10,7 @@ import UniformTypeIdentifiers
 private var _lastClickTime: TimeInterval = 0
 private var _lastClickPoint: CGPoint = .zero
 
-private enum Tool { case pointer, line, rect, text, crop, badge }
+private enum Tool { case pointer, line, rect, text, crop, badge, highlighter }
 
 struct ContentView: View {
     
@@ -55,6 +55,7 @@ struct ContentView: View {
     @State private var textBGColor: NSColor = .black.withAlphaComponent(0.6)
     @State private var badgeColor: NSColor = .systemRed
     @State private var badgeCount: Int = 0
+    @State private var highlighterColor: NSColor = NSColor.systemYellow.withAlphaComponent(0.35)
     
     @State private var lastFittedSize: CGSize? = nil
     @State private var objectSpaceSize: CGSize? = nil  // tracks the UI coordinate space size the objects are authored in
@@ -131,6 +132,11 @@ struct ContentView: View {
                                                         .foregroundStyle(Color(nsColor: o.textColor))
                                                         .position(x: o.rect.midX, y: o.rect.midY)
                                                 }
+                                        case .highlight(let o):
+                                            Rectangle()
+                                                .fill(Color(nsColor: o.color))
+                                                .frame(width: o.rect.width, height: o.rect.height)
+                                                .position(x: o.rect.midX, y: o.rect.midY)
                                         }
                                     }
                                     // Draft feedback while creating (draft is stored in author space)
@@ -186,6 +192,7 @@ struct ContentView: View {
                                         case .rect(let o):  selectionForRect(o)
                                         case .text(let o):  selectionForText(o)   // interactive TextEditor now outside drawingGroup
                                         case .badge(let o): selectionForBadge(o)
+                                        case .highlight(let o): selectionForHighlight(o)
                                         }
                                     }
                                 }
@@ -197,6 +204,7 @@ struct ContentView: View {
                                 .simultaneousGesture(selectedTool == .text ? textGesture(insetOrigin: origin, fitted: fitted, author: author) : nil)
                                 .simultaneousGesture(selectedTool == .crop ? cropGesture(insetOrigin: origin, fitted: fitted, author: author) : nil)
                                 .simultaneousGesture(selectedTool == .badge ? badgeGesture(insetOrigin: origin, fitted: fitted, author: author) : nil)
+                                .simultaneousGesture(selectedTool == .highlighter ? highlightGesture(insetOrigin: origin, fitted: fitted, author: author) : nil)
                                 .onAppear {
                                     lastFittedSize = fitted
                                     if objectSpaceSize == nil { objectSpaceSize = fitted }
@@ -507,6 +515,29 @@ struct ContentView: View {
 
                     }
                     
+                    Menu {
+                        Menu("Color") {
+                            PenColorButton(current: $highlighterColor, color: NSColor.systemYellow.withAlphaComponent(0.35), name: "Yellow 35%")
+                            PenColorButton(current: $highlighterColor, color: NSColor.systemGreen.withAlphaComponent(0.35),  name: "Green 35%")
+                            PenColorButton(current: $highlighterColor, color: NSColor.systemBlue.withAlphaComponent(0.35),   name: "Blue 35%")
+                            PenColorButton(current: $highlighterColor, color: NSColor.systemPink.withAlphaComponent(0.35),   name: "Pink 35%")
+                        }
+                        Divider()
+                        Text("Drag to create translucent box")
+                            .foregroundStyle(.secondary)
+                    } label: {
+                        Label("Highlighter", systemImage: "highlighter")
+                            .symbolRenderingMode(.monochrome)
+                            .foregroundStyle(selectedTool == .highlighter ? Color.white : Color.primary)
+                            .tint(selectedTool == .highlighter ? .white : .primary)
+                    } primaryAction: {
+                        selectedTool = .highlighter
+                        selectedObjectID = nil; activeHandle = .none; cropDraftRect = nil; cropRect = nil; cropHandle = .none
+                        focusedTextID = nil
+                    }
+                    .glassEffect(selectedTool == .highlighter ? .regular.tint(.blue) : .regular)
+                    .help("Drag to add a highlight box")
+
                     Button(action: {
                         selectedTool = .crop
                         selectedObjectID = nil
@@ -1166,6 +1197,43 @@ struct ContentView: View {
             }
     }
     
+    private func highlightGesture(insetOrigin: CGPoint, fitted: CGSize, author: CGSize) -> some Gesture {
+        DragGesture(minimumDistance: 0)
+            .onChanged { value in
+                guard allowDraftTick() else { return }
+                let startFit = CGPoint(x: value.startLocation.x - insetOrigin.x, y: value.startLocation.y - insetOrigin.y)
+                let currentFit = CGPoint(x: value.location.x - insetOrigin.x, y: value.location.y - insetOrigin.y)
+                let start = fittedToAuthorPoint(startFit, fitted: fitted, author: author)
+                let current = fittedToAuthorPoint(currentFit, fitted: fitted, author: author)
+                let shift = NSEvent.modifierFlags.contains(.shift)
+
+                func rectFrom(_ a: CGPoint, _ b: CGPoint, square: Bool) -> CGRect {
+                    var x0 = min(a.x, b.x)
+                    var y0 = min(a.y, b.y)
+                    var w = abs(a.x - b.x)
+                    var h = abs(a.y - b.y)
+                    if square {
+                        let side = max(w, h)
+                        x0 = (b.x >= a.x) ? a.x : (a.x - side)
+                        y0 = (b.y >= a.y) ? a.y : (a.y - side)
+                        w = side; h = side
+                    }
+                    return CGRect(x: x0, y: y0, width: w, height: h)
+                }
+
+                draftRect = rectFrom(start, current, square: shift)
+            }
+            .onEnded { _ in
+                defer { draftRect = nil }
+                guard let uiRect = draftRect else { return }
+                let clamped = clampRect(uiRect, in: author)
+                let newObj = HighlightObject(rect: clamped, color: highlighterColor)
+                pushUndoSnapshot()
+                objects.append(.highlight(newObj))
+                if objectSpaceSize == nil { objectSpaceSize = author }
+            }
+    }
+    
     private func textGesture(insetOrigin: CGPoint, fitted: CGSize, author: CGSize) -> some Gesture {
         DragGesture(minimumDistance: 0)
             .onChanged { value in
@@ -1315,6 +1383,7 @@ struct ContentView: View {
                         case .rect(let o): return o.handleHitTest(p) != .none || o.hitTest(p)
                         case .text(let o): return o.handleHitTest(p) != .none || o.hitTest(p)
                         case .badge(let o): return o.handleHitTest(p) != .none || o.hitTest(p)
+                        case .highlight(let o): return o.handleHitTest(p) != .none || o.hitTest(p)
                         }
                     }) {
                         selectedObjectID = objects[idx].id
@@ -1323,6 +1392,7 @@ struct ContentView: View {
                         case .rect(let o): activeHandle = o.handleHitTest(p)
                         case .text(let o): activeHandle = o.handleHitTest(p)
                         case .badge(let o): activeHandle = o.handleHitTest(p)
+                        case .highlight(let o): activeHandle = o.handleHitTest(p)
                         }
                         // On single click or drag, always clear focus (do not enter edit mode)
                         focusedTextID = nil
@@ -1361,6 +1431,11 @@ struct ContentView: View {
                         let clamped = clampRect(updated.rect, in: author)
                         var u = updated; u.rect = clamped
                         objects[idx] = .badge(u)
+                    case .highlight(var o):
+                        let updated = (activeHandle == .none) ? o.moved(by: delta) : o.resizing(activeHandle, to: p)
+                        let clamped = clampRect(updated.rect, in: author)
+                        var u = updated; u.rect = clamped
+                        objects[idx] = .highlight(u)
                     }
                     dragStartPoint = p
                 }
@@ -1464,6 +1539,37 @@ struct ContentView: View {
                 let oy = max(0, (geo.size.height - fittedSize.height) / 2)
 
                 // Corner handles in fitted space + inset
+                let pts = [
+                    CGPoint(x: rf.minX + ox, y: rf.minY + oy),
+                    CGPoint(x: rf.maxX + ox, y: rf.minY + oy),
+                    CGPoint(x: rf.minX + ox, y: rf.maxY + oy),
+                    CGPoint(x: rf.maxX + ox, y: rf.maxY + oy)
+                ]
+                ForEach(Array(pts.enumerated()), id: \.offset) { pair in
+                    let pt = pair.element
+                    Circle()
+                        .stroke(.blue, lineWidth: 1)
+                        .background(Circle().fill(.white))
+                        .frame(width: 12, height: 12)
+                        .position(pt)
+                }
+            }
+        }
+    }
+    
+    @ViewBuilder private func selectionForHighlight(_ o: HighlightObject) -> some View {
+        GeometryReader { geo in
+            ZStack {
+                let fittedSize = lastFittedSize ?? objectSpaceSize ?? .zero
+                let authorSize = objectSpaceSize ?? fittedSize
+                let sx = fittedSize.width / max(1, authorSize.width)
+                let sy = fittedSize.height / max(1, authorSize.height)
+                let rf = CGRect(x: o.rect.origin.x * sx,
+                                y: o.rect.origin.y * sy,
+                                width: o.rect.size.width * sx,
+                                height: o.rect.size.height * sy)
+                let ox = max(0, (geo.size.width  - fittedSize.width)  / 2)
+                let oy = max(0, (geo.size.height - fittedSize.height) / 2)
                 let pts = [
                     CGPoint(x: rf.minX + ox, y: rf.minY + oy),
                     CGPoint(x: rf.maxX + ox, y: rf.minY + oy),
@@ -1634,6 +1740,10 @@ struct ContentView: View {
                     .paragraphStyle: para
                 ]
                 NSString(string: "\(o.number)").draw(in: r, withAttributes: attrs)
+            case .highlight(let o):
+                let r = uiRectToImageRect(o.rect, fitted: fitted, image: imgSize)
+                o.color.setFill()
+                NSBezierPath(rect: r).fill()
             }
         }
         
@@ -2121,6 +2231,64 @@ private struct RectObject: DrawableObject {
     }
 }
 
+private struct HighlightObject: DrawableObject {
+    let id: UUID
+    var rect: CGRect
+    var color: NSColor // include alpha for the “marker” look
+
+    init(id: UUID = UUID(),
+         rect: CGRect,
+         color: NSColor = NSColor.systemYellow.withAlphaComponent(0.35)) {
+        self.id = id; self.rect = rect; self.color = color
+    }
+
+    static func == (lhs: HighlightObject, rhs: HighlightObject) -> Bool {
+        lhs.id == rhs.id && lhs.rect == rhs.rect && lhs.color == rhs.color
+    }
+
+    func drawPath(in _: CGSize) -> Path { Rectangle().path(in: rect) }
+
+    func hitTest(_ p: CGPoint) -> Bool {
+        rect.insetBy(dx: -6, dy: -6).contains(p)
+    }
+
+    func handleHitTest(_ p: CGPoint) -> Handle {
+        let r: CGFloat = 8
+        let tl = CGRect(x: rect.minX-r, y: rect.minY-r, width: 2*r, height: 2*r)
+        let tr = CGRect(x: rect.maxX-r, y: rect.minY-r, width: 2*r, height: 2*r)
+        let bl = CGRect(x: rect.minX-r, y: rect.maxY-r, width: 2*r, height: 2*r)
+        let br = CGRect(x: rect.maxX-r, y: rect.maxY-r, width: 2*r, height: 2*r)
+        if tl.contains(p) { return .rectTopLeft }
+        if tr.contains(p) { return .rectTopRight }
+        if bl.contains(p) { return .rectBottomLeft }
+        if br.contains(p) { return .rectBottomRight }
+        return .none
+    }
+
+    func moved(by d: CGSize) -> HighlightObject {
+        var c = self
+        c.rect.origin.x += d.width
+        c.rect.origin.y += d.height
+        return c
+    }
+
+    func resizing(_ handle: Handle, to p: CGPoint) -> HighlightObject {
+        var c = self
+        switch handle {
+        case .rectTopLeft:
+            c.rect = CGRect(x: p.x, y: p.y, width: rect.maxX - p.x, height: rect.maxY - p.y)
+        case .rectTopRight:
+            c.rect = CGRect(x: rect.minX, y: p.y, width: p.x - rect.minX, height: rect.maxY - p.y)
+        case .rectBottomLeft:
+            c.rect = CGRect(x: p.x, y: rect.minY, width: rect.maxX - p.x, height: p.y - rect.minY)
+        case .rectBottomRight:
+            c.rect = CGRect(x: rect.minX, y: rect.minY, width: p.x - rect.minX, height: p.y - rect.minY)
+        default: break
+        }
+        return c
+    }
+}
+
 private struct TextObject: DrawableObject {
     let id: UUID
     var rect: CGRect
@@ -2248,6 +2416,7 @@ private enum Drawable: Identifiable, Equatable {
     case rect(RectObject)
     case text(TextObject)
     case badge(BadgeObject)
+    case highlight(HighlightObject)
     
     var id: UUID {
         switch self {
@@ -2255,6 +2424,7 @@ private enum Drawable: Identifiable, Equatable {
         case .rect(let o): return o.id
         case .text(let o): return o.id
         case .badge(let o): return o.id
+        case .highlight(let o): return o.id
         }
     }
 }
@@ -2472,6 +2642,11 @@ private func scaleDrawable(_ d: Drawable, sx: CGFloat, sy: CGFloat) -> Drawable 
         let side = max(8, (c.rect.width + c.rect.height) / 2)
         c.rect.size = CGSize(width: side, height: side)
         return .badge(c)
+    case .highlight(let o):
+        var c = o
+        c.rect.origin.x *= sx; c.rect.origin.y *= sy
+        c.rect.size.width  *= sx; c.rect.size.height *= sy
+        return .highlight(c)
     }
 }
 
