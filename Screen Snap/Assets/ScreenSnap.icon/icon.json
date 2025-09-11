@@ -1,43 +1,25 @@
 {
-  "fill-specializations" : [
-    {
-      "value" : {
-        "solid" : "extended-gray:1.00000,1.00000"
-      }
-    },
-    {
-      "appearance" : "dark",
-      "value" : {
-        "solid" : "extended-gray:0.00000,1.00000"
-      }
-    }
-  ],
+  "fill" : {
+    "linear-gradient" : [
+      "extended-srgb:0.00000,0.53333,1.00000,1.00000",
+      "display-p3:0.18305,0.42370,0.79447,1.00000"
+    ]
+  },
   "groups" : [
     {
+      "blur-material" : null,
       "layers" : [
         {
-          "fill-specializations" : [
-            {
-              "value" : {
-                "solid" : "extended-gray:0.00000,1.00000"
-              }
-            },
-            {
-              "appearance" : "dark",
-              "value" : {
-                "solid" : "extended-gray:1.00000,1.00000"
-              }
-            }
-          ],
-          "image-name" : "image 3.png",
-          "name" : "image 3"
+          "fill" : "none",
+          "glass" : true,
+          "image-name" : "ScreenSnap.png",
+          "name" : "ScreenSnap"
         }
       ],
       "shadow" : {
-        "kind" : "neutral",
-        "opacity" : 0.5
+        "kind" : "layer-color",
+        "opacity" : 1
       },
-      "specular" : true,
       "translucency" : {
         "enabled" : true,
         "value" : 0.5
