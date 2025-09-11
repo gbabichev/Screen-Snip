@@ -16,7 +16,6 @@ Inspired by Greenshot on Windows - the goal is to make a tiny app that can do th
 </div>
 
 ## Work in Progress
-- Allow for zoom / don't fill view with snap? 
 
 - User friendly menus. 
 - Hotkeys for tools.
@@ -48,6 +47,7 @@ Inspired by Greenshot on Windows - the goal is to make a tiny app that can do th
 - <del>Global system hotkey for screenshots.</del> 
 - <del>Handle 1x, 2x (Retina) snaps.
   - User setting to downsample retina in clipboard
+- <del>User adjustable setting for Snap "fills" or "fits". 
 
 ### Stretch Goals 
 - User adjustable hotkey for taking a snap. 
