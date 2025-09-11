@@ -406,6 +406,7 @@ struct ContentView: View {
             }
         }
         .onAppear {
+            print("🔥 [DEBUG] ContentView.onAppear called")
             loadExistingSnaps()
             // Listen for Cmd+Z / Shift+Cmd+Z globally while this view is active, and Delete for selected objects
             keyMonitor = NSEvent.addLocalMonitorForEvents(matching: .keyDown) { event in
@@ -486,8 +487,14 @@ struct ContentView: View {
             if let keyMonitor { NSEvent.removeMonitor(keyMonitor); self.keyMonitor = nil }
         }
         .onReceive(NotificationCenter.default.publisher(for: Notification.Name("LoadSpecificSnap"))) { note in
-            guard let url = note.object as? URL else { return }
+            print("🔥 [DEBUG] ContentView received LoadSpecificSnap notification")
+            guard let url = note.object as? URL else {
+                print("🔥 [DEBUG] ERROR: LoadSpecificSnap notification has no URL")
+                return
+            }
+            print("🔥 [DEBUG] LoadSpecificSnap URL: \(url)")
             if let img = NSImage(contentsOf: url) {
+                print("🔥 [DEBUG] LoadSpecificSnap: Successfully loaded image")
                 lastCapture = img
                 selectedSnapURL = url
                 undoStack.removeAll()
@@ -496,20 +503,43 @@ struct ContentView: View {
                 objectSpaceSize = nil
                 selectedObjectID = nil
                 activeHandle = .none
+            } else {
+                print("🔥 [DEBUG] ERROR: LoadSpecificSnap failed to load image")
             }
         }
-//        .onReceive(NotificationCenter.default.publisher(for: Notification.Name("com.georgebabichev.screensnap.beginSnapFromIntent"))) { _ in
-//            print("test")
-//            startSelection()
-//        }
-//        .onReceive(NotificationCenter.default.publisher(for: Notification.Name("StartSelectionFromHotkey"))) { note in
-//            print("[DEBUG] ContentView: StartSelectionFromHotkey received")
-//            startSelection()
-//            if let completion = note.object as? ((URL?) -> Void) {
-//                // startSelection manages UI and saving; we don't provide a URL back
-//                completion(nil)
-//            }
-//        }
+        .onReceive(NotificationCenter.default.publisher(for: Notification.Name("com.georgebabichev.screensnap.beginSnapFromIntent"))) { note in
+            print("🔥 [DEBUG] ContentView received beginSnapFromIntent notification")
+            guard let url = note.object as? URL else {
+                print("🔥 [DEBUG] ERROR: beginSnapFromIntent notification has no URL")
+                return
+            }
+            print("🔥 [DEBUG] beginSnapFromIntent URL: \(url)")
+            if let img = NSImage(contentsOf: url) {
+                print("🔥 [DEBUG] beginSnapFromIntent: Successfully loaded image")
+                lastCapture = img
+                selectedSnapURL = url
+                undoStack.removeAll()
+                redoStack.removeAll()
+                objects.removeAll()
+                objectSpaceSize = nil
+                selectedObjectID = nil
+                activeHandle = .none
+                
+                // Also update the snaps list
+                insertSnapURL(url)
+                loadExistingSnaps()
+            } else {
+                print("🔥 [DEBUG] ERROR: beginSnapFromIntent failed to load image")
+            }
+        }
+        .onReceive(NotificationCenter.default.publisher(for: Notification.Name("StartSelectionFromHotkey"))) { note in
+            print("[DEBUG] ContentView: StartSelectionFromHotkey received")
+            startSelection()
+            if let completion = note.object as? ((URL?) -> Void) {
+                // startSelection manages UI and saving; we don't provide a URL back
+                completion(nil)
+            }
+        }
         .toolbar {
             ToolbarItemGroup(placement: .navigation) {
                 Button {
@@ -847,6 +877,19 @@ struct ContentView: View {
 //        }
     }
     
+    
+    func loadImage(url: URL, image: NSImage) {
+        lastCapture = image
+        selectedSnapURL = url
+        undoStack.removeAll()
+        redoStack.removeAll()
+        objects.removeAll()
+        objectSpaceSize = nil
+        selectedObjectID = nil
+        activeHandle = .none
+        insertSnapURL(url)
+        loadExistingSnaps()
+    }
     
     @ViewBuilder
     private func selectionForText(_ o: TextObject) -> some View {
@@ -1203,18 +1246,18 @@ struct ContentView: View {
             let pxPerPtX = scale
             let pxPerPtY = scale
             
-            print("🔍 Scale Factor Debug:")
-            print("  scDisplay.width: \(scDisplay.width)")
-            print("  scDisplay.height: \(scDisplay.height)")
-            print("  screenFramePts.width: \(screenFramePts.width)")
-            print("  screenFramePts.height: \(screenFramePts.height)")
-            print("  bestScreen.backingScaleFactor: \(bestScreen.backingScaleFactor)")
+//            print("🔍 Scale Factor Debug:")
+//            print("  scDisplay.width: \(scDisplay.width)")
+//            print("  scDisplay.height: \(scDisplay.height)")
+//            print("  screenFramePts.width: \(screenFramePts.width)")
+//            print("  screenFramePts.height: \(screenFramePts.height)")
+//            print("  bestScreen.backingScaleFactor: \(bestScreen.backingScaleFactor)")
             
             // 4) Build a filter for that display and capture one frame.
             let filter = SCContentFilter(display: scDisplay, excludingWindows: [])
             guard let fullCG = await ScreenCapturer.shared.captureImage(using: filter, display: scDisplay) else { return nil }
-            print("Full capture dimensions: \(fullCG.width) × \(fullCG.height)")
-            print("Expected for 5K display: should be around 5120 × 2880")
+//            print("Full capture dimensions: \(fullCG.width) × \(fullCG.height)")
+//            print("Expected for 5K display: should be around 5120 × 2880")
             // 5) Convert the intersected rect (points) to pixel crop in the captured image space.
             let cropPx = cropRectPixels(intersectPts,
                                         withinScreenFramePts: screenFramePts,
@@ -1241,13 +1284,13 @@ struct ContentView: View {
             nsImage.addRepresentation(rep)
 
             // Debug logging
-            print("🔍 Capture Debug:")
-            print("  Screen scale factors: pxPerPtX=\(pxPerPtX), pxPerPtY=\(pxPerPtY)")
-            print("  CGImage pixel size: \(cropped.width) × \(cropped.height)")
-            print("  Calculated point size: \(pointSize.width) × \(pointSize.height)")
-            print("  NSImage.size: \(nsImage.size.width) × \(nsImage.size.height)")
-            print("  Rep.size: \(rep.size.width) × \(rep.size.height)")
-            print("  Rep pixels: \(rep.pixelsWide) × \(rep.pixelsHigh)")
+//            print("🔍 Capture Debug:")
+//            print("  Screen scale factors: pxPerPtX=\(pxPerPtX), pxPerPtY=\(pxPerPtY)")
+//            print("  CGImage pixel size: \(cropped.width) × \(cropped.height)")
+//            print("  Calculated point size: \(pointSize.width) × \(pointSize.height)")
+//            print("  NSImage.size: \(nsImage.size.width) × \(nsImage.size.height)")
+//            print("  Rep.size: \(rep.size.width) × \(rep.size.height)")
+//            print("  Rep pixels: \(rep.pixelsWide) × \(rep.pixelsHigh)")
 
             return nsImage
         } catch {
@@ -2525,20 +2568,28 @@ struct ContentView: View {
     
 }
 
-
-// MARK: - Preload initializer for opening editor with an image
-//extension ContentView {
-//    init(preloadURL: URL?, preloadImage: NSImage?) {
-//        //self.init()
-//        
-//        self._selectedSnapURL = State(initialValue: preloadURL)
-//        self._lastCapture = State(initialValue: preloadImage)
-//        self._snapURLs = State(initialValue: [])
-//        self.init()
-//        _selectedSnapURL = State(initialValue: preloadURL)
-//        _lastCapture = State(initialValue: preloadImage)
-//    }
-//}
+// Add this at the bottom of ContentView.swift, before the final closing brace
+struct ContentViewWithPreload: View {
+    let preloadURL: URL
+    let preloadImage: NSImage
+    
+    @State private var contentView = ContentView()
+    
+    init(url: URL, image: NSImage) {
+        self.preloadURL = url
+        self.preloadImage = image
+    }
+    
+    var body: some View {
+        contentView
+            .onAppear {
+                // Directly set the state instead of using notifications
+                DispatchQueue.main.async {
+                    contentView.loadImage(url: preloadURL, image: preloadImage)
+                }
+            }
+    }
+}
 
 // MARK: - Root View Modifier for Global Hotkey
 
@@ -2606,7 +2657,8 @@ extension ContentView {
         // Store reference to prevent deallocation
         WindowManager.shared.registerWindow(windowController)
     }
-
+    
+    /// Presents the editor with the given image. Reuses existing window if available; otherwise creates a new one preloaded.
     /// Presents the editor with the given image. Reuses existing window if available; otherwise creates a new one preloaded.
     private func presentEditor(url: URL?, image: NSImage?) {
         // Try to find an existing ContentView-hosting window first
@@ -2638,16 +2690,19 @@ extension ContentView {
         // No existing window — create a new one and load the snap after creation
         createNewMainEditorWindow()
         
-        // Post notification to load the snap after window creation
+        // Post notification to load the snap after window creation WITH A LONGER DELAY
         if let url = url {
-            DispatchQueue.main.asyncAfter(deadline: .now() + 0.1) {
+            DispatchQueue.main.asyncAfter(deadline: .now() + 1) { // Increased delay
                 NotificationCenter.default.post(
-                    name: Notification.Name("LoadSpecificSnap"),
+                    name: Notification.Name("com.georgebabichev.screensnap.beginSnapFromIntent"),
                     object: url
                 )
             }
         }
     }
+    
+    
+    
 }
 
 
@@ -3445,9 +3500,7 @@ final class ScreenCapturer: NSObject, SCStreamOutput {
         cfg.pixelFormat = kCVPixelFormatType_32BGRA
         cfg.showsCursor = false
         cfg.minimumFrameInterval = CMTime(value: 1, timescale: 60)
-        
-        print("Display backing scale: \(backingScale), forcing capture size to: \(cfg.width) × \(cfg.height)")
-        
+                
         return await performCapture(filter: filter, config: cfg)
     }
     
@@ -3588,7 +3641,6 @@ final class SelectionWindowManager {
             panel.contentView = NSHostingView(rootView: root)
             panel.makeKeyAndOrderFront(nil)
             panels.append(panel)
-            NSLog("[DEBUG] Selection complete rect")
         }
 
         // Activate the app so non-activating panels on all displays accept events
