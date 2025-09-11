@@ -132,7 +132,7 @@ final class WindowManager {
     }
     
     /// Loads an image into the existing window, creating window if needed
-    func loadImageIntoWindow(url: URL, image: NSImage) {
+    func loadImageIntoWindow(url: URL) {
         ensureMainWindow()
         
         // Post notification to load the image
@@ -234,7 +234,7 @@ final class GlobalHotKeyManager {
                     if let savedURL = await self.saveImageToDisk(img) {
                         DispatchQueue.main.async {
                             // Use centralized window manager
-                            WindowManager.shared.loadImageIntoWindow(url: savedURL, image: img)
+                            WindowManager.shared.loadImageIntoWindow(url: savedURL)
                         }
                     }
                 }

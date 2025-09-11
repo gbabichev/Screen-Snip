@@ -6,9 +6,6 @@ import AppKit
 import VideoToolbox
 import UniformTypeIdentifiers
 
-// File-scope helpers for robust double-click detection
-private var _lastClickTime: TimeInterval = 0
-private var _lastClickPoint: CGPoint = .zero
 
 private enum Tool { case pointer, line, rect, text, crop, badge, highlighter }
 
@@ -93,10 +90,7 @@ struct ContentView: View {
     
     @State private var lastFittedSize: CGSize? = nil
     @State private var objectSpaceSize: CGSize? = nil  // tracks the UI coordinate space size the objects are authored in
-    @State private var resizeSeq: Int = 0
     
-    @State private var showTextEditor: Bool = false
-    @State private var editingText: String = ""
     @State private var lastDraftTick: CFTimeInterval = 0
     
     // Throttle rapid draft updates to ~90 Hz (for drag gestures)
@@ -1374,19 +1368,7 @@ struct ContentView: View {
             }
         }
     }
-    
-    /// Save — overwrites the currently selected snap if available, else falls back to Save As….
-    private func saveCurrentOverwrite() {
-        guard let img = lastCapture else { return }
-        if let url = selectedSnapURL {
-            if writeImage(img, to: url, format: preferredSaveFormat, jpegQuality: CGFloat(saveQuality)) {
-                refreshGalleryAfterSaving(to: url)
-            }
-        } else {
-            saveAsCurrent()
-        }
-    }
-    
+        
     /// If saved file is within our snaps directory, update the gallery list.
     private func refreshGalleryAfterSaving(to url: URL) {
         if let dir = snapsDirectory(), url.path.hasPrefix(dir.path) {
@@ -1426,74 +1408,6 @@ struct ContentView: View {
             }
     }
     
-    // finishInlineAnnotation and cancelInlineAnnotation removed; not needed with auto-commit per line.
-    
-    private func composeAnnotated(base: NSImage, lines: [Line] = [], rects: [Box] = [], arrowHeadAtEnd: Bool = false) -> NSImage? {
-        let imgSize = base.size
-        let rep = NSBitmapImageRep(bitmapDataPlanes: nil,
-                                   pixelsWide: Int(imgSize.width),
-                                   pixelsHigh: Int(imgSize.height),
-                                   bitsPerSample: 8,
-                                   samplesPerPixel: 4,
-                                   hasAlpha: true,
-                                   isPlanar: false,
-                                   colorSpaceName: .deviceRGB,
-                                   bytesPerRow: 0,
-                                   bitsPerPixel: 0)
-        guard let rep else { return nil }
-        let composed = NSImage(size: imgSize)
-        composed.addRepresentation(rep)
-        
-        NSGraphicsContext.saveGraphicsState()
-        NSGraphicsContext.current = NSGraphicsContext(bitmapImageRep: rep)
-        base.draw(in: CGRect(origin: .zero, size: imgSize))
-        strokeColor.setStroke()
-        strokeColor.setFill()
-        
-        for line in lines {
-            // Draw the shaft
-            let path = NSBezierPath()
-            path.lineWidth = line.width
-            path.lineCapStyle = .round
-            path.move(to: line.start)
-            path.line(to: line.end)
-            path.stroke()
-            
-            // Optionally draw an arrowhead at the end
-            if arrowHeadAtEnd {
-                let dx = line.end.x - line.start.x
-                let dy = line.end.y - line.start.y
-                let len = max(1, hypot(dx, dy))
-                // Arrowhead dimensions scale with stroke width, capped by line length
-                let headLength = min(len * 0.8, max(10, 6 * line.width))
-                let headWidth  = max(8, 5 * line.width)
-                let ux = dx / len
-                let uy = dy / len
-                // Base of the triangle
-                let bx = line.end.x - ux * headLength
-                let by = line.end.y - uy * headLength
-                // Perpendicular vector
-                let px = -uy
-                let py = ux
-                let p1 = CGPoint(x: bx + px * (headWidth / 2), y: by + py * (headWidth / 2))
-                let p2 = CGPoint(x: bx - px * (headWidth / 2), y: by - py * (headWidth / 2))
-                
-                let tri = NSBezierPath()
-                tri.move(to: line.end)
-                tri.line(to: p1)
-                tri.line(to: p2)
-                tri.close()
-                tri.fill()
-            }
-        }
-        for box in rects {
-            let rectPath = NSBezierPath(rect: box.rect)
-            rectPath.lineWidth = box.width
-            rectPath.stroke()
-        }
-        NSGraphicsContext.restoreGraphicsState()
-        return composed
-    }
     
     private func rectGesture(insetOrigin: CGPoint, fitted: CGSize, author: CGSize) -> some Gesture {
         DragGesture(minimumDistance: 0)
@@ -1830,18 +1744,12 @@ struct ContentView: View {
                 dragStartPoint = nil
                 pushedDragUndo = false
             }    }
-    
-    // MARK: - Commit & Undo/Redo
-    private func commitChange(_ newImage: NSImage) {
-        lastCapture = newImage
-    }
+
 
     // MARK: - Canvas Coordinate System.
     // Creates drag points for tools in the toolbar.
     private struct CoordinateTransform {
-        let fitted: CGSize
         let origin: CGPoint
-        let author: CGSize
         let sx: CGFloat
         let sy: CGFloat
     }
@@ -1857,9 +1765,7 @@ struct ContentView: View {
         let sy = fitted.height / max(1, author.height)
         
         return CoordinateTransform(
-            fitted: fitted,
             origin: origin,
-            author: author,
             sx: sx,
             sy: sy
         )
@@ -2546,15 +2452,6 @@ struct ContentView: View {
     
 }
 
-// MARK: - Geometry/Screen Helpers
-
-private func screenForGlobalRect(_ r: CGRect) -> NSScreen? {
-    // Pick the screen with the largest intersection area with the selection rect
-    NSScreen.screens.max { a, b in
-        a.frame.intersection(r).area < b.frame.intersection(r).area
-    }
-}
-
 
 // MARK: - Gallery Window + View
 
@@ -2562,9 +2459,6 @@ private func screenForGlobalRect(_ r: CGRect) -> NSScreen? {
 private final class GalleryWindow {
     static let shared = GalleryWindow()
     private var window: NSWindow?
-    private var windowDelegate: NSWindowDelegate?
-    private var controller: NSWindowController?
-    private let frameDefaultsKey = "SnapGalleryManualFrame"
 
     func present(urls: [URL], onSelect: @escaping (URL) -> Void, onReload: @escaping () -> [URL]) {
         // If already visible, just bring to front and update content
@@ -2615,17 +2509,13 @@ private final class GalleryWindow {
         // Remove: win.setFrameAutosaveName(autosaveName)
         // Remove: win.setFrameUsingName(autosaveName)
 
-        self.controller = controller
         self.window = win
 
         // Set up close handler
-        let closeHandler = WindowCloseHandler(key: frameDefaultsKey) { [weak self] in
+        let closeHandler = WindowCloseHandler() { [weak self] in
             self?.window = nil
-            self?.controller = nil
-            self?.windowDelegate = nil
         }
         win.delegate = closeHandler
-        self.windowDelegate = closeHandler
 
         // Show the window - this will trigger automatic frame restoration
         controller.showWindow(nil)
@@ -2656,19 +2546,12 @@ private final class GalleryWindow {
     // Also update the WindowCloseHandler to not save manually since autosave handles it
     private final class WindowCloseHandler: NSObject, NSWindowDelegate {
         let onClose: () -> Void
-        let key: String // Keep for compatibility but don't use
         
-        init(key: String, onClose: @escaping () -> Void) {
-            self.key = key
+        init(onClose: @escaping () -> Void) {
             self.onClose = onClose
         }
         
         func windowWillClose(_ notification: Notification) {
-            // Remove manual frame saving - let autosave handle it
-            // if let win = notification.object as? NSWindow {
-            //     let rectString = NSStringFromRect(win.frame)
-            //     UserDefaults.standard.set(rectString, forKey: key)
-            // }
             onClose()
         }
     }
@@ -2803,24 +2686,35 @@ private struct SelectionOverlay: View {
     
     var body: some View {
         GeometryReader { geo in
-            // Cover the entire screen space with a dim layer
-            Color.black.opacity(0.25)
-                .overlay(alignment: .topLeading) {
-                    if let rect = selectionRect(in: geo) {
-                        // Cut-out effect
-                        SelectionShape(rect: rect)
-                            .fill(style: FillStyle(eoFill: true))
-                            .compositingGroup()
-                            .luminanceToAlpha()
-                        // Visible selection border
-                        Rectangle()
-                            .path(in: rect)
-                            .stroke(style: StrokeStyle(lineWidth: 2, dash: [6, 4]))
-                    }
+            ZStack {
+                // Create the dimmed overlay with a cut-out
+                if let rect = selectionRect() {
+                    // Overlay that covers everything except the selection
+                    Color.black.opacity(0.3)
+                        .mask(
+                            Rectangle()
+                                .overlay(
+                                    Rectangle()
+                                        .frame(width: rect.width, height: rect.height)
+                                        .position(x: rect.midX, y: rect.midY)
+                                        .blendMode(.destinationOut)
+                                )
+                        )
+                    
+                    // Selection border
+                    Rectangle()
+                        .stroke(Color.blue, lineWidth: 2)
+                        .frame(width: rect.width, height: rect.height)
+                        .position(x: rect.midX, y: rect.midY)
+                        .shadow(color: .black.opacity(0.5), radius: 1, x: 0, y: 0)
+                } else {
+                    // Initial overlay before dragging starts
+                    Color.black.opacity(0.1)
                 }
-                .contentShape(Rectangle())
-                .gesture(dragGesture(in: geo))
-                .onTapGesture(count: 2) { onCancel() }
+            }
+            .contentShape(Rectangle())
+            .gesture(dragGesture(in: geo))
+            .onTapGesture(count: 2) { onCancel() }
         }
     }
     
@@ -2855,7 +2749,7 @@ private struct SelectionOverlay: View {
         )
     }
     
-    private func selectionRect(in geo: GeometryProxy) -> CGRect? {
+    private func selectionRect() -> CGRect? {
         guard let s = startPoint, let c = currentPoint else { return nil }
         return CGRect(x: min(s.x, c.x), y: min(s.y, c.y), width: abs(s.x - c.x), height: abs(s.y - c.y))
     }
@@ -2868,6 +2762,8 @@ private struct SelectionOverlay: View {
                       height: abs(start.y - end.y))
     }
 }
+
+
 
 /// Creates a cut-out effect by punching a clear rectangle in an opaque layer.
 private struct SelectionShape: Shape {
@@ -2896,13 +2792,7 @@ private struct CopiedHUD: View {
 // MARK: - Object Editing Models
 private enum Handle: Hashable { case none, lineStart, lineEnd, rectTopLeft, rectTopRight, rectBottomLeft, rectBottomRight }
 
-private protocol DrawableObject: Identifiable, Equatable {
-    func drawPath(in size: CGSize) -> Path
-    func hitTest(_ p: CGPoint) -> Bool
-    func handleHitTest(_ p: CGPoint) -> Handle
-    func moved(by delta: CGSize) -> Self
-    func resizing(_ handle: Handle, to p: CGPoint) -> Self
-}
+private protocol DrawableObject: Identifiable, Equatable {}
 
 private struct LineObject: DrawableObject {
     let id: UUID
@@ -3012,9 +2902,7 @@ private struct HighlightObject: DrawableObject {
     static func == (lhs: HighlightObject, rhs: HighlightObject) -> Bool {
         lhs.id == rhs.id && lhs.rect == rhs.rect && lhs.color == rhs.color
     }
-    
-    func drawPath(in _: CGSize) -> Path { Rectangle().path(in: rect) }
-    
+        
     func hitTest(_ p: CGPoint) -> Bool {
         rect.insetBy(dx: -6, dy: -6).contains(p)
     }
@@ -3072,9 +2960,7 @@ private struct TextObject: DrawableObject {
     static func == (lhs: TextObject, rhs: TextObject) -> Bool {
         lhs.id == rhs.id && lhs.rect == rhs.rect && lhs.text == rhs.text && lhs.fontSize == rhs.fontSize && lhs.textColor == rhs.textColor && lhs.bgEnabled == rhs.bgEnabled && lhs.bgColor == rhs.bgColor
     }
-    
-    func drawPath(in _: CGSize) -> Path { Rectangle().path(in: rect) }
-    
+        
     func hitTest(_ p: CGPoint) -> Bool { rect.insetBy(dx: -6, dy: -6).contains(p) }
     
     func handleHitTest(_ p: CGPoint) -> Handle {
@@ -3130,9 +3016,7 @@ private struct BadgeObject: DrawableObject {
     static func == (lhs: BadgeObject, rhs: BadgeObject) -> Bool {
         lhs.id == rhs.id && lhs.rect == rhs.rect && lhs.number == rhs.number && lhs.fillColor == rhs.fillColor && lhs.textColor == rhs.textColor
     }
-    
-    func drawPath(in _: CGSize) -> Path { Circle().path(in: rect) }
-    
+        
     func hitTest(_ p: CGPoint) -> Bool {
         let c = CGPoint(x: rect.midX, y: rect.midY)
         let radius = max(rect.width, rect.height) / 2 + 6
@@ -3196,9 +3080,7 @@ private struct PastedImageObject: DrawableObject {
     static func == (lhs: PastedImageObject, rhs: PastedImageObject) -> Bool {
         lhs.id == rhs.id && lhs.rect == rhs.rect && lhs.image == rhs.image
     }
-    
-    func drawPath(in _: CGSize) -> Path { Rectangle().path(in: rect) }
-    
+        
     func hitTest(_ p: CGPoint) -> Bool { rect.insetBy(dx: -6, dy: -6).contains(p) }
     
     func handleHitTest(_ p: CGPoint) -> Handle {
@@ -3296,11 +3178,6 @@ private struct Line: Identifiable {
     var width: CGFloat
 }
 
-private struct Box: Identifiable {
-    let id = UUID()
-    var rect: CGRect
-    var width: CGFloat
-}
 
 
 final class ScreenCapturer: NSObject, SCStreamOutput {
@@ -3310,27 +3187,7 @@ final class ScreenCapturer: NSObject, SCStreamOutput {
     private var captureResult: CGImage?
     private var captureError: Error?
     private var isCapturing = false
-    
-    /// Captures a single CGImage of the main display using ScreenCaptureKit.
-    func captureMainDisplayImage() async -> CGImage? {
-        do {
-            let content = try await SCShareableContent.current
-            guard let display = content.displays.first else { return nil }
-            
-            let filter = SCContentFilter(display: display, excludingWindows: [])
-            let config = SCStreamConfiguration()
-            config.width = display.width
-            config.height = display.height
-            config.pixelFormat = kCVPixelFormatType_32BGRA
-            config.showsCursor = false
-            config.minimumFrameInterval = CMTime(value: 1, timescale: 60)
-            
-            return await performCapture(filter: filter, config: config)
-        } catch {
-            return nil
-        }
-    }
-    
+        
     func captureImage(using filter: SCContentFilter, display: SCDisplay) async -> CGImage? {
         let cfg = SCStreamConfiguration()
         
@@ -3534,58 +3391,10 @@ private struct PenColorButton: View {
 
 
 
-// Scales a Drawable from an old UI space to a new one (non-uniform allowed).
-private func scaleDrawable(_ d: Drawable, sx: CGFloat, sy: CGFloat) -> Drawable {
-    let avgScale = (sx + sy) / 2
-    switch d {
-    case .line(let o):
-        var c = o
-        c.start.x *= sx; c.start.y *= sy
-        c.end.x   *= sx; c.end.y   *= sy
-        c.width   = max(1, c.width * avgScale)
-        return .line(c)
-    case .rect(let o):
-        var c = o
-        c.rect.origin.x *= sx; c.rect.origin.y *= sy
-        c.rect.size.width  *= sx; c.rect.size.height *= sy
-        c.width = max(1, c.width * avgScale)
-        return .rect(c)
-    case .text(let o):
-        var c = o
-        c.rect.origin.x *= sx; c.rect.origin.y *= sy
-        c.rect.size.width  *= sx; c.rect.size.height *= sy
-        c.fontSize = max(6, c.fontSize * avgScale)
-        return .text(c)
-    case .badge(let o):
-        var c = o
-        c.rect.origin.x *= sx; c.rect.origin.y *= sy
-        c.rect.size.width  *= sx; c.rect.size.height *= sy
-        // Keep badge roughly square after non-uniform scaling
-        let side = max(8, (c.rect.width + c.rect.height) / 2)
-        c.rect.size = CGSize(width: side, height: side)
-        return .badge(c)
-    case .highlight(let o):
-        var c = o
-        c.rect.origin.x *= sx; c.rect.origin.y *= sy
-        c.rect.size.width  *= sx; c.rect.size.height *= sy
-        return .highlight(c)
-    case .image(let o):
-        var c = o
-        c.rect.origin.x *= sx; c.rect.origin.y *= sy
-        c.rect.size.width  *= sx; c.rect.size.height *= sy
-        return .image(c)
-    }
-}
-
 private func fittedToAuthorPoint(_ p: CGPoint, fitted: CGSize, author: CGSize) -> CGPoint {
     let sx = author.width / max(1, fitted.width)
     let sy = author.height / max(1, fitted.height)
     return CGPoint(x: p.x * sx, y: p.y * sy)
-}
-private func fittedToAuthorRect(_ r: CGRect, fitted: CGSize, author: CGSize) -> CGRect {
-    let sx = author.width / max(1, fitted.width)
-    let sy = author.height / max(1, fitted.height)
-    return CGRect(x: r.origin.x * sx, y: r.origin.y * sy, width: r.size.width * sx, height: r.size.height * sy)
 }
 
 
