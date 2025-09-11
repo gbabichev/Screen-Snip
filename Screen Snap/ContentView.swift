@@ -42,6 +42,9 @@ struct ContentView: View {
     
     @AppStorage("saveQuality") private var saveQuality: Double = 0.9
     @AppStorage("saveDirectoryPath") private var saveDirectoryPath: String = ""
+    @AppStorage("downsampleToNonRetina") private var downsampleToNonRetina: Bool = false
+    
+    
     private enum ImporterKind { case image, folder }
     @State private var activeImporter: ImporterKind? = nil
     
@@ -547,6 +550,12 @@ struct ContentView: View {
                     VStack(alignment: .leading, spacing: 12) {
                         Text("Settings").font(.headline)
                         Divider()
+                        
+                        Toggle("Downsample retina screenshots for clipboard", isOn: $downsampleToNonRetina)
+                            .toggleStyle(.switch)
+                            .help("When copying to clipboard, convert 2x screenshots to 1x resolution")
+                        
+                        
                         Picker("Save format", selection: $preferredSaveFormatRaw) {
                             Text("PNG").tag(SaveFormat.png.rawValue)
                             Text("JPEG").tag(SaveFormat.jpeg.rawValue)
@@ -561,11 +570,6 @@ struct ContentView: View {
                                 Text(String(format: "%.0f%%", saveQuality * 100))
                                     .frame(width: 44, alignment: .trailing)
                             }
-                        }
-                        
-                        HStack {
-                            Spacer()
-                            Button("Close") { showSettingsPopover = false }
                         }
                         
                         Divider()
@@ -860,7 +864,48 @@ struct ContentView: View {
         }
     }
     
+    // MARK: - Helpers
     
+    // Settings - Downsample from Retina
+    private func isRetinaImage(_ image: NSImage) -> Bool {
+        guard let rep = image.representations.first as? NSBitmapImageRep else { return false }
+        
+        let pointSize = image.size
+        let pixelSize = CGSize(width: rep.pixelsWide, height: rep.pixelsHigh)
+        
+        let scaleX = pixelSize.width / pointSize.width
+        let scaleY = pixelSize.height / pointSize.height
+        
+        return scaleX > 1.5 || scaleY > 1.5
+    }
+
+    private func downsampleImage(_ image: NSImage) -> NSImage {
+        let pointSize = image.size
+        
+        let rep = NSBitmapImageRep(bitmapDataPlanes: nil,
+                                   pixelsWide: Int(pointSize.width),
+                                   pixelsHigh: Int(pointSize.height),
+                                   bitsPerSample: 8,
+                                   samplesPerPixel: 4,
+                                   hasAlpha: true,
+                                   isPlanar: false,
+                                   colorSpaceName: .deviceRGB,
+                                   bytesPerRow: 0,
+                                   bitsPerPixel: 0)
+        
+        guard let rep = rep else { return image }
+        
+        NSGraphicsContext.saveGraphicsState()
+        NSGraphicsContext.current = NSGraphicsContext(bitmapImageRep: rep)
+        image.draw(in: NSRect(origin: .zero, size: pointSize))
+        NSGraphicsContext.restoreGraphicsState()
+        
+        let downsampledImage = NSImage(size: pointSize)
+        downsampledImage.addRepresentation(rep)
+        return downsampledImage
+    }
+    
+    //
 
     @ViewBuilder
     private func selectionForText(_ o: TextObject) -> some View {
@@ -954,8 +999,6 @@ struct ContentView: View {
         }
     }
     
-    
-    
     private func badgeGesture(insetOrigin: CGPoint, fitted: CGSize, author: CGSize) -> some Gesture {
         DragGesture(minimumDistance: 0)
             .onChanged { value in
@@ -1039,7 +1082,6 @@ struct ContentView: View {
                 selectedObjectID = newObj.id
             }
     }
-    
     
     private func cropGesture(insetOrigin: CGPoint, fitted: CGSize, author: CGSize) -> some Gesture {
         DragGesture(minimumDistance: 0)
@@ -1272,15 +1314,20 @@ struct ContentView: View {
     }
     
     private func copyToPasteboard(_ image: NSImage) {
+        let finalImage = if downsampleToNonRetina && isRetinaImage(image) {
+            downsampleImage(image)
+        } else {
+            image
+        }
+        
         let pb = NSPasteboard.general
         pb.clearContents()
-        pb.writeObjects([image])
+        pb.writeObjects([finalImage])
         
         withAnimation { showCopiedHUD = true }
         DispatchQueue.main.asyncAfter(deadline: .now() + 1.2) {
             withAnimation { showCopiedHUD = false }
         }
-        
     }
     
     private func pushUndoSnapshot() {

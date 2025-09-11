@@ -168,7 +168,7 @@ final class GlobalHotKeyManager {
         let keyCode: UInt32 = UInt32(kVK_ANSI_2)
         let modifiers: UInt32 = UInt32(cmdKey | shiftKey)
         
-        var hotKeyID = EventHotKeyID(signature: OSType("SNAP".fourCC), id: UInt32(1))
+        let hotKeyID = EventHotKeyID(signature: OSType("SNAP".fourCC), id: UInt32(1))
         
         let handler: EventHandlerUPP = { _, eventRef, _ in
             var hkID = EventHotKeyID()

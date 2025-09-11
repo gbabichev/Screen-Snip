@@ -16,12 +16,6 @@ Inspired by Greenshot on Windows - the goal is to make a tiny app that can do th
 </div>
 
 ## Work in Progress
-- <del>Handle 1x, 2x (Retina) snaps.</del>
-  - User defined setting for copy. 
-- <del>Global system hotkey for screenshots.</del> 
-  - User adjustable hotkey. 
-
-
 - Allow for zoom / don't fill view with snap? 
 
 - User friendly menus. 
@@ -51,8 +45,12 @@ Inspired by Greenshot on Windows - the goal is to make a tiny app that can do th
 - <del> Limit snap previews to ~10.
 - <del> Add a Snap Browser
 - <del>Multi-Monitor snaps. 
+- <del>Global system hotkey for screenshots.</del> 
+- <del>Handle 1x, 2x (Retina) snaps.
+  - User setting to downsample retina in clipboard
 
-
+### Stretch Goals 
+- User adjustable hotkey for taking a snap. 
 
 
 ## 🖥️ Screenshots 
