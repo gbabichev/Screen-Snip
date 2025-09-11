@@ -475,11 +475,8 @@ struct ContentView: View {
                 }
                 return event
             }
-            // Wire ContentView's selection function into the always-on coordinator
             SelectionCoordinator.shared.register { completion in
-                print("[DEBUG] ContentView: register handler -> startSelection()")
                 startSelection()
-                // We don't need to return a URL here because startSelection() handles opening the editor.
                 completion(nil)
             }
         }
@@ -867,29 +864,10 @@ struct ContentView: View {
                 }
             }
         }
-//        .onChange(of: lastCapture) { _, newValue in
-//            guard newValue != nil else { return }
-//
-//            // Add a small delay to ensure the selection overlay is fully dismissed
-//            DispatchQueue.main.asyncAfter(deadline: .now() + 0.1) {
-//                self.ensureMainEditorWindow()
-//            }
-//        }
     }
     
     
-    func loadImage(url: URL, image: NSImage) {
-        lastCapture = image
-        selectedSnapURL = url
-        undoStack.removeAll()
-        redoStack.removeAll()
-        objects.removeAll()
-        objectSpaceSize = nil
-        selectedObjectID = nil
-        activeHandle = .none
-        insertSnapURL(url)
-        loadExistingSnaps()
-    }
+
     
     @ViewBuilder
     private func selectionForText(_ o: TextObject) -> some View {
@@ -1191,26 +1169,9 @@ struct ContentView: View {
                         insertSnapURL(savedURL)
                         selectedSnapURL = savedURL
                     }
-                    //copyToPasteboard(img)
                     
-                    // Bring app to foreground after capture
-                    DispatchQueue.main.async {
-                        // Force app activation first
-                        NSApp.activate(ignoringOtherApps: true)
-                        
-                        // Try to bring existing window to front
-                        WindowManager.shared.bringToFront()
-                        
-                        // If no window was found, create one
-                        if !WindowManager.shared.hasVisibleWindows() {
-                            self.ensureMainEditorWindow()
-                        }
-                    }
-                    
-//                    withAnimation { showCopiedHUD = true }
-//                    DispatchQueue.main.asyncAfter(deadline: .now() + 1.2) {
-//                        withAnimation { showCopiedHUD = false }
-//                    }
+                    // No manual window creation - the centralized WindowManager handles this
+                    NSApp.activate(ignoringOtherApps: true)
                 }
             }
         })
@@ -2346,7 +2307,7 @@ struct ContentView: View {
                 let img = image
                 selectedSnapURL = url
                 lastCapture = img
-                presentEditor(url: url, image: img)
+                //presentEditor(url: url, image: img)
                 openEditorAfterCapture = false
             }
             return url
@@ -2567,144 +2528,6 @@ struct ContentView: View {
 
     
 }
-
-// Add this at the bottom of ContentView.swift, before the final closing brace
-struct ContentViewWithPreload: View {
-    let preloadURL: URL
-    let preloadImage: NSImage
-    
-    @State private var contentView = ContentView()
-    
-    init(url: URL, image: NSImage) {
-        self.preloadURL = url
-        self.preloadImage = image
-    }
-    
-    var body: some View {
-        contentView
-            .onAppear {
-                // Directly set the state instead of using notifications
-                DispatchQueue.main.async {
-                    contentView.loadImage(url: preloadURL, image: preloadImage)
-                }
-            }
-    }
-}
-
-// MARK: - Root View Modifier for Global Hotkey
-
-extension ContentView {
-    
-    /// Ensures a main editor window is present and visible, creating one if necessary
-    private func ensureMainEditorWindow() {
-        DispatchQueue.main.async {
-            // Look for ANY existing ContentView windows
-            for window in NSApp.windows {
-                if let _ = window.contentViewController as? NSHostingController<ContentView>,
-                   window.styleMask.contains(.titled),
-                   !window.isSheet {
-                    
-                    // If minimized, deminiaturize first
-                    if window.isMiniaturized {
-                        window.deminiaturize(nil)
-                    }
-                    
-                    // DON'T refresh the rootView - just bring the existing window forward
-                    window.makeKeyAndOrderFront(nil)
-                    window.orderFrontRegardless()
-                    NSApp.activate(ignoringOtherApps: true)
-                    return
-                }
-            }
-            
-            // Only create new window if no suitable window exists
-            self.createNewMainEditorWindow()
-        }
-    }
-    
-    /// Creates a new main editor window with proper setup
-    private func createNewMainEditorWindow(preloadURL: URL? = nil, preloadImage: NSImage? = nil) {
-        let newWindow = NSWindow(
-            contentRect: NSRect(x: 0, y: 0, width: 1000, height: 700),
-            styleMask: [.titled, .closable, .miniaturizable, .resizable, .fullSizeContentView],
-            backing: .buffered,
-            defer: false
-        )
-        
-        newWindow.titlebarAppearsTransparent = true
-        newWindow.isMovableByWindowBackground = true
-        newWindow.tabbingMode = .disallowed
-        newWindow.isReleasedWhenClosed = false
-        newWindow.contentMinSize = NSSize(width: 900, height: 600)
-        newWindow.title = "Screen Snap"
-        
-        // Create a fresh ContentView instance for the new window
-        let newContentView = ContentView()
-        newWindow.contentViewController = NSHostingController(rootView: newContentView)
-        
-        // Set up window controller for better management
-        let windowController = NSWindowController(window: newWindow)
-        windowController.windowFrameAutosaveName = "MainEditorWindow"
-        
-        // Center and show the window
-        newWindow.center()
-        newWindow.makeKeyAndOrderFront(nil)
-        newWindow.orderFrontRegardless()
-        
-        // Force app activation
-        NSApp.activate(ignoringOtherApps: true)
-        
-        // Store reference to prevent deallocation
-        WindowManager.shared.registerWindow(windowController)
-    }
-    
-    /// Presents the editor with the given image. Reuses existing window if available; otherwise creates a new one preloaded.
-    /// Presents the editor with the given image. Reuses existing window if available; otherwise creates a new one preloaded.
-    private func presentEditor(url: URL?, image: NSImage?) {
-        // Try to find an existing ContentView-hosting window first
-        for window in NSApp.windows {
-            if let hosting = window.contentViewController as? NSHostingController<ContentView>,
-               window.styleMask.contains(.titled),
-               !window.isSheet {
-                
-                // Just bring the existing window forward and let it load the new snap normally
-                if window.isMiniaturized {
-                    window.deminiaturize(nil)
-                }
-                
-                window.makeKeyAndOrderFront(nil)
-                window.orderFrontRegardless()
-                NSApp.activate(ignoringOtherApps: true)
-                
-                // Post a notification to load the specific snap
-                if let url = url {
-                    NotificationCenter.default.post(
-                        name: Notification.Name("LoadSpecificSnap"),
-                        object: url
-                    )
-                }
-                return
-            }
-        }
-        
-        // No existing window — create a new one and load the snap after creation
-        createNewMainEditorWindow()
-        
-        // Post notification to load the snap after window creation WITH A LONGER DELAY
-        if let url = url {
-            DispatchQueue.main.asyncAfter(deadline: .now() + 1) { // Increased delay
-                NotificationCenter.default.post(
-                    name: Notification.Name("com.georgebabichev.screensnap.beginSnapFromIntent"),
-                    object: url
-                )
-            }
-        }
-    }
-    
-    
-    
-}
-
 
 // MARK: - Geometry/Screen Helpers
 
@@ -3761,67 +3584,4 @@ private func cropImage(_ image: NSImage, toBottomLeftRect rBL: CGRect) -> NSImag
     guard rectTL.width > 1, rectTL.height > 1 else { return nil }
     guard let sub = cg.cropping(to: rectTL) else { return nil }
     return NSImage(cgImage: sub, size: NSSize(width: rectTL.width, height: rectTL.height))
-}
-
-
-final class WindowManager {
-    static let shared = WindowManager()
-    private var windowControllers: Set<NSWindowController> = []
-    
-    private init() {
-        setupAppBehavior()
-    }
-    
-    func registerWindow(_ controller: NSWindowController) {
-        windowControllers.insert(controller)
-        
-        // Set up cleanup when window closes
-        if let window = controller.window {
-            NotificationCenter.default.addObserver(
-                forName: NSWindow.willCloseNotification,
-                object: window,
-                queue: .main
-            ) { [weak self] notification in
-                if let closingWindow = notification.object as? NSWindow,
-                   let closingController = self?.windowControllers.first(where: { $0.window === closingWindow }) {
-                    self?.windowControllers.remove(closingController)
-                }
-            }
-        }
-    }
-    
-    func hasVisibleWindows() -> Bool {
-        for window in NSApp.windows {
-            if window.title == "Screen Snap" &&
-               window.styleMask.contains(.titled) &&
-               !window.isSheet &&
-               window.isVisible &&
-               !window.isMiniaturized {
-                return true
-            }
-        }
-        return false
-    }
-
-    func bringToFront() {
-        for window in NSApp.windows {
-            if window.title == "Screen Snap" &&
-               window.styleMask.contains(.titled) &&
-               !window.isSheet {
-                
-                if window.isMiniaturized {
-                    window.deminiaturize(nil)
-                }
-                
-                window.makeKeyAndOrderFront(nil)
-                window.orderFrontRegardless()
-                NSApp.activate(ignoringOtherApps: true)
-                return
-            }
-        }
-    }
-    
-    private func setupAppBehavior() {
-        // This would be handled by your app delegate
-    }
 }

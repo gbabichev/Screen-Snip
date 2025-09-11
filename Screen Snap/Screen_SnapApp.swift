@@ -2,8 +2,6 @@
 //  Screen_SnapApp.swift
 //  Screen Snap
 //
-//  Created by George Babichev on 9/8/25.
-//
 
 import SwiftUI
 import Carbon.HIToolbox
@@ -18,14 +16,20 @@ struct Screen_SnapApp: App {
     }
 
     var body: some Scene {
-        WindowGroup("Screen Snap") {
-            ContentView()
+        // Remove WindowGroup entirely - we'll manage windows manually
+        Settings {
+            EmptyView()
         }
-        .windowStyle(.hiddenTitleBar)
     }
 }
 
 final class AppDelegate: NSObject, NSApplicationDelegate {
+    
+    func applicationDidFinishLaunching(_ notification: Notification) {
+        // Create initial window on app launch
+        WindowManager.shared.ensureMainWindow()
+    }
+    
     func applicationShouldTerminateAfterLastWindowClosed(_ sender: NSApplication) -> Bool {
         // Keep the app alive so the hotkey continues to work with no windows
         return false
@@ -41,7 +45,107 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     }
 }
 
-// MARK: - Global HotKey (⌘⇧2) using HIToolbox
+// MARK: - Centralized Window Manager
+final class WindowManager {
+    static let shared = WindowManager()
+    
+    private var mainWindowController: NSWindowController?
+    private let windowFrameAutosaveName = "MainEditorWindow"
+    
+    private init() {}
+    
+    /// Ensures exactly one main window exists, creating if necessary
+    func ensureMainWindow() {
+        // If we already have a valid window, just bring it forward
+        if let controller = mainWindowController,
+           let window = controller.window,
+           !window.isSheet {
+            
+            if window.isMiniaturized {
+                window.deminiaturize(nil)
+            }
+            
+            window.makeKeyAndOrderFront(nil)
+            window.orderFrontRegardless()
+            NSApp.activate(ignoringOtherApps: true)
+            return
+        }
+        
+        // Create new window
+        createMainWindow()
+    }
+    
+    /// Creates a new main window, replacing any existing one
+    private func createMainWindow() {
+        // Clean up existing window
+        if let controller = mainWindowController {
+            controller.window?.close()
+            mainWindowController = nil
+        }
+        
+        let window = NSWindow(
+            contentRect: NSRect(x: 0, y: 0, width: 1000, height: 700),
+            styleMask: [.titled, .closable, .miniaturizable, .resizable, .fullSizeContentView],
+            backing: .buffered,
+            defer: false
+        )
+        
+        window.titlebarAppearsTransparent = true
+        window.isMovableByWindowBackground = false
+        window.tabbingMode = .disallowed
+        window.isReleasedWhenClosed = false
+        window.contentMinSize = NSSize(width: 900, height: 600)
+        //window.title = "Screen Snap"
+        
+        // Create ContentView
+        let contentView = ContentView()
+        window.contentViewController = NSHostingController(rootView: contentView)
+        
+        // Create and configure window controller
+        let controller = NSWindowController(window: window)
+        controller.windowFrameAutosaveName = windowFrameAutosaveName
+        
+        // Set up close notification to clean up our reference
+        NotificationCenter.default.addObserver(
+            forName: NSWindow.willCloseNotification,
+            object: window,
+            queue: .main
+        ) { [weak self] _ in
+            self?.mainWindowController = nil
+        }
+        
+        // Store reference
+        mainWindowController = controller
+        
+        // Show window
+        window.center()
+        controller.showWindow(nil)
+        NSApp.activate(ignoringOtherApps: true)
+    }
+    
+    /// Loads an image into the existing window, creating window if needed
+    func loadImageIntoWindow(url: URL, image: NSImage) {
+        ensureMainWindow()
+        
+        // Post notification to load the image
+        DispatchQueue.main.asyncAfter(deadline: .now() + 0.1) {
+            NotificationCenter.default.post(
+                name: Notification.Name("com.georgebabichev.screensnap.beginSnapFromIntent"),
+                object: url
+            )
+        }
+    }
+    
+    /// Check if we have a visible main window
+    func hasVisibleWindow() -> Bool {
+        guard let controller = mainWindowController,
+              let window = controller.window else { return false }
+        
+        return window.isVisible && !window.isMiniaturized
+    }
+}
+
+// MARK: - Global HotKey Manager (Updated)
 final class GlobalHotKeyManager {
     static let shared = GlobalHotKeyManager()
     
@@ -50,18 +154,14 @@ final class GlobalHotKeyManager {
     
     private init() {}
     
-    /// Register ⌘⇧2 as a true global hotkey (works even when app has no windows)
     func registerSnapHotKey() {
-        unregister() // defensively clear any prior registration
+        unregister()
         
-        // Keycode for "2"
         let keyCode: UInt32 = UInt32(kVK_ANSI_2)
-        let modifiers: UInt32 = UInt32(cmdKey | shiftKey)  // Carbon modifiers, not NSEvent flags
+        let modifiers: UInt32 = UInt32(cmdKey | shiftKey)
         
         var hotKeyID = EventHotKeyID(signature: OSType("SNAP".fourCC), id: UInt32(1))
         
-        // Install a keyboard event handler (global scope)
-        var handlerUPP: EventHandlerUPP? = nil
         let handler: EventHandlerUPP = { _, eventRef, _ in
             var hkID = EventHotKeyID()
             GetEventParameter(eventRef,
@@ -72,9 +172,7 @@ final class GlobalHotKeyManager {
                               nil,
                               &hkID)
             
-            // Match our "SNAP" hotkey
             if hkID.signature == OSType("SNAP".fourCC), hkID.id == UInt32(1) {
-                // Do NOT activate the app here. Start capture first.
                 DispatchQueue.main.async {
                     GlobalHotKeyManager.shared.handleSnapHotkey()
                 }
@@ -82,17 +180,14 @@ final class GlobalHotKeyManager {
             }
             return noErr
         }
-        handlerUPP = handler
         
         let eventType = EventTypeSpec(eventClass: OSType(kEventClassKeyboard),
                                       eventKind: UInt32(kEventHotKeyPressed))
         
-        // Attach to the application event target so it survives without a key window
         var eh: EventHandlerRef?
-        InstallEventHandler(GetApplicationEventTarget(), handlerUPP, 1, [eventType], nil, &eh)
+        InstallEventHandler(GetApplicationEventTarget(), handler, 1, [eventType], nil, &eh)
         self.eventHandler = eh
         
-        // Register the hotkey
         var hkRef: EventHotKeyRef?
         let status = RegisterEventHotKey(keyCode,
                                          modifiers,
@@ -102,8 +197,6 @@ final class GlobalHotKeyManager {
                                          &hkRef)
         if status == noErr {
             self.hotKeyRef = hkRef
-        } else {
-            NSLog("RegisterEventHotKey failed: %d", status)
         }
     }
     
@@ -114,52 +207,35 @@ final class GlobalHotKeyManager {
         eventHandler = nil
     }
     
-
-    /// Called when ⌘⇧2 is pressed
     private func handleSnapHotkey() {
-        NSLog("[DEBUG] Global hotkey ⌘⇧2 received")
-        
-        // Check if there's already a window open
-        for window in NSApp.windows {
-            if let hosting = window.contentViewController as? NSHostingController<ContentView>,
-               window.styleMask.contains(.titled),
-               !window.isSheet {
-                
-                print("🔥 [DEBUG] Found existing window, using SelectionCoordinator")
-                
-                // Window exists, use the normal flow
-                NSApp.activate(ignoringOtherApps: true)
-                window.makeKeyAndOrderFront(nil)
-                
-                SelectionCoordinator.shared.beginSelection { url in
-                    // This completion won't be called since the existing window handles it
-                }
-                return
-            }
+        // Always use the same logic: if window exists, use it; otherwise capture first then show window
+        if WindowManager.shared.hasVisibleWindow() {
+            // Window exists - bring to front and start selection
+            WindowManager.shared.ensureMainWindow()
+            SelectionCoordinator.shared.beginSelection { _ in }
+        } else {
+            // No window - capture first, then create window with result
+            startCaptureWithoutWindow()
         }
-        
-        print("🔥 [DEBUG] No window exists, starting selection FIRST, then creating window")
-        
-        // No window exists - start selection FIRST, then create window with the result
+    }
+    
+    private func startCaptureWithoutWindow() {
         SelectionWindowManager.shared.present(onComplete: { rect in
             Task {
-                print("🔥 [DEBUG] Selection completed, now capturing...")
-                if let img = await self.captureScreenshotForHotkey(rect: rect) {
-                    print("🔥 [DEBUG] Capture successful, saving and creating window...")
-                    if let savedURL = await self.saveImageToDiskForHotkey(img) {
-                        print("🔥 [DEBUG] Saved to \(savedURL), creating editor window...")
+                if let img = await self.captureScreenshot(rect: rect) {
+                    if let savedURL = await self.saveImageToDisk(img) {
                         DispatchQueue.main.async {
-                            self.createWindowWithImage(url: savedURL, image: img)
+                            // Use centralized window manager
+                            WindowManager.shared.loadImageIntoWindow(url: savedURL, image: img)
                         }
                     }
                 }
             }
         })
     }
-
-    // Add these helper methods to GlobalHotKeyManager
-    private func captureScreenshotForHotkey(rect selectedGlobalRect: CGRect) async -> NSImage? {
-        // Use the same capture logic from ContentView
+    
+    // Keep existing capture methods unchanged
+    private func captureScreenshot(rect selectedGlobalRect: CGRect) async -> NSImage? {
         guard let bestScreen = bestScreenForSelection(selectedGlobalRect) else { return nil }
         let screenFramePts = bestScreen.frame
         let intersectPts = selectedGlobalRect.intersection(screenFramePts)
@@ -179,7 +255,7 @@ final class GlobalHotKeyManager {
             let filter = SCContentFilter(display: scDisplay, excludingWindows: [])
             guard let fullCG = await ScreenCapturer.shared.captureImage(using: filter, display: scDisplay) else { return nil }
             
-            let cropPx = cropRectPixelsForHotkey(intersectPts,
+            let cropPx = cropRectPixels(intersectPts,
                                        withinScreenFramePts: screenFramePts,
                                        imageSizePx: CGSize(width: fullCG.width, height: fullCG.height),
                                        scaleX: pxPerPtX,
@@ -204,8 +280,8 @@ final class GlobalHotKeyManager {
             return nil
         }
     }
-
-    private func cropRectPixelsForHotkey(_ selectionPts: CGRect, withinScreenFramePts screenPts: CGRect, imageSizePx: CGSize, scaleX: CGFloat, scaleY: CGFloat) -> CGRect {
+    
+    private func cropRectPixels(_ selectionPts: CGRect, withinScreenFramePts screenPts: CGRect, imageSizePx: CGSize, scaleX: CGFloat, scaleY: CGFloat) -> CGRect {
         let localXPts = selectionPts.origin.x - screenPts.origin.x
         let localYPts = selectionPts.origin.y - screenPts.origin.y
         let widthPx  = selectionPts.size.width * scaleX
@@ -214,7 +290,7 @@ final class GlobalHotKeyManager {
         let yPx = imageSizePx.height - (localYPts * scaleY + heightPx)
         return CGRect(x: xPx.rounded(.down), y: yPx.rounded(.down), width: widthPx.rounded(.down), height: heightPx.rounded(.down))
     }
-
+    
     private func bestScreenForSelection(_ selection: CGRect) -> NSScreen? {
         var best: (screen: NSScreen, area: CGFloat)?
         for s in NSScreen.screens {
@@ -223,11 +299,10 @@ final class GlobalHotKeyManager {
         }
         return best?.screen
     }
-
-    private func saveImageToDiskForHotkey(_ image: NSImage) async -> URL? {
+    
+    private func saveImageToDisk(_ image: NSImage) async -> URL? {
         let fm = FileManager.default
         
-        // Get save directory (same logic as ContentView)
         let saveDirectoryPath = UserDefaults.standard.string(forKey: "saveDirectoryPath") ?? ""
         let dir: URL
         if !saveDirectoryPath.isEmpty {
@@ -256,130 +331,6 @@ final class GlobalHotKeyManager {
             return nil
         }
     }
-
-    private func createWindowWithImage(url: URL, image: NSImage) {
-        let newWindow = NSWindow(
-            contentRect: NSRect(x: 0, y: 0, width: 1000, height: 700),
-            styleMask: [.titled, .closable, .miniaturizable, .resizable, .fullSizeContentView],
-            backing: .buffered,
-            defer: false
-        )
-        
-        newWindow.titlebarAppearsTransparent = true
-        newWindow.isMovableByWindowBackground = true
-        newWindow.tabbingMode = .disallowed
-        newWindow.isReleasedWhenClosed = false
-        newWindow.contentMinSize = NSSize(width: 900, height: 600)
-        newWindow.title = "Screen Snap"
-        
-        // Use regular ContentView
-        let contentView = ContentView()
-        newWindow.contentViewController = NSHostingController(rootView: contentView)
-        
-        let windowController = NSWindowController(window: newWindow)
-        windowController.windowFrameAutosaveName = "MainEditorWindow"
-        
-        newWindow.center()
-        newWindow.makeKeyAndOrderFront(nil)
-        newWindow.orderFrontRegardless()
-        NSApp.activate(ignoringOtherApps: true)
-        
-        // Store reference to prevent deallocation
-        WindowManager.shared.registerWindow(windowController)
-        
-        // Post notification to load the image after a short delay
-        DispatchQueue.main.asyncAfter(deadline: .now() + 0.2) {
-            print("🔥 [DEBUG] Posting notification to load image: \(url)")
-            NotificationCenter.default.post(
-                name: Notification.Name("com.georgebabichev.screensnap.beginSnapFromIntent"),
-                object: url
-            )
-        }
-    }
-    
-    
-    
-    
-    
-    
-    // MARK: - Wire these to your existing app API
-    
-    private func startScreenSelection(completion: @escaping (URL?) -> Void) {
-        NSLog("[DEBUG] GlobalHotKeyManager.startScreenSelection -> coordinator")
-        SelectionCoordinator.shared.beginSelection(completion: completion)
-    }
-    
-    private func openEditor(with url: URL) {
-        print("🔥 [DEBUG] openEditor called with URL: \(url)")
-        
-        // Recreate/show your editor window and make the app frontmost after capture
-        NSApp.activate(ignoringOtherApps: true)
-        
-        // Try to find existing window first
-        for window in NSApp.windows {
-            print("🔥 [DEBUG] Checking window: \(window.title ?? "no title")")
-            if let hosting = window.contentViewController as? NSHostingController<ContentView>,
-               window.styleMask.contains(.titled),
-               !window.isSheet {
-                
-                print("🔥 [DEBUG] Found existing ContentView window, posting notification")
-                
-                if window.isMiniaturized {
-                    window.deminiaturize(nil)
-                }
-                
-                window.makeKeyAndOrderFront(nil)
-                window.orderFrontRegardless()
-                
-                // Post notification for existing window
-                NotificationCenter.default.post(
-                    name: Notification.Name("com.georgebabichev.screensnap.beginSnapFromIntent"),
-                    object: url
-                )
-                return
-            }
-        }
-        
-        print("🔥 [DEBUG] No existing window found, creating new one")
-        // No existing window - create new one and load the image directly
-        if let img = NSImage(contentsOf: url) {
-            print("🔥 [DEBUG] Successfully loaded image, creating window")
-            createEditorWindow(with: url, image: img)
-        } else {
-            print("🔥 [DEBUG] ERROR: Failed to load image from URL")
-        }
-    }
-    private func createEditorWindow(with url: URL, image: NSImage) {
-        let newWindow = NSWindow(
-            contentRect: NSRect(x: 0, y: 0, width: 1000, height: 700),
-            styleMask: [.titled, .closable, .miniaturizable, .resizable, .fullSizeContentView],
-            backing: .buffered,
-            defer: false
-        )
-        
-        newWindow.titlebarAppearsTransparent = true
-        newWindow.isMovableByWindowBackground = true
-        newWindow.tabbingMode = .disallowed
-        newWindow.isReleasedWhenClosed = false
-        newWindow.contentMinSize = NSSize(width: 900, height: 600)
-        newWindow.title = "Screen Snap"
-        
-        // Create ContentView with preloaded image data
-        let contentView = ContentViewWithPreload(url: url, image: image)
-        newWindow.contentViewController = NSHostingController(rootView: contentView)
-        
-        let windowController = NSWindowController(window: newWindow)
-        windowController.windowFrameAutosaveName = "MainEditorWindow"
-        
-        newWindow.center()
-        newWindow.makeKeyAndOrderFront(nil)
-        newWindow.orderFrontRegardless()
-        
-        // Store reference to prevent deallocation
-        WindowManager.shared.registerWindow(windowController)
-    }
-    
-    
 }
 
 private extension String {
@@ -392,31 +343,25 @@ private extension String {
     }
 }
 
-// MARK: - SelectionCoordinator: persists even when no windows exist
+// MARK: - SelectionCoordinator (Simplified)
 final class SelectionCoordinator {
     static let shared = SelectionCoordinator()
     private var handler: (((URL?) -> Void) -> Void)?
     private init() {}
 
-    /// ContentView (or any owner) calls this at launch/onAppear to provide the real selection entrypoint.
     func register(handler: @escaping (((URL?) -> Void) -> Void)) {
-        NSLog("[DEBUG] SelectionCoordinator: registered selection handler")
         self.handler = handler
     }
 
-    /// Begin selection. If a handler is registered, call it; otherwise fall back to the old notification.
     func beginSelection(completion: @escaping (URL?) -> Void) {
         if let handler = handler {
-            NSLog("[DEBUG] SelectionCoordinator: invoking registered handler")
             handler(completion)
         } else {
-            NSLog("[DEBUG] SelectionCoordinator: no handler; posting notification fallback")
             NotificationCenter.default.post(name: .init("StartSelectionFromHotkey"),
                                             object: completion)
         }
     }
 }
-
 
 private extension CGRect {
     var area: CGFloat { max(0, width) * max(0, height) }
