@@ -41,7 +41,7 @@ struct ContentView: View {
     @State private var missingSnapURLs: Set<URL> = []
     @State private var zoomLevel: Double = 1.0
     @State private var pinchBaseZoom: Double? = nil
-
+    
     @State private var showSettingsPopover = false
     @AppStorage("preferredSaveFormat") private var preferredSaveFormatRaw: String = SaveFormat.png.rawValue
     private var preferredSaveFormat: SaveFormat {
@@ -119,7 +119,7 @@ struct ContentView: View {
             // Main canvas
             VStack(spacing: 12) {
                 
-
+                
                 Group {
                     if let img = lastCapture {
                         if imageDisplayMode == "fit" {
@@ -127,7 +127,7 @@ struct ContentView: View {
                             GeometryReader { geo in
                                 let baseFitted = fittedImageSize(original: img.size, in: geo.size)
                                 let fitted = CGSize(width: baseFitted.width * zoomLevel, height: baseFitted.height * zoomLevel)
-
+                                
                                 ScrollView([.horizontal, .vertical], showsIndicators: true) {
                                     ZStack {
                                         let author = objectSpaceSize ?? baseFitted
@@ -143,7 +143,7 @@ struct ContentView: View {
                                             .resizable()
                                             .interpolation(.high)
                                             .frame(width: fitted.width, height: fitted.height)
-
+                                        
                                         // Object overlay drawn in author space and scaled live to fitted
                                         ZStack {
                                             // Persisted objects
@@ -211,7 +211,7 @@ struct ContentView: View {
                                                     .overlay(
                                                         Rectangle().path(in: crp).fill(Color.orange.opacity(0.10))
                                                     )
-
+                                                
                                                 // Corner handles to indicate the crop can be dragged/resized
                                                 let pts = [
                                                     CGPoint(x: crp.minX, y: crp.minY),
@@ -298,7 +298,7 @@ struct ContentView: View {
                             // Actual size mode with ScrollView
                             let baseFitted = img.size // actual size
                             let fitted = CGSize(width: baseFitted.width * zoomLevel, height: baseFitted.height * zoomLevel)
-
+                            
                             GeometryReader { geo in
                                 ScrollView([.horizontal, .vertical], showsIndicators: true) {
                                     ZStack {
@@ -315,7 +315,7 @@ struct ContentView: View {
                                             .resizable()
                                             .interpolation(.high)
                                             .frame(width: fitted.width, height: fitted.height)
-
+                                        
                                         // Object overlay drawn in author space and scaled live to actual size
                                         ZStack {
                                             // Persisted objects
@@ -387,7 +387,7 @@ struct ContentView: View {
                                                     .overlay(
                                                         Rectangle().path(in: crp).fill(Color.orange.opacity(0.10))
                                                     )
-
+                                                
                                                 // Corner handles to indicate the crop can be dragged/resized
                                                 let pts = [
                                                     CGPoint(x: crp.minX, y: crp.minY),
@@ -732,13 +732,18 @@ struct ContentView: View {
                 print("🔥 [DEBUG] ERROR: beginSnapFromIntent failed to load image")
             }
         }
+        .onReceive(NotificationCenter.default.publisher(for: .selectTool)) { note in
+            guard let raw = note.userInfo?["tool"] as? String else { return }
+            print(raw)
+            handleSelectTool(raw)
+        }
         .toolbar {
             ToolbarItemGroup(placement: .navigation) {
-//                Button {
-//                    activeImporter = .image
-//                } label: {
-//                    Label("Open File", systemImage: "doc")
-//                }
+                //                Button {
+                //                    activeImporter = .image
+                //                } label: {
+                //                    Label("Open File", systemImage: "doc")
+                //                }
                 
                 Button { showSettingsPopover = true } label: {
                     Label("Settings", systemImage: "gearshape")
@@ -845,11 +850,15 @@ struct ContentView: View {
                         .disabled(redoStack.isEmpty || lastCapture == nil)
                         
                         // Flatten and Save (in place)
-                        Button("Save", action: flattenAndSaveInPlace)
+                        Button(action: flattenAndSaveInPlace) {
+                            Label("Save", systemImage: "square.and.arrow.down")
+                        }
                         
                         // Flatten and Save As
-                        Button("Save As…", action: flattenAndSaveAs)
-
+                        Button(action: flattenAndSaveAs) {
+                            Label("Save As", systemImage: "square.and.arrow.down.on.square")
+                        }
+                        
                     } label: {
                         Label("Copy Last", systemImage: "doc.on.doc")
                     } primaryAction: {
@@ -866,9 +875,9 @@ struct ContentView: View {
                 }
                 
                 // MARK: - TOOLS: Pointer, Pen, Arrow, Highlighter.
-
+                
                 ToolbarItemGroup(placement: .principal) {
-
+                    
                     // Pointer
                     Button(action: { selectedTool = .pointer
                         selectedObjectID = nil; activeHandle = .none; cropDraftRect = nil; cropRect = nil; cropHandle = .none
@@ -957,25 +966,86 @@ struct ContentView: View {
                         Label(
                             selectedTool == .line ? (lineHasArrow ? "Arrow" : "Pen") : selectedTool == .highlighter ? "Highlighter" : "Drawing Tools",
                             systemImage: selectedTool == .line ? (lineHasArrow ? "arrow.right" : "pencil.line") :
-                                        selectedTool == .highlighter ? "highlighter" : "pencil.line"
+                                selectedTool == .highlighter ? "highlighter" : "pencil.line"
                         )
                         .foregroundStyle(selectedTool == .line || selectedTool == .highlighter ? Color.white : Color.primary)
                     }
                     .glassEffect(selectedTool == .line || selectedTool == .highlighter ? .regular.tint(.blue) : .regular)
                     .help(selectedTool == .line ? "Pen tool selected" : selectedTool == .highlighter ? "Highlighter tool selected" : "Select drawing tool")
+                }
+                
+                
+                // MARK: - TOOLS - SHAPE & Increment
+                
+                ToolbarItemGroup(placement: .principal) {
+                    
+                    // Shape rect
+                    Menu {
+                        // Reuse stroke controls for shapes
+                        Menu("Line Width") {
+                            ForEach([1,2,3,4,6,8,12,16], id: \.self) { w in
+                                Button(action: { strokeWidth = CGFloat(w) }) {
+                                    if Int(strokeWidth) == w { Image(systemName: "checkmark") }
+                                    Text("\(w) pt")
+                                }
+                            }
+                        }
+                        Section("Color") {
+                            PenColorButton(current: $strokeColor, color: .black, name: "Black")
+                            PenColorButton(current: $strokeColor, color: .red, name: "Red")
+                            PenColorButton(current: $strokeColor, color: .blue, name: "Blue")
+                            PenColorButton(current: $strokeColor, color: .systemGreen, name: "Green")
+                            PenColorButton(current: $strokeColor, color: .systemYellow, name: "Yellow")
+                            PenColorButton(current: $strokeColor, color: .white, name: "White")
+                        }
+                        Divider()
+                        Text("Hold ⇧ for a perfect square")
+                            .foregroundStyle(.secondary)
+                    } label: {
+                        Label("Shapes", systemImage: "square.dashed")
+                    } primaryAction: {
+                        selectedTool = .rect
+                        selectedObjectID = nil; activeHandle = .none; cropDraftRect = nil; cropRect = nil; cropHandle = .none
+                        focusedTextID = nil
+                        
+                    }
+                    
+                    // Increment (badge)
                     
                     
+                    Menu {
+                        badgeColorButton(color: .red, name: "Red")
+                        badgeColorButton(color: .blue, name: "Blue")
+                        badgeColorButton(color: .green, name: "Green")
+                        badgeColorButton(color: .yellow, name: "Yellow")
+
+                        Divider()
+                        
+                        Button("Reset Counter") { badgeCount = 0 }
+                    } label: {
+                        Image(systemName: "1.circle")
+                            .symbolRenderingMode(.monochrome)
+                            .foregroundStyle(selectedTool == .badge ? Color.white : Color.primary)
+                    } primaryAction: {
+                        selectedTool = .badge
+                        selectedObjectID = nil
+                        activeHandle = .none
+                        cropDraftRect = nil
+                        cropRect = nil
+                        cropHandle = .none
+                        focusedTextID = nil
+                    }
+                    .glassEffect(selectedTool == .badge ? .regular.tint(.gray) : .regular)
+                    .id(badgeColor)
+                    .help("Click to place numbered badge")
                     
                 }
                 
                 
                 
                 
-                
-                
-                
                 ToolbarItemGroup(placement: .principal) {
-
+                    
                     
                     
                     Menu {
@@ -1018,38 +1088,10 @@ struct ContentView: View {
                     .glassEffect(selectedTool == .text ? .regular.tint(.blue) : .regular)
                     
                     
-                    Menu {
-                        // Reuse stroke controls for shapes
-                        Menu("Line Width") {
-                            ForEach([1,2,3,4,6,8,12,16], id: \.self) { w in
-                                Button(action: { strokeWidth = CGFloat(w) }) {
-                                    if Int(strokeWidth) == w { Image(systemName: "checkmark") }
-                                    Text("\(w) pt")
-                                }
-                            }
-                        }
-                        Menu("Color") {
-                            PenColorButton(current: $strokeColor, color: .black, name: "Black")
-                            PenColorButton(current: $strokeColor, color: .red, name: "Red")
-                            PenColorButton(current: $strokeColor, color: .blue, name: "Blue")
-                            PenColorButton(current: $strokeColor, color: .systemGreen, name: "Green")
-                            PenColorButton(current: $strokeColor, color: .systemYellow, name: "Yellow")
-                            PenColorButton(current: $strokeColor, color: .white, name: "White")
-                        }
-                        Divider()
-                        Text("Hold ⇧ for a perfect square")
-                            .foregroundStyle(.secondary)
-                    } label: {
-                        Label("Shapes", systemImage: "square.dashed")
-                    } primaryAction: {
-                        selectedTool = .rect
-                        selectedObjectID = nil; activeHandle = .none; cropDraftRect = nil; cropRect = nil; cropHandle = .none
-                        focusedTextID = nil
-                        
-                    }
                     
-
                     
+                    
+                    // CROP
                     Button(action: {
                         selectedTool = .crop
                         selectedObjectID = nil
@@ -1063,30 +1105,7 @@ struct ContentView: View {
                     .glassEffect(selectedTool == .crop ? .regular.tint(.blue) : .regular)
                     .help("Drag to select an area to crop")
                     
-                    Menu {
-                        Menu("Color") {
-                            PenColorButton(current: $badgeColor, color: .systemRed,   name: "Red")
-                            PenColorButton(current: $badgeColor, color: .blue,        name: "Blue")
-                            PenColorButton(current: $badgeColor, color: .black,       name: "Black")
-                            PenColorButton(current: $badgeColor, color: .systemGreen, name: "Green")
-                            PenColorButton(current: $badgeColor, color: .systemYellow,name: "Yellow")
-                            PenColorButton(current: $badgeColor, color: .white,       name: "White")
-                        }
-                        Divider()
-                        Button("Reset Counter") { badgeCount = 0 }
-                    } label: {
-                        Label("Badge", systemImage: "1.circle")
-                            .symbolRenderingMode(.monochrome)
-                            .foregroundStyle(selectedTool == .badge ? Color.white : Color.primary)
-                            .tint(selectedTool == .badge ? .white : .primary)
-                    } primaryAction: {
-                        selectedTool = .badge
-                        selectedObjectID = nil; activeHandle = .none; cropDraftRect = nil; cropRect = nil; cropHandle = .none
-                        focusedTextID = nil
-                        
-                    }
-                    .glassEffect(selectedTool == .badge ? .regular.tint(.blue) : .regular)
-                    .help("Click to place numbered badge")
+                    
                     
                     
                 }
@@ -1150,6 +1169,56 @@ struct ContentView: View {
     }
     
     // MARK: - Helpers
+    
+    func badgeColorButton(color: Color, name: String) -> some View {
+        let nsColor = NSColor(color)
+        return Button {
+            badgeColor = nsColor
+        } label: {
+            HStack {
+                if badgeColor == nsColor {
+                    Image(systemName: "checkmark")
+                        .foregroundStyle(color, .primary, .secondary)
+                } else {
+                    Image(systemName: "circle.fill")
+                        .foregroundStyle(color, .primary, .secondary)
+                }
+                Text(name)
+            }
+        }
+    }
+    
+    // Centralized tool switching used by menu notifications
+    private func handleSelectTool(_ raw: String) {
+        switch raw {
+        case "pointer":
+            selectedTool = .pointer
+        case "pen":
+            lineHasArrow = false
+            selectedTool = .line
+            selectedObjectID = nil
+            activeHandle = .none
+            cropDraftRect = nil
+            cropRect = nil
+            cropHandle = .none
+            focusedTextID = nil
+        case "arrow":
+            selectedTool = .line
+            lineHasArrow = true
+            selectedObjectID = nil
+            activeHandle = .none
+            cropDraftRect = nil
+            cropRect = nil
+            cropHandle = .none
+            focusedTextID = nil
+        case "highlighter": selectedTool = .highlighter
+        case "shape":       selectedTool = .rect
+        case "increment":   selectedTool = .badge        // adjust if your enum name differs
+        case "text":        selectedTool = .text
+        case "crop":        selectedTool = .crop
+        default: break
+        }
+    }
     
     // Settings - Downsample from Retina
     private func isRetinaImage(_ image: NSImage) -> Bool {
@@ -1525,7 +1594,7 @@ struct ContentView: View {
             withAnimation { showCopiedHUD = false }
         }
     }
-
+    
     /// Flattens the current canvas into the image, refreshes state, then copies the latest to the clipboard.
     private func flattenRefreshAndCopy() {
         // 1) Flatten into lastCapture (and save) using existing logic
@@ -1998,7 +2067,9 @@ struct ContentView: View {
                 
                 dragStartPoint = nil
                 pushedDragUndo = false
-            }    }
+            }
+    }
+    
     
     
     // MARK: - Canvas Coordinate System.
@@ -2011,14 +2082,14 @@ struct ContentView: View {
     
     private func getCoordinateTransform(for image: NSImage, in geometry: GeometryProxy) -> CoordinateTransform {
         let baseFitted = imageDisplayMode == "fit" ?
-            fittedImageSize(original: image.size, in: geometry.size) :
-            image.size
+        fittedImageSize(original: image.size, in: geometry.size) :
+        image.size
         
         let fitted = CGSize(width: baseFitted.width * zoomLevel, height: baseFitted.height * zoomLevel)
         
         let origin = imageDisplayMode == "fit" ?
-            CGPoint(x: (geometry.size.width - fitted.width)/2, y: (geometry.size.height - fitted.height)/2) :
-            CGPoint.zero
+        CGPoint(x: (geometry.size.width - fitted.width)/2, y: (geometry.size.height - fitted.height)/2) :
+        CGPoint.zero
         
         let author = objectSpaceSize ?? baseFitted
         let sx = fitted.width / max(1, author.width)
@@ -2276,23 +2347,23 @@ struct ContentView: View {
         let dy = end.y - start.y
         let len = hypot(dx, dy)
         guard len > 0.0001 else { return path }
-
+        
         let angle = atan2(dy, dx)
         // scale arrow size by stroke width for consistency
         let size = max(6, lineWidth * 3)   // arrow length
         let wing = size * 0.6              // half width at base
-
+        
         let tip = end
         let baseX = end.x - size * cos(angle)
         let baseY = end.y - size * sin(angle)
-
+        
         // perpendicular
         let px = -sin(angle)
         let py =  cos(angle)
-
+        
         let left  = CGPoint(x: baseX + wing * px, y: baseY + wing * py)
         let right = CGPoint(x: baseX - wing * px, y: baseY - wing * py)
-
+        
         path.move(to: tip)
         path.addLine(to: left)
         path.addLine(to: right)
@@ -2589,7 +2660,7 @@ struct ContentView: View {
         }
         return nil
     }
-        
+    
     private func saveSnapToDisk(_ image: NSImage) -> URL? {
         guard let dir = snapsDirectory() else { return nil }
         let url = dir.appendingPathComponent(defaultSnapFilename())

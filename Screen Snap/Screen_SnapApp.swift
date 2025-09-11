@@ -3,9 +3,25 @@
 //  Screen Snap
 //
 
+
 import SwiftUI
 import Carbon.HIToolbox
 import ScreenCaptureKit
+
+enum ToolKind: String {
+    case pointer
+    case pen
+    case arrow
+    case highlighter
+    case shape
+    case increment
+    case text
+    case crop
+}
+
+extension Notification.Name {
+    static let selectTool = Notification.Name("com.georgebabichev.screensnap.selectTool")
+}
 
 @main
 struct Screen_SnapApp: App {
@@ -19,6 +35,74 @@ struct Screen_SnapApp: App {
         // Remove WindowGroup entirely - we'll manage windows manually
         Settings {
             EmptyView()
+        }
+        .commands {
+            CommandMenu("Tools") {
+                Button("Pointer") {
+                    NotificationCenter.default.post(
+                        name: .selectTool,
+                        object: nil,
+                        userInfo: ["tool": ToolKind.pointer.rawValue]
+                    )
+                }
+                .keyboardShortcut("1", modifiers: .command)
+                Button("Pen") {
+                    NotificationCenter.default.post(
+                        name: .selectTool,
+                        object: nil,
+                        userInfo: ["tool": ToolKind.pen.rawValue]
+                    )
+                }
+                .keyboardShortcut("2", modifiers: .command)
+                Button("Arrow") {
+                    NotificationCenter.default.post(
+                        name: .selectTool,
+                        object: nil,
+                        userInfo: ["tool": ToolKind.arrow.rawValue]
+                    )
+                }
+                .keyboardShortcut("3", modifiers: .command)
+                Button("Highlighter") {
+                    NotificationCenter.default.post(
+                        name: .selectTool,
+                        object: nil,
+                        userInfo: ["tool": ToolKind.highlighter.rawValue]
+                    )
+                }
+                .keyboardShortcut("4", modifiers: .command)
+                Button("Shape") {
+                    NotificationCenter.default.post(
+                        name: .selectTool,
+                        object: nil,
+                        userInfo: ["tool": ToolKind.shape.rawValue]
+                    )
+                }
+                .keyboardShortcut("5", modifiers: .command)
+                Button("Increment") {
+                    NotificationCenter.default.post(
+                        name: .selectTool,
+                        object: nil,
+                        userInfo: ["tool": ToolKind.increment.rawValue]
+                    )
+                }
+                .keyboardShortcut("6", modifiers: .command)
+                Button("Text") {
+                    NotificationCenter.default.post(
+                        name: .selectTool,
+                        object: nil,
+                        userInfo: ["tool": ToolKind.text.rawValue]
+                    )
+                }
+                .keyboardShortcut("7", modifiers: .command)
+                Button("Crop") {
+                    NotificationCenter.default.post(
+                        name: .selectTool,
+                        object: nil,
+                        userInfo: ["tool": ToolKind.crop.rawValue]
+                    )
+                }
+                .keyboardShortcut("8", modifiers: .command)
+            }
         }
     }
 }

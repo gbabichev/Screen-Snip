@@ -20,6 +20,8 @@ Inspired by Greenshot on Windows - the goal is to make a tiny app that can do th
 - Hotkeys for tools.
 - Working Menu Bar commands with icons. 
 
+- Fix line colors changing.
+- Add circle shape. 
 - Add double tap to zoom on mouse & trackpad.
 - Update Snap Gallery so I can see dates. 
 - User adjustable highlighter opacity 
