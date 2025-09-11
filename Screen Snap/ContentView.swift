@@ -28,11 +28,20 @@ private enum SaveFormat: String, CaseIterable, Identifiable {
     }
 }
 
+enum MarkupMode: String, CaseIterable {
+    case line, arrow, highlighter
+}
+
+
+
 struct ContentView: View {
+    
+    
     
     @State private var missingSnapURLs: Set<URL> = []
     @State private var zoomLevel: Double = 1.0
-    
+    @State private var pinchBaseZoom: Double? = nil
+
     @State private var showSettingsPopover = false
     @AppStorage("preferredSaveFormat") private var preferredSaveFormatRaw: String = SaveFormat.png.rawValue
     private var preferredSaveFormat: SaveFormat {
@@ -118,28 +127,37 @@ struct ContentView: View {
                             GeometryReader { geo in
                                 let baseFitted = fittedImageSize(original: img.size, in: geo.size)
                                 let fitted = CGSize(width: baseFitted.width * zoomLevel, height: baseFitted.height * zoomLevel)
-                                
+
                                 ScrollView([.horizontal, .vertical], showsIndicators: true) {
                                     ZStack {
-                                        let origin = CGPoint.zero // No centering offset in ScrollView
                                         let author = objectSpaceSize ?? baseFitted
                                         let sx = fitted.width / max(1, author.width)
                                         let sy = fitted.height / max(1, author.height)
-                                        
+                                        let scaledSize = CGSize(width: author.width * sx, height: author.height * sy)
+                                        let origin = CGPoint(
+                                            x: max(0, (fitted.width  - scaledSize.width)  / 2),
+                                            y: max(0, (fitted.height - scaledSize.height) / 2)
+                                        )
                                         // Base image
                                         Image(nsImage: img)
                                             .resizable()
                                             .interpolation(.high)
                                             .frame(width: fitted.width, height: fitted.height)
-                                        
+
                                         // Object overlay drawn in author space and scaled live to fitted
                                         ZStack {
                                             // Persisted objects
                                             ForEach(objects) { obj in
                                                 switch obj {
                                                 case .line(let o):
-                                                    o.drawPath(in: author)
-                                                        .stroke(Color(nsColor: strokeColor), style: StrokeStyle(lineWidth: o.width, lineCap: .round))
+                                                    let base = o.drawPath(in: author)
+                                                    // Always draw the line
+                                                    base.stroke(Color(nsColor: strokeColor), style: StrokeStyle(lineWidth: o.width, lineCap: .round))
+                                                    // If this line uses an arrow, draw the head at the end point
+                                                    if o.arrow {
+                                                        arrowHeadPath(from: o.start, to: o.end, lineWidth: o.width)
+                                                            .fill(Color(nsColor: strokeColor))
+                                                    }
                                                 case .rect(let o):
                                                     o.drawPath(in: author)
                                                         .stroke(Color(nsColor: strokeColor), style: StrokeStyle(lineWidth: o.width))
@@ -193,7 +211,7 @@ struct ContentView: View {
                                                     .overlay(
                                                         Rectangle().path(in: crp).fill(Color.orange.opacity(0.10))
                                                     )
-                                                
+
                                                 // Corner handles to indicate the crop can be dragged/resized
                                                 let pts = [
                                                     CGPoint(x: crp.minX, y: crp.minY),
@@ -218,8 +236,8 @@ struct ContentView: View {
                                             }
                                         }
                                         .frame(width: author.width, height: author.height)
-                                        .scaleEffect(x: sx, y: sy, anchor: .topLeading)
-                                        .frame(width: fitted.width, height: fitted.height, alignment: .topLeading)
+                                        .scaleEffect(x: sx, y: sy, anchor: .center)
+                                        .frame(width: fitted.width, height: fitted.height, alignment: .center)
                                         .transaction { $0.disablesAnimations = true }
                                         .compositingGroup()
                                         .drawingGroup()
@@ -250,154 +268,207 @@ struct ContentView: View {
                                         }
                                     }
                                     .frame(width: fitted.width, height: fitted.height)
+                                    // Center the content within the visible scroll area when smaller than viewport
+                                    .frame(minWidth: geo.size.width, minHeight: geo.size.height, alignment: .center)
                                 }
                                 .frame(maxWidth: .infinity, maxHeight: .infinity)
                                 .overlay(
-                                    LocalScrollWheelZoomView(zoomLevel: $zoomLevel)
-                                        .allowsHitTesting(true)
+                                    LocalScrollWheelZoomView(
+                                        zoomLevel: $zoomLevel,
+                                        minZoom: 1.0,
+                                        maxZoom: 3.0
+                                    )
+                                    .allowsHitTesting(true)
+                                )
+                                .gesture(
+                                    MagnificationGesture(minimumScaleDelta: 0.01)
+                                        .onChanged { scale in
+                                            if pinchBaseZoom == nil { pinchBaseZoom = zoomLevel }
+                                            let proposed = (pinchBaseZoom ?? zoomLevel) * Double(scale)
+                                            let minZoom = 1.0
+                                            let maxZoom = 3.0
+                                            zoomLevel = min(max(proposed, minZoom), maxZoom)
+                                        }
+                                        .onEnded { _ in
+                                            pinchBaseZoom = nil
+                                        }
                                 )
                             }
                         } else {
                             // Actual size mode with ScrollView
                             let baseFitted = img.size // actual size
                             let fitted = CGSize(width: baseFitted.width * zoomLevel, height: baseFitted.height * zoomLevel)
-                            
-                            ScrollView([.horizontal, .vertical], showsIndicators: true) {
-                                ZStack {
-                                    let origin = CGPoint.zero // No centering offset in ScrollView
-                                    let author = objectSpaceSize ?? baseFitted
-                                    let sx = fitted.width / max(1, author.width)
-                                    let sy = fitted.height / max(1, author.height)
-                                    
-                                    // Base image
-                                    Image(nsImage: img)
-                                        .resizable()
-                                        .interpolation(.high)
-                                        .frame(width: fitted.width, height: fitted.height)
-                                    
-                                    // Object overlay drawn in author space and scaled live to actual size
+
+                            GeometryReader { geo in
+                                ScrollView([.horizontal, .vertical], showsIndicators: true) {
                                     ZStack {
-                                        // Persisted objects
-                                        ForEach(objects) { obj in
-                                            switch obj {
-                                            case .line(let o):
-                                                o.drawPath(in: author)
-                                                    .stroke(Color(nsColor: strokeColor), style: StrokeStyle(lineWidth: o.width, lineCap: .round))
-                                            case .rect(let o):
-                                                o.drawPath(in: author)
-                                                    .stroke(Color(nsColor: strokeColor), style: StrokeStyle(lineWidth: o.width))
-                                            case .text(let o):
-                                                // Only render static text if it's not currently being edited
-                                                if focusedTextID != o.id {
-                                                    Text(o.text.isEmpty ? " " : o.text)
-                                                        .font(.system(size: o.fontSize))
-                                                        .foregroundStyle(Color(nsColor: o.textColor))
-                                                        .frame(width: o.rect.width, height: o.rect.height, alignment: .topLeading)
-                                                        .padding(4)
-                                                        .background(o.bgEnabled ? Color(nsColor: o.bgColor) : Color.clear)
-                                                        .position(x: o.rect.midX, y: o.rect.midY)
-                                                }
-                                            case .badge(let o):
-                                                Circle()
-                                                    .fill(Color(nsColor: o.fillColor))
-                                                    .frame(width: o.rect.width, height: o.rect.height)
-                                                    .position(x: o.rect.midX, y: o.rect.midY)
-                                                    .overlay {
-                                                        Text("\(o.number)")
-                                                            .font(.system(size: max(10, min(o.rect.width, o.rect.height) * 0.6), weight: .bold))
+                                        let author = objectSpaceSize ?? baseFitted
+                                        let sx = fitted.width / max(1, author.width)
+                                        let sy = fitted.height / max(1, author.height)
+                                        let scaledSize = CGSize(width: author.width * sx, height: author.height * sy)
+                                        let origin = CGPoint(
+                                            x: max(0, (fitted.width  - scaledSize.width)  / 2),
+                                            y: max(0, (fitted.height - scaledSize.height) / 2)
+                                        )
+                                        // Base image
+                                        Image(nsImage: img)
+                                            .resizable()
+                                            .interpolation(.high)
+                                            .frame(width: fitted.width, height: fitted.height)
+
+                                        // Object overlay drawn in author space and scaled live to actual size
+                                        ZStack {
+                                            // Persisted objects
+                                            ForEach(objects) { obj in
+                                                switch obj {
+                                                case .line(let o):
+                                                    let base = o.drawPath(in: author)
+                                                    // Always draw the line
+                                                    base.stroke(Color(nsColor: strokeColor), style: StrokeStyle(lineWidth: o.width, lineCap: .round))
+                                                    // If this line uses an arrow, draw the head at the end point
+                                                    if o.arrow {
+                                                        arrowHeadPath(from: o.start, to: o.end, lineWidth: o.width)
+                                                            .fill(Color(nsColor: strokeColor))
+                                                    }
+                                                case .rect(let o):
+                                                    o.drawPath(in: author)
+                                                        .stroke(Color(nsColor: strokeColor), style: StrokeStyle(lineWidth: o.width))
+                                                case .text(let o):
+                                                    // Only render static text if it's not currently being edited
+                                                    if focusedTextID != o.id {
+                                                        Text(o.text.isEmpty ? " " : o.text)
+                                                            .font(.system(size: o.fontSize))
                                                             .foregroundStyle(Color(nsColor: o.textColor))
+                                                            .frame(width: o.rect.width, height: o.rect.height, alignment: .topLeading)
+                                                            .padding(4)
+                                                            .background(o.bgEnabled ? Color(nsColor: o.bgColor) : Color.clear)
                                                             .position(x: o.rect.midX, y: o.rect.midY)
                                                     }
-                                            case .highlight(let o):
-                                                Rectangle()
-                                                    .fill(Color(nsColor: o.color))
-                                                    .frame(width: o.rect.width, height: o.rect.height)
-                                                    .position(x: o.rect.midX, y: o.rect.midY)
-                                            case .image(let o):
-                                                Image(nsImage: o.image)
-                                                    .resizable()
-                                                    .interpolation(.high)
-                                                    .frame(width: o.rect.width, height: o.rect.height)
-                                                    .position(x: o.rect.midX, y: o.rect.midY)
+                                                case .badge(let o):
+                                                    Circle()
+                                                        .fill(Color(nsColor: o.fillColor))
+                                                        .frame(width: o.rect.width, height: o.rect.height)
+                                                        .position(x: o.rect.midX, y: o.rect.midY)
+                                                        .overlay {
+                                                            Text("\(o.number)")
+                                                                .font(.system(size: max(10, min(o.rect.width, o.rect.height) * 0.6), weight: .bold))
+                                                                .foregroundStyle(Color(nsColor: o.textColor))
+                                                                .position(x: o.rect.midX, y: o.rect.midY)
+                                                        }
+                                                case .highlight(let o):
+                                                    Rectangle()
+                                                        .fill(Color(nsColor: o.color))
+                                                        .frame(width: o.rect.width, height: o.rect.height)
+                                                        .position(x: o.rect.midX, y: o.rect.midY)
+                                                case .image(let o):
+                                                    Image(nsImage: o.image)
+                                                        .resizable()
+                                                        .interpolation(.high)
+                                                        .frame(width: o.rect.width, height: o.rect.height)
+                                                        .position(x: o.rect.midX, y: o.rect.midY)
+                                                }
+                                            }
+                                            // Draft feedback while creating (draft is stored in author space)
+                                            if let d = draft {
+                                                Path { p in p.move(to: d.start); p.addLine(to: d.end) }
+                                                    .stroke(Color(nsColor: strokeColor).opacity(0.8), style: StrokeStyle(lineWidth: d.width, dash: [6,4]))
+                                                if lineHasArrow {
+                                                    arrowHeadPath(from: d.start, to: d.end, lineWidth: d.width)
+                                                        .fill(Color(nsColor: strokeColor).opacity(0.8))
+                                                }
+                                            }
+                                            if let r = draftRect {
+                                                Rectangle().path(in: r)
+                                                    .stroke(Color(nsColor: strokeColor).opacity(0.8), style: StrokeStyle(lineWidth: strokeWidth, dash: [6,4]))
+                                            }
+                                            if let crp = cropRect {
+                                                Rectangle().path(in: crp)
+                                                    .stroke(Color.orange.opacity(0.95), style: StrokeStyle(lineWidth: max(1, strokeWidth), dash: [8,4]))
+                                                    .overlay(
+                                                        Rectangle().path(in: crp).fill(Color.orange.opacity(0.10))
+                                                    )
+
+                                                // Corner handles to indicate the crop can be dragged/resized
+                                                let pts = [
+                                                    CGPoint(x: crp.minX, y: crp.minY),
+                                                    CGPoint(x: crp.maxX, y: crp.minY),
+                                                    CGPoint(x: crp.minX, y: crp.maxY),
+                                                    CGPoint(x: crp.maxX, y: crp.maxY)
+                                                ]
+                                                ForEach(Array(pts.enumerated()), id: \.offset) { _, pt in
+                                                    Circle()
+                                                        .stroke(Color.orange, lineWidth: 1)
+                                                        .background(Circle().fill(Color.white))
+                                                        .frame(width: 12, height: 12)
+                                                        .position(pt)
+                                                }
+                                            }
+                                            if let cr = cropDraftRect {
+                                                Rectangle().path(in: cr)
+                                                    .stroke(Color.orange.opacity(0.9), style: StrokeStyle(lineWidth: max(1, strokeWidth), dash: [8,4]))
+                                                    .overlay(
+                                                        Rectangle().path(in: cr).fill(Color.orange.opacity(0.12))
+                                                    )
                                             }
                                         }
-                                        // Draft feedback while creating (draft is stored in author space)
-                                        if let d = draft {
-                                            Path { p in p.move(to: d.start); p.addLine(to: d.end) }
-                                                .stroke(Color(nsColor: strokeColor).opacity(0.8), style: StrokeStyle(lineWidth: d.width, dash: [6,4]))
-                                        }
-                                        if let r = draftRect {
-                                            Rectangle().path(in: r)
-                                                .stroke(Color(nsColor: strokeColor).opacity(0.8), style: StrokeStyle(lineWidth: strokeWidth, dash: [6,4]))
-                                        }
-                                        if let crp = cropRect {
-                                            Rectangle().path(in: crp)
-                                                .stroke(Color.orange.opacity(0.95), style: StrokeStyle(lineWidth: max(1, strokeWidth), dash: [8,4]))
-                                                .overlay(
-                                                    Rectangle().path(in: crp).fill(Color.orange.opacity(0.10))
-                                                )
-                                            
-                                            // Corner handles to indicate the crop can be dragged/resized
-                                            let pts = [
-                                                CGPoint(x: crp.minX, y: crp.minY),
-                                                CGPoint(x: crp.maxX, y: crp.minY),
-                                                CGPoint(x: crp.minX, y: crp.maxY),
-                                                CGPoint(x: crp.maxX, y: crp.maxY)
-                                            ]
-                                            ForEach(Array(pts.enumerated()), id: \.offset) { _, pt in
-                                                Circle()
-                                                    .stroke(Color.orange, lineWidth: 1)
-                                                    .background(Circle().fill(Color.white))
-                                                    .frame(width: 12, height: 12)
-                                                    .position(pt)
+                                        .frame(width: author.width, height: author.height)
+                                        .scaleEffect(x: sx, y: sy, anchor: .center)
+                                        .frame(width: fitted.width, height: fitted.height, alignment: .center)
+                                        .transaction { $0.disablesAnimations = true }
+                                        .compositingGroup()
+                                        .drawingGroup()
+                                        .overlay(alignment: .topLeading) {
+                                            if let sel = selectedObjectID, let idx = objects.firstIndex(where: { $0.id == sel }) {
+                                                switch objects[idx] {
+                                                case .line(let o):  selectionForLine(o)
+                                                case .rect(let o):  selectionForRect(o)
+                                                case .text(let o):  selectionForText(o)
+                                                case .badge(let o): selectionForBadge(o)
+                                                case .highlight(let o): selectionForHighlight(o)
+                                                case .image(let o): selectionForImage(o)
+                                                }
                                             }
                                         }
-                                        if let cr = cropDraftRect {
-                                            Rectangle().path(in: cr)
-                                                .stroke(Color.orange.opacity(0.9), style: StrokeStyle(lineWidth: max(1, strokeWidth), dash: [8,4]))
-                                                .overlay(
-                                                    Rectangle().path(in: cr).fill(Color.orange.opacity(0.12))
-                                                )
+                                        .contentShape(Rectangle())
+                                        .allowsHitTesting(true)
+                                        .simultaneousGesture(selectedTool == .pointer ? pointerGesture(insetOrigin: origin, fitted: fitted, author: author) : nil)
+                                        .simultaneousGesture(selectedTool == .line ? lineGesture(insetOrigin: origin, fitted: fitted, author: author) : nil)
+                                        .simultaneousGesture(selectedTool == .rect ? rectGesture(insetOrigin: origin, fitted: fitted, author: author) : nil)
+                                        .simultaneousGesture(selectedTool == .text ? textGesture(insetOrigin: origin, fitted: fitted, author: author) : nil)
+                                        .simultaneousGesture(selectedTool == .crop ? cropGesture(insetOrigin: origin, fitted: fitted, author: author) : nil)
+                                        .simultaneousGesture(selectedTool == .badge ? badgeGesture(insetOrigin: origin, fitted: fitted, author: author) : nil)
+                                        .simultaneousGesture(selectedTool == .highlighter ? highlightGesture(insetOrigin: origin, fitted: fitted, author: author) : nil)
+                                        .onAppear {
+                                            lastFittedSize = baseFitted
+                                            if objectSpaceSize == nil { objectSpaceSize = baseFitted }
                                         }
                                     }
-                                    .frame(width: author.width, height: author.height)
-                                    .scaleEffect(x: sx, y: sy, anchor: .topLeading)
-                                    .frame(width: fitted.width, height: fitted.height, alignment: .topLeading)
-                                    .transaction { $0.disablesAnimations = true }
-                                    .compositingGroup()
-                                    .drawingGroup()
-                                    .overlay(alignment: .topLeading) {
-                                        if let sel = selectedObjectID, let idx = objects.firstIndex(where: { $0.id == sel }) {
-                                            switch objects[idx] {
-                                            case .line(let o):  selectionForLine(o)
-                                            case .rect(let o):  selectionForRect(o)
-                                            case .text(let o):  selectionForText(o)
-                                            case .badge(let o): selectionForBadge(o)
-                                            case .highlight(let o): selectionForHighlight(o)
-                                            case .image(let o): selectionForImage(o)
-                                            }
-                                        }
-                                    }
-                                    .contentShape(Rectangle())
-                                    .allowsHitTesting(true)
-                                    .simultaneousGesture(selectedTool == .pointer ? pointerGesture(insetOrigin: origin, fitted: fitted, author: author) : nil)
-                                    .simultaneousGesture(selectedTool == .line ? lineGesture(insetOrigin: origin, fitted: fitted, author: author) : nil)
-                                    .simultaneousGesture(selectedTool == .rect ? rectGesture(insetOrigin: origin, fitted: fitted, author: author) : nil)
-                                    .simultaneousGesture(selectedTool == .text ? textGesture(insetOrigin: origin, fitted: fitted, author: author) : nil)
-                                    .simultaneousGesture(selectedTool == .crop ? cropGesture(insetOrigin: origin, fitted: fitted, author: author) : nil)
-                                    .simultaneousGesture(selectedTool == .badge ? badgeGesture(insetOrigin: origin, fitted: fitted, author: author) : nil)
-                                    .simultaneousGesture(selectedTool == .highlighter ? highlightGesture(insetOrigin: origin, fitted: fitted, author: author) : nil)
-                                    .onAppear {
-                                        lastFittedSize = baseFitted
-                                        if objectSpaceSize == nil { objectSpaceSize = baseFitted }
-                                    }
+                                    .frame(width: fitted.width, height: fitted.height)
+                                    // Center when smaller than viewport; allow larger content to exceed so panning works
+                                    .frame(minWidth: geo.size.width, minHeight: geo.size.height, alignment: .center)
                                 }
-                                .frame(width: fitted.width, height: fitted.height)
+                                .frame(maxWidth: .infinity, maxHeight: .infinity)
                             }
-                            .frame(maxWidth: .infinity, maxHeight: .infinity)
                             .overlay(
-                                LocalScrollWheelZoomView(zoomLevel: $zoomLevel)
-                                    .allowsHitTesting(true)
+                                LocalScrollWheelZoomView(
+                                    zoomLevel: $zoomLevel,
+                                    minZoom: 1.0,
+                                    maxZoom: 3.0
+                                )
+                                .allowsHitTesting(true)
+                            )
+                            .gesture(
+                                MagnificationGesture(minimumScaleDelta: 0.01)
+                                    .onChanged { scale in
+                                        if pinchBaseZoom == nil { pinchBaseZoom = zoomLevel }
+                                        let proposed = (pinchBaseZoom ?? zoomLevel) * Double(scale)
+                                        let minZoom = 1.0
+                                        let maxZoom = 3.0
+                                        zoomLevel = min(max(proposed, minZoom), maxZoom)
+                                    }
+                                    .onEnded { _ in
+                                        pinchBaseZoom = nil
+                                    }
                             )
                         }
                     } else {
@@ -684,12 +755,11 @@ struct ContentView: View {
         }
         .toolbar {
             ToolbarItemGroup(placement: .navigation) {
-                Button {
-                    activeImporter = .image
-                } label: {
-                    Label("Open File", systemImage: "doc")
-                }
-                .keyboardShortcut("o", modifiers: [.command])
+//                Button {
+//                    activeImporter = .image
+//                } label: {
+//                    Label("Open File", systemImage: "doc")
+//                }
                 
                 Button { showSettingsPopover = true } label: {
                     Label("Settings", systemImage: "gearshape")
@@ -752,60 +822,75 @@ struct ContentView: View {
                     .frame(minWidth: 320)
                 }
                 
-                HStack(spacing: 8) {
-                    Image(systemName: "minus.magnifyingglass")
-                        .imageScale(.small)
-                        .foregroundStyle(.secondary)
-                    
-                    Slider(value: $zoomLevel, in: 0.1...3.0, step: 0.1) {
-                        Text("Zoom")
-                    }
-                    .frame(width: 80)
-                    .help("Zoom: \(String(format: "%.0f", zoomLevel * 100))%")
-                    
-                    Image(systemName: "plus.magnifyingglass")
-                        .imageScale(.small)
-                        .foregroundStyle(.secondary)
-                    
-                    Button(action: { zoomLevel = 1.0 }) {
-                        Text("100%")
-                            .font(.caption)
-                            .foregroundStyle(.secondary)
-                    }
-                    .buttonStyle(.plain)
-                    .help("Reset zoom to 100%")
-                }
-                
             }
             
             // Items visible only when we have a capture
             if let img = lastCapture {
                 
-                ToolbarItemGroup(placement: .principal) {
-                    Button(action: { copyToPasteboard(img) }) {
-                        Label("Copy Last", systemImage: "doc.on.doc")
+                if imageDisplayMode != "fit"{
+                    ToolbarItemGroup(placement: .navigation){
+                        HStack {
+                            
+                            Slider(value: $zoomLevel, in: 1...3) {
+                                Text("Zoom")
+                            }
+                            .frame(width: 80)
+                            
+                            Button(action: { zoomLevel = 1.0 }) {
+                                Image(systemName: "arrow.clockwise")
+                            }
+                            .padding(.trailing)
+                            .buttonStyle(.plain)
+                            .help("Reset zoom")
+                        }
                     }
-                    
-                    Button(action: performUndo) {
-                        Label("Undo", systemImage: "arrow.uturn.backward")
-                    }
-                    .keyboardShortcut("z", modifiers: [.command])
-                    .disabled(undoStack.isEmpty || lastCapture == nil)
-                    
-                    Button(action: performRedo) {
-                        Label("Redo", systemImage: "arrow.uturn.forward")
-                    }
-                    .keyboardShortcut("Z", modifiers: [.command, .shift])
-                    .disabled(redoStack.isEmpty || lastCapture == nil)
+                }
+                
+                
+                //MARK: - TOOLS: Copy to Cliboard, Undo, Redo, Flatten, Save, Save As.
+                
+                ToolbarItemGroup(placement: .navigation){
                     
                     Menu {
-                        Button("Flatten & Save", action: flattenAndSaveInPlace)
-                        Button("Flatten & Save As…", action: flattenAndSaveAs)
+                        
+                        // Undo
+                        Button(action: performUndo) {
+                            Label("Undo", systemImage: "arrow.uturn.backward")
+                        }
+                        .disabled(undoStack.isEmpty || lastCapture == nil)
+                        
+                        // Redo
+                        Button(action: performRedo) {
+                            Label("Redo", systemImage: "arrow.uturn.forward")
+                        }
+                        .disabled(redoStack.isEmpty || lastCapture == nil)
+                        
+                        // Flatten and Save (in place)
+                        Button("Save", action: flattenAndSaveInPlace)
+                        
+                        // Flatten and Save As
+                        Button("Save As…", action: flattenAndSaveAs)
+
                     } label: {
-                        Label("Save", systemImage: "square.and.arrow.down")
+                        Label("Copy Last", systemImage: "doc.on.doc")
                     } primaryAction: {
-                        flattenAndSaveInPlace()
+                        // Flatten & Copy to Clipboard
+                        flattenRefreshAndCopy()
+                        selectedTool = .pointer
+                        selectedObjectID = nil
+                        activeHandle = .none
+                        cropDraftRect = nil
+                        cropRect = nil
+                        cropHandle = .none
+                        focusedTextID = nil
                     }
+                }
+                
+                // MARK: - TOOLS: Pointer, Pen, Arrow, Highlighter.
+
+                ToolbarItemGroup(placement: .principal) {
+
+                    // Pointer
                     Button(action: { selectedTool = .pointer
                         selectedObjectID = nil; activeHandle = .none; cropDraftRect = nil; cropRect = nil; cropHandle = .none
                         focusedTextID = nil
@@ -813,44 +898,106 @@ struct ContentView: View {
                     }) {
                         Label("Pointer", systemImage: "cursorarrow")
                             .foregroundStyle(selectedTool == .pointer ? Color.white : Color.primary)
+                        
                     }
                     .glassEffect(selectedTool == .pointer ? .regular.tint(.blue) : .regular)
                     
-                    
+                    // Pen, Arrow, Highlighter.
                     Menu {
-                        Toggle("Arrow", isOn: $lineHasArrow)
-                            .toggleStyle(.button)
-                        
-                        Divider()
-                        
-                        Menu("Line Width") {
-                            ForEach([1,2,3,4,6,8,12,16], id: \.self) { w in
-                                Button(action: { strokeWidth = CGFloat(w) }) {
-                                    if Int(strokeWidth) == w { Image(systemName: "checkmark") }
-                                    Text("\(w) pt")
-                                }
+                        // Always show all three tools first
+                        Button(action: {
+                            selectedTool = .line
+                            lineHasArrow = false
+                            selectedObjectID = nil; activeHandle = .none; cropDraftRect = nil; cropRect = nil; cropHandle = .none
+                            focusedTextID = nil
+                        }) {
+                            HStack {
+                                Image(systemName: "pencil.line")
+                                Text("Pen")
                             }
                         }
-                        Menu("Color") {
-                            PenColorButton(current: $strokeColor, color: .black, name: "Black")
-                            PenColorButton(current: $strokeColor, color: .red, name: "Red")
-                            PenColorButton(current: $strokeColor, color: .blue, name: "Blue")
-                            PenColorButton(current: $strokeColor, color: .systemGreen, name: "Green")
-                            PenColorButton(current: $strokeColor, color: .systemYellow, name: "Yellow")
-                            PenColorButton(current: $strokeColor, color: .white, name: "White")
+                        
+                        Button(action: {
+                            selectedTool = .line
+                            lineHasArrow = true
+                            selectedObjectID = nil; activeHandle = .none; cropDraftRect = nil; cropRect = nil; cropHandle = .none
+                            focusedTextID = nil
+                        }) {
+                            HStack {
+                                Image(systemName: "arrow.right")
+                                Text("Arrow")
+                            }
+                        }
+                        
+                        Button(action: {
+                            selectedTool = .highlighter
+                            selectedObjectID = nil; activeHandle = .none; cropDraftRect = nil; cropRect = nil; cropHandle = .none
+                            focusedTextID = nil
+                        }) {
+                            HStack {
+                                Image(systemName: "highlighter")
+                                Text("Highlighter")
+                            }
+                        }
+                        
+                        // Show options based on selected tool
+                        if selectedTool == .line {
+                            
+                            Section("Pen Color") {
+                                PenColorButton(current: $strokeColor, color: .black, name: "Black")
+                                PenColorButton(current: $strokeColor, color: .red, name: "Red")
+                                PenColorButton(current: $strokeColor, color: .blue, name: "Blue")
+                                PenColorButton(current: $strokeColor, color: .systemGreen, name: "Green")
+                                PenColorButton(current: $strokeColor, color: .systemYellow, name: "Yellow")
+                                PenColorButton(current: $strokeColor, color: .white, name: "White")
+                            }
+                            
+                            Menu("Line Width") {
+                                ForEach([1,2,3,4,6,8,12,16], id: \.self) { w in
+                                    Button(action: { strokeWidth = CGFloat(w) }) {
+                                        HStack {
+                                            if Int(strokeWidth) == w {
+                                                Image(systemName: "checkmark")
+                                            }
+                                            Text("\(w) pt")
+                                        }
+                                    }
+                                }
+                            }
+                            
+                        } else if selectedTool == .highlighter {
+                            
+                            Section("Highlighter Color") {
+                                PenColorButton(current: $highlighterColor, color: NSColor.systemYellow.withAlphaComponent(0.35), name: "Yellow")
+                                PenColorButton(current: $highlighterColor, color: NSColor.systemGreen.withAlphaComponent(0.35), name: "Green")
+                                PenColorButton(current: $highlighterColor, color: NSColor.systemBlue.withAlphaComponent(0.35), name: "Blue")
+                                PenColorButton(current: $highlighterColor, color: NSColor.systemPink.withAlphaComponent(0.35), name: "Pink")
+                            }
                         }
                     } label: {
-                        Label("Pen", systemImage: lineHasArrow ? "arrow.right" : "pencil.line")
-                            .symbolRenderingMode(.monochrome)
-                            .foregroundStyle(selectedTool == .line ? Color.white : Color.primary)
-                            .tint(selectedTool == .line ? .white : .primary)
-                    } primaryAction: {
-                        selectedTool = .line
-                        selectedObjectID = nil; activeHandle = .none; cropDraftRect = nil; cropRect = nil; cropHandle = .none
-                        focusedTextID = nil
-                        
+                        Label(
+                            selectedTool == .line ? (lineHasArrow ? "Arrow" : "Pen") : selectedTool == .highlighter ? "Highlighter" : "Drawing Tools",
+                            systemImage: selectedTool == .line ? (lineHasArrow ? "arrow.right" : "pencil.line") :
+                                        selectedTool == .highlighter ? "highlighter" : "pencil.line"
+                        )
+                        .foregroundStyle(selectedTool == .line || selectedTool == .highlighter ? Color.white : Color.primary)
                     }
-                    .glassEffect(selectedTool == .line ? .regular.tint(.blue) : .regular)
+                    .glassEffect(selectedTool == .line || selectedTool == .highlighter ? .regular.tint(.blue) : .regular)
+                    .help(selectedTool == .line ? "Pen tool selected" : selectedTool == .highlighter ? "Highlighter tool selected" : "Select drawing tool")
+                    
+                    
+                    
+                }
+                
+                
+                
+                
+                
+                
+                
+                ToolbarItemGroup(placement: .principal) {
+
+                    
                     
                     Menu {
                         Menu("Font Size") {
@@ -878,9 +1025,7 @@ struct ContentView: View {
                             PenColorButton(current: $textBGColor, color: NSColor.systemGreen.withAlphaComponent(0.5), name: "Green 50%")
                             PenColorButton(current: $textBGColor, color: NSColor.systemYellow.withAlphaComponent(0.5), name: "Yellow 50%")
                         }
-                        Divider()
                         
-                        Button("Edit Text…") {}
                         
                     } label: {
                         Label("Text", systemImage: "textformat")
@@ -924,28 +1069,7 @@ struct ContentView: View {
                         
                     }
                     
-                    Menu {
-                        Menu("Color") {
-                            PenColorButton(current: $highlighterColor, color: NSColor.systemYellow.withAlphaComponent(0.35), name: "Yellow 35%")
-                            PenColorButton(current: $highlighterColor, color: NSColor.systemGreen.withAlphaComponent(0.35),  name: "Green 35%")
-                            PenColorButton(current: $highlighterColor, color: NSColor.systemBlue.withAlphaComponent(0.35),   name: "Blue 35%")
-                            PenColorButton(current: $highlighterColor, color: NSColor.systemPink.withAlphaComponent(0.35),   name: "Pink 35%")
-                        }
-                        Divider()
-                        Text("Drag to create translucent box")
-                            .foregroundStyle(.secondary)
-                    } label: {
-                        Label("Highlighter", systemImage: "highlighter")
-                            .symbolRenderingMode(.monochrome)
-                            .foregroundStyle(selectedTool == .highlighter ? Color.white : Color.primary)
-                            .tint(selectedTool == .highlighter ? .white : .primary)
-                    } primaryAction: {
-                        selectedTool = .highlighter
-                        selectedObjectID = nil; activeHandle = .none; cropDraftRect = nil; cropRect = nil; cropHandle = .none
-                        focusedTextID = nil
-                    }
-                    .glassEffect(selectedTool == .highlighter ? .regular.tint(.blue) : .regular)
-                    .help("Drag to add a highlight box")
+
                     
                     Button(action: {
                         selectedTool = .crop
@@ -1086,9 +1210,6 @@ struct ContentView: View {
         downsampledImage.addRepresentation(rep)
         return downsampledImage
     }
-    
-    //
-    
     
     private func badgeGesture(insetOrigin: CGPoint, fitted: CGSize, author: CGSize) -> some Gesture {
         DragGesture(minimumDistance: 0)
@@ -1418,6 +1539,18 @@ struct ContentView: View {
         withAnimation { showCopiedHUD = true }
         DispatchQueue.main.asyncAfter(deadline: .now() + 1.2) {
             withAnimation { showCopiedHUD = false }
+        }
+    }
+
+    /// Flattens the current canvas into the image, refreshes state, then copies the latest to the clipboard.
+    private func flattenRefreshAndCopy() {
+        // 1) Flatten into lastCapture (and save) using existing logic
+        flattenAndSaveInPlace()
+        // 2) On the next run loop, copy the refreshed image so we don't grab stale state
+        DispatchQueue.main.async {
+            if let current = self.lastCapture {
+                self.copyToPasteboard(current)
+            }
         }
     }
     
@@ -2152,7 +2285,36 @@ struct ContentView: View {
         }
     }
     
-    
+    // Arrow Tool
+    private func arrowHeadPath(from start: CGPoint, to end: CGPoint, lineWidth: CGFloat) -> Path {
+        var path = Path()
+        let dx = end.x - start.x
+        let dy = end.y - start.y
+        let len = hypot(dx, dy)
+        guard len > 0.0001 else { return path }
+
+        let angle = atan2(dy, dx)
+        // scale arrow size by stroke width for consistency
+        let size = max(6, lineWidth * 3)   // arrow length
+        let wing = size * 0.6              // half width at base
+
+        let tip = end
+        let baseX = end.x - size * cos(angle)
+        let baseY = end.y - size * sin(angle)
+
+        // perpendicular
+        let px = -sin(angle)
+        let py =  cos(angle)
+
+        let left  = CGPoint(x: baseX + wing * px, y: baseY + wing * py)
+        let right = CGPoint(x: baseX - wing * px, y: baseY - wing * py)
+
+        path.move(to: tip)
+        path.addLine(to: left)
+        path.addLine(to: right)
+        path.closeSubpath()
+        return path
+    }
     
     
     private func flattenAndSaveInPlace() {
