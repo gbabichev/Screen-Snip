@@ -878,7 +878,7 @@ struct ContentView: View {
         
         return scaleX > 1.5 || scaleY > 1.5
     }
-
+    
     private func downsampleImage(_ image: NSImage) -> NSImage {
         let pointSize = image.size
         
@@ -906,98 +906,7 @@ struct ContentView: View {
     }
     
     //
-
-    @ViewBuilder
-    private func selectionForText(_ o: TextObject) -> some View {
-        GeometryReader { geo in
-            ZStack {
-                // Get the same coordinate transformation used in the main drawing
-                let fitted = lastFittedSize ?? objectSpaceSize ?? .zero
-                let author = objectSpaceSize ?? fitted
-                let sx = fitted.width / max(1, author.width)
-                let sy = fitted.height / max(1, author.height)
-                
-                // Transform text rect from author space to fitted space
-                let textRectFitted = CGRect(
-                    x: o.rect.origin.x * sx,
-                    y: o.rect.origin.y * sy,
-                    width: o.rect.size.width * sx,
-                    height: o.rect.size.height * sy
-                )
-                
-                // Calculate the same origin offset used in main drawing
-                let origin = CGPoint(
-                    x: (geo.size.width - fitted.width)/2,
-                    y: (geo.size.height - fitted.height)/2
-                )
-                
-                // Corner handles positioned relative to the transformed and positioned rect
-                let pts = [
-                    CGPoint(x: origin.x + textRectFitted.minX, y: origin.y + textRectFitted.minY),
-                    CGPoint(x: origin.x + textRectFitted.maxX, y: origin.y + textRectFitted.minY),
-                    CGPoint(x: origin.x + textRectFitted.minX, y: origin.y + textRectFitted.maxY),
-                    CGPoint(x: origin.x + textRectFitted.maxX, y: origin.y + textRectFitted.maxY)
-                ]
-                
-                ForEach(Array(pts.enumerated()), id: \.offset) { pair in
-                    let pt = pair.element
-                    Circle()
-                        .stroke(.blue, lineWidth: 1)
-                        .background(Circle().fill(.white))
-                        .frame(width: 12, height: 12)
-                        .position(pt)
-                }
-                
-                // Rest of the TextEditor logic remains the same...
-                if focusedTextID == o.id {
-                    TextEditor(text: Binding(
-                        get: { o.text },
-                        set: { newVal in
-                            if let idx = objects.firstIndex(where: { $0.id == o.id }) {
-                                if case .text(var t) = objects[idx] {
-                                    t.text = newVal
-                                    objects[idx] = .text(t)
-                                }
-                            }
-                        }
-                    ))
-                    .font(.system(size: o.fontSize))
-                    .foregroundStyle(Color(nsColor: o.textColor))
-                    .background(o.bgEnabled ? Color(nsColor: o.bgColor) : Color.clear)
-                    .scrollContentBackground(.hidden)
-                    .frame(width: textRectFitted.width, height: textRectFitted.height)
-                    .position(x: origin.x + textRectFitted.midX, y: origin.y + textRectFitted.midY)
-                    .overlay(RoundedRectangle(cornerRadius: 4)
-                        .stroke(.blue.opacity(0.6), lineWidth: 1))
-                    .contentShape(Rectangle())
-                    .focused($isTextEditorFocused)
-                    .onAppear {
-                        DispatchQueue.main.async {
-                            isTextEditorFocused = true
-                        }
-                    }
-                    .onChange(of: focusedTextID) { _,newValue in
-                        isTextEditorFocused = (newValue == o.id)
-                    }
-                } else {
-                    Rectangle()
-                        .fill(Color.clear)
-                        .frame(width: textRectFitted.width, height: textRectFitted.height)
-                        .position(x: origin.x + textRectFitted.midX, y: origin.y + textRectFitted.midY)
-                        .contentShape(Rectangle())
-                        .onTapGesture(count: 2) {
-                            if selectedObjectID != o.id {
-                                selectedObjectID = o.id
-                            }
-                            focusedTextID = o.id
-                            DispatchQueue.main.async {
-                                isTextEditorFocused = true
-                            }
-                        }
-                }
-            }
-        }
-    }
+    
     
     private func badgeGesture(insetOrigin: CGPoint, fitted: CGSize, author: CGSize) -> some Gesture {
         DragGesture(minimumDistance: 0)
@@ -1237,18 +1146,18 @@ struct ContentView: View {
             let pxPerPtX = scale
             let pxPerPtY = scale
             
-//            print("🔍 Scale Factor Debug:")
-//            print("  scDisplay.width: \(scDisplay.width)")
-//            print("  scDisplay.height: \(scDisplay.height)")
-//            print("  screenFramePts.width: \(screenFramePts.width)")
-//            print("  screenFramePts.height: \(screenFramePts.height)")
-//            print("  bestScreen.backingScaleFactor: \(bestScreen.backingScaleFactor)")
+            //            print("🔍 Scale Factor Debug:")
+            //            print("  scDisplay.width: \(scDisplay.width)")
+            //            print("  scDisplay.height: \(scDisplay.height)")
+            //            print("  screenFramePts.width: \(screenFramePts.width)")
+            //            print("  screenFramePts.height: \(screenFramePts.height)")
+            //            print("  bestScreen.backingScaleFactor: \(bestScreen.backingScaleFactor)")
             
             // 4) Build a filter for that display and capture one frame.
             let filter = SCContentFilter(display: scDisplay, excludingWindows: [])
             guard let fullCG = await ScreenCapturer.shared.captureImage(using: filter, display: scDisplay) else { return nil }
-//            print("Full capture dimensions: \(fullCG.width) × \(fullCG.height)")
-//            print("Expected for 5K display: should be around 5120 × 2880")
+            //            print("Full capture dimensions: \(fullCG.width) × \(fullCG.height)")
+            //            print("Expected for 5K display: should be around 5120 × 2880")
             // 5) Convert the intersected rect (points) to pixel crop in the captured image space.
             let cropPx = cropRectPixels(intersectPts,
                                         withinScreenFramePts: screenFramePts,
@@ -1263,26 +1172,26 @@ struct ContentView: View {
             guard clamped.width > 1, clamped.height > 1 else { return nil }
             
             guard let cropped = fullCG.cropping(to: clamped) else { return nil }
-
+            
             let rep = NSBitmapImageRep(cgImage: cropped)
             let pointSize = CGSize(
                 width: CGFloat(cropped.width) / pxPerPtX,
                 height: CGFloat(cropped.height) / pxPerPtY
             )
             rep.size = pointSize
-
+            
             let nsImage = NSImage(size: pointSize)
             nsImage.addRepresentation(rep)
-
+            
             // Debug logging
-//            print("🔍 Capture Debug:")
-//            print("  Screen scale factors: pxPerPtX=\(pxPerPtX), pxPerPtY=\(pxPerPtY)")
-//            print("  CGImage pixel size: \(cropped.width) × \(cropped.height)")
-//            print("  Calculated point size: \(pointSize.width) × \(pointSize.height)")
-//            print("  NSImage.size: \(nsImage.size.width) × \(nsImage.size.height)")
-//            print("  Rep.size: \(rep.size.width) × \(rep.size.height)")
-//            print("  Rep pixels: \(rep.pixelsWide) × \(rep.pixelsHigh)")
-
+            //            print("🔍 Capture Debug:")
+            //            print("  Screen scale factors: pxPerPtX=\(pxPerPtX), pxPerPtY=\(pxPerPtY)")
+            //            print("  CGImage pixel size: \(cropped.width) × \(cropped.height)")
+            //            print("  Calculated point size: \(pointSize.width) × \(pointSize.height)")
+            //            print("  NSImage.size: \(nsImage.size.width) × \(nsImage.size.height)")
+            //            print("  Rep.size: \(rep.size.width) × \(rep.size.height)")
+            //            print("  Rep pixels: \(rep.pixelsWide) × \(rep.pixelsHigh)")
+            
             return nsImage
         } catch {
             return nil
@@ -1415,7 +1324,7 @@ struct ContentView: View {
             }
         }
     }
-        
+    
     /// If saved file is within our snaps directory, update the gallery list.
     private func refreshGalleryAfterSaving(to url: URL) {
         if let dir = snapsDirectory(), url.path.hasPrefix(dir.path) {
@@ -1791,8 +1700,8 @@ struct ContentView: View {
                 dragStartPoint = nil
                 pushedDragUndo = false
             }    }
-
-
+    
+    
     // MARK: - Canvas Coordinate System.
     // Creates drag points for tools in the toolbar.
     private struct CoordinateTransform {
@@ -1800,7 +1709,7 @@ struct ContentView: View {
         let sx: CGFloat
         let sy: CGFloat
     }
-
+    
     private func getCoordinateTransform(for image: NSImage, in geometry: GeometryProxy) -> CoordinateTransform {
         let fitted = fittedImageSize(original: image.size, in: geometry.size)
         let origin = CGPoint(
@@ -1822,7 +1731,7 @@ struct ContentView: View {
     // MARK: - Editing Tools
     
     // Line Tool
-    @ViewBuilder private func selectionForLine(_ o: LineObject) -> some View {
+    private func selectionForLine(_ o: LineObject) -> some View {
         GeometryReader { geo in
             if let img = lastCapture {
                 ZStack {
@@ -1846,9 +1755,9 @@ struct ContentView: View {
             }
         }
     }
-
+    
     // Shape Tool (Rectangle)
-    @ViewBuilder private func selectionForRect(_ o: RectObject) -> some View {
+    private func selectionForRect(_ o: RectObject) -> some View {
         GeometryReader { geo in
             if let img = lastCapture {
                 ZStack {
@@ -1881,7 +1790,7 @@ struct ContentView: View {
     }
     
     // Highlight Tool
-    @ViewBuilder private func selectionForHighlight(_ o: HighlightObject) -> some View {
+    private func selectionForHighlight(_ o: HighlightObject) -> some View {
         GeometryReader { geo in
             if let img = lastCapture {
                 ZStack {
@@ -1910,9 +1819,9 @@ struct ContentView: View {
             }
         }
     }
-
+    
     // Increment Badge Tool
-    @ViewBuilder private func selectionForBadge(_ o: BadgeObject) -> some View {
+    private func selectionForBadge(_ o: BadgeObject) -> some View {
         GeometryReader { geo in
             if let img = lastCapture {
                 ZStack {
@@ -1941,9 +1850,9 @@ struct ContentView: View {
             }
         }
     }
-
+    
     // Pasted Image Tool
-    @ViewBuilder private func selectionForImage(_ o: PastedImageObject) -> some View {
+    private func selectionForImage(_ o: PastedImageObject) -> some View {
         GeometryReader { geo in
             if let img = lastCapture {
                 ZStack {
@@ -1972,7 +1881,92 @@ struct ContentView: View {
             }
         }
     }
-       
+    
+    // Text Tool
+    private func selectionForText(_ o: TextObject) -> some View {
+        GeometryReader { geo in
+            if let img = lastCapture {
+                ZStack {
+                    let transform = getCoordinateTransform(for: img, in: geo)
+                    
+                    // Transform text rect from author space to screen space
+                    let textRectFitted = CGRect(
+                        x: o.rect.origin.x * transform.sx,
+                        y: o.rect.origin.y * transform.sy,
+                        width: o.rect.size.width * transform.sx,
+                        height: o.rect.size.height * transform.sy
+                    )
+                    
+                    // Corner handles positioned relative to the transformed and positioned rect
+                    let pts = [
+                        CGPoint(x: transform.origin.x + textRectFitted.minX, y: transform.origin.y + textRectFitted.minY),
+                        CGPoint(x: transform.origin.x + textRectFitted.maxX, y: transform.origin.y + textRectFitted.minY),
+                        CGPoint(x: transform.origin.x + textRectFitted.minX, y: transform.origin.y + textRectFitted.maxY),
+                        CGPoint(x: transform.origin.x + textRectFitted.maxX, y: transform.origin.y + textRectFitted.maxY)
+                    ]
+                    
+                    ForEach(Array(pts.enumerated()), id: \.offset) { pair in
+                        let pt = pair.element
+                        Circle()
+                            .stroke(.blue, lineWidth: 1)
+                            .background(Circle().fill(.white))
+                            .frame(width: 12, height: 12)
+                            .position(pt)
+                    }
+                    
+                    // Rest of the TextEditor logic remains the same...
+                    if focusedTextID == o.id {
+                        TextEditor(text: Binding(
+                            get: { o.text },
+                            set: { newVal in
+                                if let idx = objects.firstIndex(where: { $0.id == o.id }) {
+                                    if case .text(var t) = objects[idx] {
+                                        t.text = newVal
+                                        objects[idx] = .text(t)
+                                    }
+                                }
+                            }
+                        ))
+                        .font(.system(size: o.fontSize))
+                        .foregroundStyle(Color(nsColor: o.textColor))
+                        .background(o.bgEnabled ? Color(nsColor: o.bgColor) : Color.clear)
+                        .scrollContentBackground(.hidden)
+                        .frame(width: textRectFitted.width, height: textRectFitted.height)
+                        .position(x: transform.origin.x + textRectFitted.midX, y: transform.origin.y + textRectFitted.midY)
+                        .overlay(RoundedRectangle(cornerRadius: 4)
+                            .stroke(.blue.opacity(0.6), lineWidth: 1))
+                        .contentShape(Rectangle())
+                        .focused($isTextEditorFocused)
+                        .onAppear {
+                            DispatchQueue.main.async {
+                                isTextEditorFocused = true
+                            }
+                        }
+                        .onChange(of: focusedTextID) { _,newValue in
+                            isTextEditorFocused = (newValue == o.id)
+                        }
+                    } else {
+                        Rectangle()
+                            .fill(Color.clear)
+                            .frame(width: textRectFitted.width, height: textRectFitted.height)
+                            .position(x: transform.origin.x + textRectFitted.midX, y: transform.origin.y + textRectFitted.midY)
+                            .contentShape(Rectangle())
+                            .onTapGesture(count: 2) {
+                                if selectedObjectID != o.id {
+                                    selectedObjectID = o.id
+                                }
+                                focusedTextID = o.id
+                                DispatchQueue.main.async {
+                                    isTextEditorFocused = true
+                                }
+                            }
+                    }
+                }
+            }
+        }
+    }
+    
+    
     
     
     private func flattenAndSaveInPlace() {
@@ -2416,7 +2410,7 @@ struct ContentView: View {
         @State private var hovering = false
         @State private var hoverDebounce = 0
         @State private var image: NSImage? = nil
-
+        
         var body: some View {
             ZStack {
                 if let img = image {
@@ -2495,7 +2489,7 @@ struct ContentView: View {
         }
     }
     
-
+    
     
 }
 
@@ -2506,7 +2500,7 @@ struct ContentView: View {
 private final class GalleryWindow {
     static let shared = GalleryWindow()
     private var window: NSWindow?
-
+    
     func present(urls: [URL], onSelect: @escaping (URL) -> Void, onReload: @escaping () -> [URL]) {
         // If already visible, just bring to front and update content
         if let win = window {
@@ -2528,10 +2522,10 @@ private final class GalleryWindow {
             NSApp.activate(ignoringOtherApps: true)
             return
         }
-
+        
         let content = GalleryView(urls: urls, onSelect: onSelect, onReload: onReload)
         let hosting = NSHostingController(rootView: content)
-
+        
         let win = NSWindow(
             contentRect: NSRect(x: 0, y: 0, width: 820, height: 620),
             styleMask: [.titled, .closable, .miniaturizable, .resizable, .fullSizeContentView],
@@ -2546,28 +2540,28 @@ private final class GalleryWindow {
         win.isReleasedWhenClosed = false
         win.contentMinSize = NSSize(width: 900, height: 600)
         win.contentViewController = hosting
-
+        
         // Create controller and set up autosave through the controller
         let controller = NSWindowController(window: win)
         let autosaveName = "SnapGalleryWindowV2"
         controller.windowFrameAutosaveName = autosaveName
-
+        
         // Only use the controller's autosave mechanism - remove conflicting calls
         // Remove: win.setFrameAutosaveName(autosaveName)
         // Remove: win.setFrameUsingName(autosaveName)
-
+        
         self.window = win
-
+        
         // Set up close handler
         let closeHandler = WindowCloseHandler() { [weak self] in
             self?.window = nil
         }
         win.delegate = closeHandler
-
+        
         // Show the window - this will trigger automatic frame restoration
         controller.showWindow(nil)
         NSApp.activate(ignoringOtherApps: true)
-
+        
         // Post-show validation and adjustment
         DispatchQueue.main.async {
             let minW: CGFloat = 900
@@ -2579,7 +2573,7 @@ private final class GalleryWindow {
             let safeVisible = vf.insetBy(dx: padding, dy: padding)
             let center = NSPoint(x: frame.midX, y: frame.midY)
             let offscreen = !safeVisible.contains(center)
-
+            
             if tooSmall || offscreen {
                 let targetW = max(minW, min(vf.width * 0.8, 1800))
                 let targetH = max(minH, min(vf.height * 0.85, 1200))
@@ -2589,7 +2583,7 @@ private final class GalleryWindow {
             }
         }
     }
-
+    
     // Also update the WindowCloseHandler to not save manually since autosave handles it
     private final class WindowCloseHandler: NSObject, NSWindowDelegate {
         let onClose: () -> Void
@@ -2614,9 +2608,9 @@ private struct GalleryView: View {
     let onSelect: (URL) -> Void
     let onReload: () -> [URL]
     @State private var urlsLocal: [URL]
-
+    
     @AppStorage("saveDirectoryPath") private var saveDirectoryPath: String = ""
-
+    
     private func snapsDirectoryFromSettings() -> URL? {
         if !saveDirectoryPath.isEmpty {
             return URL(fileURLWithPath: saveDirectoryPath, isDirectory: true)
@@ -2631,23 +2625,23 @@ private struct GalleryView: View {
         }
         return nil
     }
-
+    
     private func openSnapsInFinder() {
         guard let dir = snapsDirectoryFromSettings() else { return }
         NSWorkspace.shared.open(dir)
     }
-
+    
     init(urls: [URL], onSelect: @escaping (URL) -> Void, onReload: @escaping () -> [URL]) {
         self.onSelect = onSelect
         self.onReload = onReload
         _urlsLocal = State(initialValue: urls)
     }
-
+    
     // Basic grid: adapts to window size
     private var columns: [GridItem] {
         [GridItem(.adaptive(minimum: 180), spacing: 10)]
     }
-
+    
     var body: some View {
         ScrollView {
             LazyVGrid(columns: columns, spacing: 10) {
@@ -2949,7 +2943,7 @@ private struct HighlightObject: DrawableObject {
     static func == (lhs: HighlightObject, rhs: HighlightObject) -> Bool {
         lhs.id == rhs.id && lhs.rect == rhs.rect && lhs.color == rhs.color
     }
-        
+    
     func hitTest(_ p: CGPoint) -> Bool {
         rect.insetBy(dx: -6, dy: -6).contains(p)
     }
@@ -3007,7 +3001,7 @@ private struct TextObject: DrawableObject {
     static func == (lhs: TextObject, rhs: TextObject) -> Bool {
         lhs.id == rhs.id && lhs.rect == rhs.rect && lhs.text == rhs.text && lhs.fontSize == rhs.fontSize && lhs.textColor == rhs.textColor && lhs.bgEnabled == rhs.bgEnabled && lhs.bgColor == rhs.bgColor
     }
-        
+    
     func hitTest(_ p: CGPoint) -> Bool { rect.insetBy(dx: -6, dy: -6).contains(p) }
     
     func handleHitTest(_ p: CGPoint) -> Handle {
@@ -3063,7 +3057,7 @@ private struct BadgeObject: DrawableObject {
     static func == (lhs: BadgeObject, rhs: BadgeObject) -> Bool {
         lhs.id == rhs.id && lhs.rect == rhs.rect && lhs.number == rhs.number && lhs.fillColor == rhs.fillColor && lhs.textColor == rhs.textColor
     }
-        
+    
     func hitTest(_ p: CGPoint) -> Bool {
         let c = CGPoint(x: rect.midX, y: rect.midY)
         let radius = max(rect.width, rect.height) / 2 + 6
@@ -3127,7 +3121,7 @@ private struct PastedImageObject: DrawableObject {
     static func == (lhs: PastedImageObject, rhs: PastedImageObject) -> Bool {
         lhs.id == rhs.id && lhs.rect == rhs.rect && lhs.image == rhs.image
     }
-        
+    
     func hitTest(_ p: CGPoint) -> Bool { rect.insetBy(dx: -6, dy: -6).contains(p) }
     
     func handleHitTest(_ p: CGPoint) -> Handle {
@@ -3234,7 +3228,7 @@ final class ScreenCapturer: NSObject, SCStreamOutput {
     private var captureResult: CGImage?
     private var captureError: Error?
     private var isCapturing = false
-        
+    
     func captureImage(using filter: SCContentFilter, display: SCDisplay) async -> CGImage? {
         let cfg = SCStreamConfiguration()
         
@@ -3244,7 +3238,7 @@ final class ScreenCapturer: NSObject, SCStreamOutput {
         cfg.pixelFormat = kCVPixelFormatType_32BGRA
         cfg.showsCursor = false
         cfg.minimumFrameInterval = CMTime(value: 1, timescale: 60)
-                
+        
         return await performCapture(filter: filter, config: cfg)
     }
     
@@ -3312,7 +3306,7 @@ final class ScreenCapturer: NSObject, SCStreamOutput {
         
         currentStream = nil
     }
-
+    
     private func getBackingScaleForDisplay(_ scDisplay: SCDisplay) -> CGFloat? {
         for screen in NSScreen.screens {
             if let cgIDNum = screen.deviceDescription[NSDeviceDescriptionKey("NSScreenNumber")] as? NSNumber {
@@ -3351,7 +3345,7 @@ final class SelectionWindowManager {
     func present(onComplete: @escaping (CGRect) -> Void) {
         // Prevent re-entrancy
         guard panels.isEmpty else { return }
-
+        
         for screen in NSScreen.screens {
             let frame = screen.frame
             let panel = NSPanel(contentRect: frame,
@@ -3371,7 +3365,7 @@ final class SelectionWindowManager {
             panel.hasShadow = false
             panel.isExcludedFromWindowsMenu = true
             panel.setFrame(frame, display: false) // ensure the window sits at the global screen frame
-
+            
             let root = SelectionOverlay(
                 windowOrigin: frame.origin,
                 onComplete: { rect in
@@ -3380,16 +3374,16 @@ final class SelectionWindowManager {
                 },
                 onCancel: { self.dismiss() }
             )
-            .ignoresSafeArea()
-
+                .ignoresSafeArea()
+            
             panel.contentView = NSHostingView(rootView: root)
             panel.makeKeyAndOrderFront(nil)
             panels.append(panel)
         }
-
+        
         // Activate the app so non-activating panels on all displays accept events
         NSApp.activate(ignoringOtherApps: true)
-
+        
         // ESC to cancel selection (all panels)
         keyMonitor = NSEvent.addLocalMonitorForEvents(matching: .keyDown) { [weak self] event in
             guard let self else { return event }
