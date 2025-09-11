@@ -868,31 +868,38 @@ struct ContentView: View {
     
     
 
-    
     @ViewBuilder
     private func selectionForText(_ o: TextObject) -> some View {
         GeometryReader { geo in
             ZStack {
-                // Map author's rect to fitted (onscreen) coordinates for the overlay
-                let fittedSize = lastFittedSize ?? objectSpaceSize ?? .zero
-                let authorSize = objectSpaceSize ?? fittedSize
-                let sx = fittedSize.width / max(1, authorSize.width)
-                let sy = fittedSize.height / max(1, authorSize.height)
-                let rf = CGRect(x: o.rect.origin.x * sx,
-                                y: o.rect.origin.y * sy,
-                                width: o.rect.size.width * sx,
-                                height: o.rect.size.height * sy)
-                // Inset (image centered within canvas)
-                let ox = max(0, (geo.size.width  - fittedSize.width)  / 2)
-                let oy = max(0, (geo.size.height - fittedSize.height) / 2)
+                // Get the same coordinate transformation used in the main drawing
+                let fitted = lastFittedSize ?? objectSpaceSize ?? .zero
+                let author = objectSpaceSize ?? fitted
+                let sx = fitted.width / max(1, author.width)
+                let sy = fitted.height / max(1, author.height)
                 
-                // Corner handles (use fitted rect corners + inset)
+                // Transform text rect from author space to fitted space
+                let textRectFitted = CGRect(
+                    x: o.rect.origin.x * sx,
+                    y: o.rect.origin.y * sy,
+                    width: o.rect.size.width * sx,
+                    height: o.rect.size.height * sy
+                )
+                
+                // Calculate the same origin offset used in main drawing
+                let origin = CGPoint(
+                    x: (geo.size.width - fitted.width)/2,
+                    y: (geo.size.height - fitted.height)/2
+                )
+                
+                // Corner handles positioned relative to the transformed and positioned rect
                 let pts = [
-                    CGPoint(x: rf.minX + ox, y: rf.minY + oy),
-                    CGPoint(x: rf.maxX + ox, y: rf.minY + oy),
-                    CGPoint(x: rf.minX + ox, y: rf.maxY + oy),
-                    CGPoint(x: rf.maxX + ox, y: rf.maxY + oy)
+                    CGPoint(x: origin.x + textRectFitted.minX, y: origin.y + textRectFitted.minY),
+                    CGPoint(x: origin.x + textRectFitted.maxX, y: origin.y + textRectFitted.minY),
+                    CGPoint(x: origin.x + textRectFitted.minX, y: origin.y + textRectFitted.maxY),
+                    CGPoint(x: origin.x + textRectFitted.maxX, y: origin.y + textRectFitted.maxY)
                 ]
+                
                 ForEach(Array(pts.enumerated()), id: \.offset) { pair in
                     let pt = pair.element
                     Circle()
@@ -902,7 +909,7 @@ struct ContentView: View {
                         .position(pt)
                 }
                 
-                // Show inline editor when focused; otherwise show invisible hit area
+                // Rest of the TextEditor logic remains the same...
                 if focusedTextID == o.id {
                     TextEditor(text: Binding(
                         get: { o.text },
@@ -919,54 +926,41 @@ struct ContentView: View {
                     .foregroundStyle(Color(nsColor: o.textColor))
                     .background(o.bgEnabled ? Color(nsColor: o.bgColor) : Color.clear)
                     .scrollContentBackground(.hidden)
-                    .frame(width: rf.width, height: rf.height)
-                    .position(x: rf.midX + ox, y: rf.midY + oy)
+                    .frame(width: textRectFitted.width, height: textRectFitted.height)
+                    .position(x: origin.x + textRectFitted.midX, y: origin.y + textRectFitted.midY)
                     .overlay(RoundedRectangle(cornerRadius: 4)
                         .stroke(.blue.opacity(0.6), lineWidth: 1))
                     .contentShape(Rectangle())
-                    .focused($isTextEditorFocused)  // Add this line
+                    .focused($isTextEditorFocused)
                     .onAppear {
-                        print("🔥 TextEditor appeared for object \(o.id)")
-                        // Automatically focus when appearing
                         DispatchQueue.main.async {
                             isTextEditorFocused = true
                         }
                     }
                     .onChange(of: focusedTextID) { _,newValue in
-                        print("🔥 TextEditor focus changed to: \(String(describing: newValue))")
-                        // Update focus state when focusedTextID changes
                         isTextEditorFocused = (newValue == o.id)
                     }
-                    
                 } else {
-                    // Invisible hit area for when not editing
                     Rectangle()
                         .fill(Color.clear)
-                        .frame(width: rf.width, height: rf.height)
-                        .position(x: rf.midX + ox, y: rf.midY + oy)
+                        .frame(width: textRectFitted.width, height: textRectFitted.height)
+                        .position(x: origin.x + textRectFitted.midX, y: origin.y + textRectFitted.midY)
                         .contentShape(Rectangle())
                         .onTapGesture(count: 2) {
-                            print("🔥 Double-click on invisible rectangle for object \(o.id)")
-                            print("🔥 Before setting: focusedTextID = \(String(describing: focusedTextID))")
                             if selectedObjectID != o.id {
                                 selectedObjectID = o.id
-                                print("🔥 Set selectedObjectID to \(o.id)")
                             }
                             focusedTextID = o.id
-                            print("🔥 After setting: focusedTextID = \(String(describing: focusedTextID))")
-                            
-                            // Force keyboard focus
                             DispatchQueue.main.async {
                                 isTextEditorFocused = true
                             }
-                        }
-                        .onAppear {
-                            print("🔥 Invisible rectangle appeared for object \(o.id)")
                         }
                 }
             }
         }
     }
+    
+    
     
     private func badgeGesture(insetOrigin: CGPoint, fitted: CGSize, author: CGSize) -> some Gesture {
         DragGesture(minimumDistance: 0)
@@ -1841,169 +1835,192 @@ struct ContentView: View {
     private func commitChange(_ newImage: NSImage) {
         lastCapture = newImage
     }
+
+    // MARK: - Canvas Coordinate System.
+    // Creates drag points for tools in the toolbar.
+    private struct CoordinateTransform {
+        let fitted: CGSize
+        let origin: CGPoint
+        let author: CGSize
+        let sx: CGFloat
+        let sy: CGFloat
+    }
+
+    private func getCoordinateTransform(for image: NSImage, in geometry: GeometryProxy) -> CoordinateTransform {
+        let fitted = fittedImageSize(original: image.size, in: geometry.size)
+        let origin = CGPoint(
+            x: (geometry.size.width - fitted.width)/2,
+            y: (geometry.size.height - fitted.height)/2
+        )
+        let author = objectSpaceSize ?? fitted
+        let sx = fitted.width / max(1, author.width)
+        let sy = fitted.height / max(1, author.height)
+        
+        return CoordinateTransform(
+            fitted: fitted,
+            origin: origin,
+            author: author,
+            sx: sx,
+            sy: sy
+        )
+    }
+    
+    
+    // MARK: - Editing Tools
+    
+    // Line Tool
     @ViewBuilder private func selectionForLine(_ o: LineObject) -> some View {
         GeometryReader { geo in
-            ZStack {
-                // Map author-space endpoints to fitted (onscreen) coordinates
-                let fittedSize = lastFittedSize ?? objectSpaceSize ?? .zero
-                let authorSize = objectSpaceSize ?? fittedSize
-                let sx = fittedSize.width / max(1, authorSize.width)
-                let sy = fittedSize.height / max(1, authorSize.height)
-                let sF = CGPoint(x: o.start.x * sx, y: o.start.y * sy)
-                let eF = CGPoint(x: o.end.x   * sx, y: o.end.y   * sy)
-                
-                // Inset (image centered within canvas)
-                let ox = max(0, (geo.size.width  - fittedSize.width)  / 2)
-                let oy = max(0, (geo.size.height - fittedSize.height) / 2)
-                
-                // Endpoint handles (in fitted space + inset)
-                Circle().stroke(.blue, lineWidth: 1)
-                    .background(Circle().fill(.white))
-                    .frame(width: 12, height: 12)
-                    .position(x: sF.x + ox, y: sF.y + oy)
-                
-                Circle().stroke(.blue, lineWidth: 1)
-                    .background(Circle().fill(.white))
-                    .frame(width: 12, height: 12)
-                    .position(x: eF.x + ox, y: eF.y + oy)
+            if let img = lastCapture {
+                ZStack {
+                    let transform = getCoordinateTransform(for: img, in: geo)
+                    
+                    // Transform endpoints from author space to screen space
+                    let sF = CGPoint(x: o.start.x * transform.sx, y: o.start.y * transform.sy)
+                    let eF = CGPoint(x: o.end.x * transform.sx, y: o.end.y * transform.sy)
+                    
+                    // Position handles using the same origin offset
+                    Circle().stroke(.blue, lineWidth: 1)
+                        .background(Circle().fill(.white))
+                        .frame(width: 12, height: 12)
+                        .position(x: sF.x + transform.origin.x, y: sF.y + transform.origin.y)
+                    
+                    Circle().stroke(.blue, lineWidth: 1)
+                        .background(Circle().fill(.white))
+                        .frame(width: 12, height: 12)
+                        .position(x: eF.x + transform.origin.x, y: eF.y + transform.origin.y)
+                }
             }
         }
     }
-    
+
+    // Shape Tool (Rectangle)
     @ViewBuilder private func selectionForRect(_ o: RectObject) -> some View {
         GeometryReader { geo in
-            ZStack {
-                // Map author rect to fitted (onscreen) coordinates
-                let fittedSize = lastFittedSize ?? objectSpaceSize ?? .zero
-                let authorSize = objectSpaceSize ?? fittedSize
-                let sx = fittedSize.width / max(1, authorSize.width)
-                let sy = fittedSize.height / max(1, authorSize.height)
-                let rf = CGRect(x: o.rect.origin.x * sx,
-                                y: o.rect.origin.y * sy,
-                                width: o.rect.size.width * sx,
-                                height: o.rect.size.height * sy)
-                // Inset (image centered within canvas)
-                let ox = max(0, (geo.size.width  - fittedSize.width)  / 2)
-                let oy = max(0, (geo.size.height - fittedSize.height) / 2)
-                
-                // Corner handles in fitted space + inset
-                let pts = [
-                    CGPoint(x: rf.minX + ox, y: rf.minY + oy),
-                    CGPoint(x: rf.maxX + ox, y: rf.minY + oy),
-                    CGPoint(x: rf.minX + ox, y: rf.maxY + oy),
-                    CGPoint(x: rf.maxX + ox, y: rf.maxY + oy)
-                ]
-                ForEach(Array(pts.enumerated()), id: \.offset) { pair in
-                    let pt = pair.element
-                    Circle()
-                        .stroke(.blue, lineWidth: 1)
-                        .background(Circle().fill(.white))
-                        .frame(width: 12, height: 12)
-                        .position(pt)
+            if let img = lastCapture {
+                ZStack {
+                    let transform = getCoordinateTransform(for: img, in: geo)
+                    
+                    // Transform rect from author space to screen space
+                    let rf = CGRect(x: o.rect.origin.x * transform.sx,
+                                    y: o.rect.origin.y * transform.sy,
+                                    width: o.rect.size.width * transform.sx,
+                                    height: o.rect.size.height * transform.sy)
+                    
+                    // Corner handles positioned using origin offset
+                    let pts = [
+                        CGPoint(x: rf.minX + transform.origin.x, y: rf.minY + transform.origin.y),
+                        CGPoint(x: rf.maxX + transform.origin.x, y: rf.minY + transform.origin.y),
+                        CGPoint(x: rf.minX + transform.origin.x, y: rf.maxY + transform.origin.y),
+                        CGPoint(x: rf.maxX + transform.origin.x, y: rf.maxY + transform.origin.y)
+                    ]
+                    ForEach(Array(pts.enumerated()), id: \.offset) { pair in
+                        let pt = pair.element
+                        Circle()
+                            .stroke(.blue, lineWidth: 1)
+                            .background(Circle().fill(.white))
+                            .frame(width: 12, height: 12)
+                            .position(pt)
+                    }
                 }
             }
         }
     }
     
+    // Highlight Tool
     @ViewBuilder private func selectionForHighlight(_ o: HighlightObject) -> some View {
         GeometryReader { geo in
-            ZStack {
-                let fittedSize = lastFittedSize ?? objectSpaceSize ?? .zero
-                let authorSize = objectSpaceSize ?? fittedSize
-                let sx = fittedSize.width / max(1, authorSize.width)
-                let sy = fittedSize.height / max(1, authorSize.height)
-                let rf = CGRect(x: o.rect.origin.x * sx,
-                                y: o.rect.origin.y * sy,
-                                width: o.rect.size.width * sx,
-                                height: o.rect.size.height * sy)
-                let ox = max(0, (geo.size.width  - fittedSize.width)  / 2)
-                let oy = max(0, (geo.size.height - fittedSize.height) / 2)
-                let pts = [
-                    CGPoint(x: rf.minX + ox, y: rf.minY + oy),
-                    CGPoint(x: rf.maxX + ox, y: rf.minY + oy),
-                    CGPoint(x: rf.minX + ox, y: rf.maxY + oy),
-                    CGPoint(x: rf.maxX + ox, y: rf.maxY + oy)
-                ]
-                ForEach(Array(pts.enumerated()), id: \.offset) { pair in
-                    let pt = pair.element
-                    Circle()
-                        .stroke(.blue, lineWidth: 1)
-                        .background(Circle().fill(.white))
-                        .frame(width: 12, height: 12)
-                        .position(pt)
+            if let img = lastCapture {
+                ZStack {
+                    let transform = getCoordinateTransform(for: img, in: geo)
+                    
+                    let rf = CGRect(x: o.rect.origin.x * transform.sx,
+                                    y: o.rect.origin.y * transform.sy,
+                                    width: o.rect.size.width * transform.sx,
+                                    height: o.rect.size.height * transform.sy)
+                    
+                    let pts = [
+                        CGPoint(x: rf.minX + transform.origin.x, y: rf.minY + transform.origin.y),
+                        CGPoint(x: rf.maxX + transform.origin.x, y: rf.minY + transform.origin.y),
+                        CGPoint(x: rf.minX + transform.origin.x, y: rf.maxY + transform.origin.y),
+                        CGPoint(x: rf.maxX + transform.origin.x, y: rf.maxY + transform.origin.y)
+                    ]
+                    ForEach(Array(pts.enumerated()), id: \.offset) { pair in
+                        let pt = pair.element
+                        Circle()
+                            .stroke(.blue, lineWidth: 1)
+                            .background(Circle().fill(.white))
+                            .frame(width: 12, height: 12)
+                            .position(pt)
+                    }
                 }
             }
         }
     }
-    
+
+    // Increment Badge Tool
     @ViewBuilder private func selectionForBadge(_ o: BadgeObject) -> some View {
         GeometryReader { geo in
-            ZStack {
-                // Map author rect to fitted (onscreen) coordinates
-                let fittedSize = lastFittedSize ?? objectSpaceSize ?? .zero
-                let authorSize = objectSpaceSize ?? fittedSize
-                let sx = fittedSize.width / max(1, authorSize.width)
-                let sy = fittedSize.height / max(1, authorSize.height)
-                let rf = CGRect(x: o.rect.origin.x * sx,
-                                y: o.rect.origin.y * sy,
-                                width: o.rect.size.width * sx,
-                                height: o.rect.size.height * sy)
-                
-                // Inset (image centered within canvas)
-                let ox = max(0, (geo.size.width  - fittedSize.width)  / 2)
-                let oy = max(0, (geo.size.height - fittedSize.height) / 2)
-                
-                // Corner handles in fitted space + inset (same look as rect/text)
-                let pts = [
-                    CGPoint(x: rf.minX + ox, y: rf.minY + oy),
-                    CGPoint(x: rf.maxX + ox, y: rf.minY + oy),
-                    CGPoint(x: rf.minX + ox, y: rf.maxY + oy),
-                    CGPoint(x: rf.maxX + ox, y: rf.maxY + oy)
-                ]
-                ForEach(Array(pts.enumerated()), id: \.offset) { pair in
-                    let pt = pair.element
-                    Circle()
-                        .stroke(.blue, lineWidth: 1)
-                        .background(Circle().fill(.white))
-                        .frame(width: 12, height: 12)
-                        .position(pt)
+            if let img = lastCapture {
+                ZStack {
+                    let transform = getCoordinateTransform(for: img, in: geo)
+                    
+                    let rf = CGRect(x: o.rect.origin.x * transform.sx,
+                                    y: o.rect.origin.y * transform.sy,
+                                    width: o.rect.size.width * transform.sx,
+                                    height: o.rect.size.height * transform.sy)
+                    
+                    let pts = [
+                        CGPoint(x: rf.minX + transform.origin.x, y: rf.minY + transform.origin.y),
+                        CGPoint(x: rf.maxX + transform.origin.x, y: rf.minY + transform.origin.y),
+                        CGPoint(x: rf.minX + transform.origin.x, y: rf.maxY + transform.origin.y),
+                        CGPoint(x: rf.maxX + transform.origin.x, y: rf.maxY + transform.origin.y)
+                    ]
+                    ForEach(Array(pts.enumerated()), id: \.offset) { pair in
+                        let pt = pair.element
+                        Circle()
+                            .stroke(.blue, lineWidth: 1)
+                            .background(Circle().fill(.white))
+                            .frame(width: 12, height: 12)
+                            .position(pt)
+                    }
                 }
             }
         }
     }
-    
+
+    // Pasted Image Tool
     @ViewBuilder private func selectionForImage(_ o: PastedImageObject) -> some View {
         GeometryReader { geo in
-            ZStack {
-                let fittedSize = lastFittedSize ?? objectSpaceSize ?? .zero
-                let authorSize = objectSpaceSize ?? fittedSize
-                let sx = fittedSize.width / max(1, authorSize.width)
-                let sy = fittedSize.height / max(1, authorSize.height)
-                let rf = CGRect(x: o.rect.origin.x * sx,
-                                y: o.rect.origin.y * sy,
-                                width: o.rect.size.width * sx,
-                                height: o.rect.size.height * sy)
-                
-                let ox = max(0, (geo.size.width  - fittedSize.width)  / 2)
-                let oy = max(0, (geo.size.height - fittedSize.height) / 2)
-                
-                let pts = [
-                    CGPoint(x: rf.minX + ox, y: rf.minY + oy),
-                    CGPoint(x: rf.maxX + ox, y: rf.minY + oy),
-                    CGPoint(x: rf.minX + ox, y: rf.maxY + oy),
-                    CGPoint(x: rf.maxX + ox, y: rf.maxY + oy)
-                ]
-                ForEach(Array(pts.enumerated()), id: \.offset) { pair in
-                    let pt = pair.element
-                    Circle()
-                        .stroke(.blue, lineWidth: 1)
-                        .background(Circle().fill(.white))
-                        .frame(width: 12, height: 12)
-                        .position(pt)
+            if let img = lastCapture {
+                ZStack {
+                    let transform = getCoordinateTransform(for: img, in: geo)
+                    
+                    let rf = CGRect(x: o.rect.origin.x * transform.sx,
+                                    y: o.rect.origin.y * transform.sy,
+                                    width: o.rect.size.width * transform.sx,
+                                    height: o.rect.size.height * transform.sy)
+                    
+                    let pts = [
+                        CGPoint(x: rf.minX + transform.origin.x, y: rf.minY + transform.origin.y),
+                        CGPoint(x: rf.maxX + transform.origin.x, y: rf.minY + transform.origin.y),
+                        CGPoint(x: rf.minX + transform.origin.x, y: rf.maxY + transform.origin.y),
+                        CGPoint(x: rf.maxX + transform.origin.x, y: rf.maxY + transform.origin.y)
+                    ]
+                    ForEach(Array(pts.enumerated()), id: \.offset) { pair in
+                        let pt = pair.element
+                        Circle()
+                            .stroke(.blue, lineWidth: 1)
+                            .background(Circle().fill(.white))
+                            .frame(width: 12, height: 12)
+                            .position(pt)
+                    }
                 }
             }
         }
     }
+       
+    
     
     private func flattenAndSaveInPlace() {
         guard let img = lastCapture else { return }

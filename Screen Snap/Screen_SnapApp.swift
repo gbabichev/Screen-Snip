@@ -43,6 +43,14 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     func applicationWillTerminate(_ notification: Notification) {
         GlobalHotKeyManager.shared.unregister()
     }
+    
+    func applicationShouldHandleReopen(_ sender: NSApplication, hasVisibleWindows flag: Bool) -> Bool {
+        if !flag {
+            // No visible windows - create one
+            WindowManager.shared.ensureMainWindow()
+        }
+        return true
+    }
 }
 
 // MARK: - Centralized Window Manager
