@@ -62,6 +62,21 @@ final class WindowManager {
     
     private init() {}
     
+    /// Closes all app windows - used before screen capture
+    func closeAllAppWindows() {
+        // Close all visible windows belonging to our app
+        for window in NSApp.windows {
+            // Skip panels and sheets, focus on main windows
+            if window.isVisible &&
+               !window.isMiniaturized &&
+               window.canBecomeKey &&
+               !window.isSheet {
+                
+                window.close()
+            }
+        }
+    }
+    
     /// Ensures exactly one main window exists, creating if necessary
     func ensureMainWindow() {
         // If we already have a valid window, just bring it forward
@@ -83,8 +98,23 @@ final class WindowManager {
         createMainWindow()
     }
     
+    /// Creates a window without activating the app
+    private func ensureMainWindowWithoutActivating() {
+        // If we already have a valid window, don't touch it at all
+        if let controller = mainWindowController,
+           let window = controller.window,
+           !window.isSheet {
+            
+            // Don't even deminiaturize - just leave it as is
+            return
+        }
+        
+        // Create new window but don't activate
+        createMainWindow(shouldActivate: false)
+    }
+    
     /// Creates a new main window, replacing any existing one
-    private func createMainWindow() {
+    private func createMainWindow(shouldActivate: Bool = true) {
         // Clean up existing window
         if let controller = mainWindowController {
             controller.window?.close()
@@ -103,7 +133,6 @@ final class WindowManager {
         window.tabbingMode = .disallowed
         window.isReleasedWhenClosed = false
         window.contentMinSize = NSSize(width: 900, height: 600)
-        //window.title = "Screen Snap"
         
         // Create ContentView
         let contentView = ContentView()
@@ -125,21 +154,37 @@ final class WindowManager {
         // Store reference
         mainWindowController = controller
         
-        // Show window
-        window.center()
-        controller.showWindow(nil)
-        NSApp.activate(ignoringOtherApps: true)
+        // Show window differently based on activation requirement
+        if shouldActivate {
+            window.center()
+            controller.showWindow(nil)
+            NSApp.activate(ignoringOtherApps: true)
+        } else {
+            window.center()
+            // Just make window visible without making it key or activating the app
+            window.orderFront(nil)
+        }
     }
-    
     /// Loads an image into the existing window, creating window if needed
-    func loadImageIntoWindow(url: URL) {
-        ensureMainWindow()
+    func loadImageIntoWindow(url: URL, shouldActivate: Bool = true) {
+        if shouldActivate {
+            ensureMainWindow()
+        } else {
+            ensureMainWindowWithoutActivating()
+        }
         
-        // Post notification to load the image
+        // Create a dictionary with both URL and activation flag
+        let userInfo: [String: Any] = [
+            "url": url,
+            "shouldActivate": shouldActivate
+        ]
+        
+        // Post notification with the dictionary
         DispatchQueue.main.asyncAfter(deadline: .now() + 0.1) {
             NotificationCenter.default.post(
                 name: Notification.Name("com.georgebabichev.screensnap.beginSnapFromIntent"),
-                object: url
+                object: nil,
+                userInfo: userInfo
             )
         }
     }
@@ -153,7 +198,7 @@ final class WindowManager {
     }
 }
 
-// MARK: - Global HotKey Manager (Updated)
+// MARK: - Global HotKey Manager (Updated with Window Closing)
 final class GlobalHotKeyManager {
     static let shared = GlobalHotKeyManager()
     
@@ -216,25 +261,16 @@ final class GlobalHotKeyManager {
     }
     
     private func handleSnapHotkey() {
-        // Always use the same logic: if window exists, use it; otherwise capture first then show window
-        if WindowManager.shared.hasVisibleWindow() {
-            // Window exists - bring to front and start selection
-            WindowManager.shared.ensureMainWindow()
-            SelectionCoordinator.shared.beginSelection { _ in }
-        } else {
-            // No window - capture first, then create window with result
-            startCaptureWithoutWindow()
-        }
-    }
-    
-    private func startCaptureWithoutWindow() {
+        // Close all app windows before starting selection
+        WindowManager.shared.closeAllAppWindows()
+        
         SelectionWindowManager.shared.present(onComplete: { rect in
             Task {
                 if let img = await self.captureScreenshot(rect: rect) {
                     if let savedURL = await self.saveImageToDisk(img) {
                         DispatchQueue.main.async {
-                            // Use centralized window manager
-                            WindowManager.shared.loadImageIntoWindow(url: savedURL)
+                            // Create a new window with the captured image
+                            WindowManager.shared.loadImageIntoWindow(url: savedURL, shouldActivate: true)
                         }
                     }
                 }
@@ -351,25 +387,7 @@ private extension String {
     }
 }
 
-// MARK: - SelectionCoordinator (Simplified)
-final class SelectionCoordinator {
-    static let shared = SelectionCoordinator()
-    private var handler: (((URL?) -> Void) -> Void)?
-    private init() {}
 
-    func register(handler: @escaping (((URL?) -> Void) -> Void)) {
-        self.handler = handler
-    }
-
-    func beginSelection(completion: @escaping (URL?) -> Void) {
-        if let handler = handler {
-            handler(completion)
-        } else {
-            NotificationCenter.default.post(name: .init("StartSelectionFromHotkey"),
-                                            object: completion)
-        }
-    }
-}
 
 private extension CGRect {
     var area: CGFloat { max(0, width) * max(0, height) }

@@ -691,42 +691,24 @@ struct ContentView: View {
                 }
                 return event
             }
-            SelectionCoordinator.shared.register { completion in
-                startSelection()
-                completion(nil)
-            }
         }
         .onDisappear {
             if let keyMonitor { NSEvent.removeMonitor(keyMonitor); self.keyMonitor = nil }
         }
-        .onReceive(NotificationCenter.default.publisher(for: Notification.Name("LoadSpecificSnap"))) { note in
-            print("🔥 [DEBUG] ContentView received LoadSpecificSnap notification")
-            guard let url = note.object as? URL else {
-                print("🔥 [DEBUG] ERROR: LoadSpecificSnap notification has no URL")
-                return
-            }
-            print("🔥 [DEBUG] LoadSpecificSnap URL: \(url)")
-            if let img = NSImage(contentsOf: url) {
-                print("🔥 [DEBUG] LoadSpecificSnap: Successfully loaded image")
-                lastCapture = img
-                selectedSnapURL = url
-                undoStack.removeAll()
-                redoStack.removeAll()
-                objects.removeAll()
-                objectSpaceSize = nil
-                selectedObjectID = nil
-                activeHandle = .none
-            } else {
-                print("🔥 [DEBUG] ERROR: LoadSpecificSnap failed to load image")
-            }
-        }
         .onReceive(NotificationCenter.default.publisher(for: Notification.Name("com.georgebabichev.screensnap.beginSnapFromIntent"))) { note in
             print("🔥 [DEBUG] ContentView received beginSnapFromIntent notification")
-            guard let url = note.object as? URL else {
+            
+            // Extract URL and activation flag from userInfo
+            guard let userInfo = note.userInfo,
+                  let url = userInfo["url"] as? URL else {
                 print("🔥 [DEBUG] ERROR: beginSnapFromIntent notification has no URL")
                 return
             }
-            print("🔥 [DEBUG] beginSnapFromIntent URL: \(url)")
+            
+            let shouldActivate = userInfo["shouldActivate"] as? Bool ?? true
+            
+            print("🔥 [DEBUG] beginSnapFromIntent URL: \(url), shouldActivate: \(shouldActivate)")
+            
             if let img = NSImage(contentsOf: url) {
                 print("🔥 [DEBUG] beginSnapFromIntent: Successfully loaded image")
                 lastCapture = img
@@ -741,16 +723,13 @@ struct ContentView: View {
                 // Also update the snaps list
                 insertSnapURL(url)
                 loadExistingSnaps()
+                
+                // Only activate if requested
+                if shouldActivate {
+                    NSApp.activate(ignoringOtherApps: true)
+                }
             } else {
                 print("🔥 [DEBUG] ERROR: beginSnapFromIntent failed to load image")
-            }
-        }
-        .onReceive(NotificationCenter.default.publisher(for: Notification.Name("StartSelectionFromHotkey"))) { note in
-            print("[DEBUG] ContentView: StartSelectionFromHotkey received")
-            startSelection()
-            if let completion = note.object as? ((URL?) -> Void) {
-                // startSelection manages UI and saving; we don't provide a URL back
-                completion(nil)
             }
         }
         .toolbar {
@@ -825,7 +804,7 @@ struct ContentView: View {
             }
             
             // Items visible only when we have a capture
-            if let img = lastCapture {
+            if lastCapture != nil {
                 
                 if imageDisplayMode != "fit"{
                     ToolbarItemGroup(placement: .navigation){
@@ -1397,6 +1376,8 @@ struct ContentView: View {
     }
     
     private func startSelection() {
+        WindowManager.shared.closeAllAppWindows()
+        
         SelectionWindowManager.shared.present(onComplete: { rect in
             Task {
                 if let img = await captureAsync(rect: rect) {
@@ -1410,10 +1391,13 @@ struct ContentView: View {
                     if let savedURL = saveSnapToDisk(img) {
                         insertSnapURL(savedURL)
                         selectedSnapURL = savedURL
+                        
+                        // Create a new window with the captured image
+                        WindowManager.shared.loadImageIntoWindow(url: savedURL, shouldActivate: true)
+                    } else {
+                        // Even if save failed, we still have the image - create window anyway
+                        WindowManager.shared.ensureMainWindow()
                     }
-                    
-                    // No manual window creation - the centralized WindowManager handles this
-                    NSApp.activate(ignoringOtherApps: true)
                 }
             }
         })
@@ -2605,23 +2589,13 @@ struct ContentView: View {
         }
         return nil
     }
-    
-    @State private var openEditorAfterCapture: Bool = false
-    
+        
     private func saveSnapToDisk(_ image: NSImage) -> URL? {
         guard let dir = snapsDirectory() else { return nil }
         let url = dir.appendingPathComponent(defaultSnapFilename())
         if writeImage(image, to: url, format: preferredSaveFormat, jpegQuality: CGFloat(saveQuality)) {
             // Insert at head of recent list
             insertSnapURL(url)
-            // If the hotkey initiated this capture (window may be closed), open the editor with the new snap
-            if openEditorAfterCapture {
-                let img = image
-                selectedSnapURL = url
-                lastCapture = img
-                //presentEditor(url: url, image: img)
-                openEditorAfterCapture = false
-            }
             return url
         } else {
             return nil
@@ -3103,7 +3077,10 @@ private struct SelectionOverlay: View {
             }
             .contentShape(Rectangle())
             .gesture(dragGesture(in: geo))
-            .onTapGesture(count: 2) { onCancel() }
+            .onTapGesture(count: 2) {
+                // Handle double-tap cancellation
+                onCancel()
+            }
         }
     }
     
@@ -3151,6 +3128,7 @@ private struct SelectionOverlay: View {
                       height: abs(start.y - end.y))
     }
 }
+
 
 
 
@@ -3720,7 +3698,9 @@ final class SelectionWindowManager {
                     onComplete(rect)
                     self.dismiss()
                 },
-                onCancel: { self.dismiss() }
+                onCancel: {
+                    self.dismiss()
+                }
             )
                 .ignoresSafeArea()
             

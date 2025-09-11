@@ -16,14 +16,13 @@ Inspired by Greenshot on Windows - the goal is to make a tiny app that can do th
 </div>
 
 ## Work in Progress
-- <del>Add pinch to zoom on trackpad.
-- Add double tap to zoom on mouse & trackpad.
-
-- Update Snap Gallery so I can see dates. 
 - User friendly menus. 
 - Hotkeys for tools.
 - Working Menu Bar commands with icons. 
 
+- Add double tap to zoom on mouse & trackpad.
+- Update Snap Gallery so I can see dates. 
+- User adjustable highlighter opacity 
 
 
 
@@ -52,6 +51,7 @@ Inspired by Greenshot on Windows - the goal is to make a tiny app that can do th
 - <del>User adjustable setting for Snap "fills" or "fits". 
 - <del>Adjust liquid glass in app icon.
 - <del>Add cmd+scroll with mouse.
+- <del>Add pinch to zoom on trackpad.
 
 
 ### Stretch Goals 
