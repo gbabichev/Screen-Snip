@@ -13,7 +13,8 @@ enum ToolKind: String {
     case pen
     case arrow
     case highlighter
-    case shape
+    case rect
+    case oval
     case increment
     case text
     case crop
@@ -82,12 +83,26 @@ struct Screen_SnapApp: App {
                     NotificationCenter.default.post(
                         name: .selectTool,
                         object: nil,
-                        userInfo: ["tool": ToolKind.shape.rawValue]
+                        userInfo: ["tool": ToolKind.rect.rawValue]
                     )
                 } label: {
                     Label("Rectangle", systemImage: "square.dashed")
                 }
                 .keyboardShortcut("5", modifiers: .command)
+                
+                Button {
+                    NotificationCenter.default.post(
+                        name: .selectTool,
+                        object: nil,
+                        userInfo: ["tool": ToolKind.oval.rawValue]
+                    )
+                } label: {
+                    Label("Oval", systemImage: "circle.dashed")
+                }
+                .keyboardShortcut("6", modifiers: .command)
+                
+                
+                
                 Button {
                     NotificationCenter.default.post(
                         name: .selectTool,
@@ -97,7 +112,7 @@ struct Screen_SnapApp: App {
                 } label: {
                     Label("Badge", systemImage: "1.circle")
                 }
-                .keyboardShortcut("6", modifiers: .command)
+                //.keyboardShortcut("", modifiers: .command)
                 Button {
                     NotificationCenter.default.post(
                         name: .selectTool,

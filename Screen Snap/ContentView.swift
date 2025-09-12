@@ -833,9 +833,7 @@ struct ContentView: View {
                 
                 // MARK: - TOOLS: Pointer, Pen, Arrow, Highlighter.
                 
-                ToolbarItemGroup(placement: .principal) {
-                    
-                    // Pointer
+                ToolbarItem(id: "pointer", placement: .navigation) {
                     Button(action: { selectedTool = .pointer
                         selectedObjectID = nil; activeHandle = .none; cropDraftRect = nil; cropRect = nil; cropHandle = .none
                         focusedTextID = nil
@@ -844,10 +842,14 @@ struct ContentView: View {
                         Label("Pointer", systemImage: "cursorarrow")
                             .foregroundStyle(selectedTool == .pointer ? Color.white : Color.primary)
                         
-                    }
+                    } 
                     .glassEffect(selectedTool == .pointer ? .regular.tint(.blue) : .regular)
-                    
+                }
+                
+                
+                ToolbarItem(id: "pens", placement: .principal) {
                     // Pen, Arrow, Highlighter.
+                    
                     Menu {
                         // Always show all three tools first
                         Button(action: {
@@ -885,23 +887,7 @@ struct ContentView: View {
                             }
                         }
                         
-                        // Show options based on selected tool
-                        if selectedTool == .line {
-                            colorButtons(current: lineColorBinding)
-                            Menu("Line Width") {
-                                ForEach([1,2,3,4,6,8,12,16], id: \.self) { w in
-                                    Button(action: { strokeWidth = CGFloat(w) }) {
-                                        HStack {
-                                            if Int(strokeWidth) == w {
-                                                Image(systemName: "checkmark")
-                                            }
-                                            Text("\(w) pt")
-                                        }
-                                    }
-                                }
-                            }
-                        } else if selectedTool == .highlighter {
-                            
+                        if selectedTool == .highlighter {
                             Section("Highlighter Color") {
                                 PenColorButton(current: highlighterColorBinding, color: NSColor.systemYellow.withAlphaComponent(0.35), name: "Yellow")
                                 PenColorButton(current: highlighterColorBinding, color: NSColor.systemGreen.withAlphaComponent(0.35), name: "Green")
@@ -909,54 +895,81 @@ struct ContentView: View {
                                 PenColorButton(current:highlighterColorBinding, color: NSColor.systemPink.withAlphaComponent(0.35), name: "Pink")
                             }
                         }
+                        else {
+                            colorButtons(current: lineColorBinding)
+                        }
+                        
                     } label: {
-                        Label(
-                            selectedTool == .line ? (lineHasArrow ? "Arrow" : "Pen") : selectedTool == .highlighter ? "Highlighter" : "Drawing Tools",
-                            systemImage: selectedTool == .line ? (lineHasArrow ? "arrow.right" : "pencil.line") :
-                                selectedTool == .highlighter ? "highlighter" : "pencil.line"
-                        )
-                        .foregroundStyle(selectedTool == .line || selectedTool == .highlighter ? Color.white : Color.primary)
+                        if selectedTool == .highlighter {
+                            Label("Shapes", systemImage: "pencil")
+                                .frame(width: 200)
+                                .fixedSize()
+                        }
+                        else if selectedTool == .line && lineHasArrow == true {
+                            Label("Shapes", systemImage: "pencil")
+                                .frame(width: 200)
+                                .fixedSize()
+                        }
+                        else {
+                            Label("Shapes", systemImage: "pencil.line")
+                                .frame(width: 200)
+                                .fixedSize()
+                        }
+                    } primaryAction: {
+                        if selectedTool == .line && lineHasArrow == true {
+                            selectedTool = .line
+                            lineHasArrow = true
+                            selectedObjectID = nil; activeHandle = .none; cropDraftRect = nil; cropRect = nil; cropHandle = .none
+                            focusedTextID = nil
+                        }
+                        else if selectedTool == .highlighter {
+                            selectedTool = .highlighter
+                            selectedObjectID = nil; activeHandle = .none; cropDraftRect = nil; cropRect = nil; cropHandle = .none
+                            focusedTextID = nil
+                        }
+                        else {
+                            selectedTool = .line
+                            lineHasArrow = false
+                            selectedObjectID = nil; activeHandle = .none; cropDraftRect = nil; cropRect = nil; cropHandle = .none
+                            focusedTextID = nil
+                        }
                     }
+                    .id("\(selectedTool)-\(lineHasArrow)-\(lineColor)")
                     .glassEffect(selectedTool == .line || selectedTool == .highlighter ? .regular.tint(Color(nsColor: lineColor).opacity(0.7)) : .regular)
-                    .help(selectedTool == .line ? "Pen tool selected" : selectedTool == .highlighter ? "Highlighter tool selected" : "Select drawing tool")
+
                 }
                 
                 
                 // MARK: - TOOLS - SHAPE & Increment
                 
                 ToolbarItemGroup(placement: .principal) {
-                    
-                    // Circle / Oval
+                    // Shape rectable and oval
                     Menu {
-                        colorButtons(current: ovalColorBinding)
-
-                        Divider()
-
-                        Menu("Line Width") {
-                            ForEach([1,2,3,4,6,8,12,16], id: \.self) { w in
-                                Button(action: { strokeWidth = CGFloat(w) }) {
-                                    if Int(strokeWidth) == w { Image(systemName: "checkmark") }
-                                    Text("\(w) pt")
-                                }
-                            }
+                        Button {
+                            selectedTool = .rect
+                            selectedObjectID = nil; activeHandle = .none; cropDraftRect = nil; cropRect = nil; cropHandle = .none
+                            focusedTextID = nil
+                        } label: {
+                            Label("Rectangle", systemImage: "square.dashed")
                         }
-                    } label: {
-                        Label("Circle", systemImage: "circle.dashed")
-                    } primaryAction: {
-                        selectedTool = .oval
-                        selectedObjectID = nil; activeHandle = .none; cropDraftRect = nil; cropRect = nil; cropHandle = .none
-                        focusedTextID = nil
-                    }
-                    .glassEffect(selectedTool == .oval ? .regular.tint(Color(nsColor: ovalColor).opacity(0.7)) : .regular)
-                    .help("Click to draw a circle/oval")
-                    
-                    
-                    
-                    
-                    
-                    // Shape rect
-                    Menu {
-                        colorButtons(current: rectColorBinding)
+                        
+                        Button {
+                            selectedTool = .oval
+                            selectedObjectID = nil; activeHandle = .none; cropDraftRect = nil; cropRect = nil; cropHandle = .none
+                            focusedTextID = nil
+                        } label: {
+                            Label("Oval", systemImage: "circle.dashed")
+                        }
+
+                        
+                        Divider()
+                        
+                        if selectedTool == .oval {
+                            colorButtons(current: ovalColorBinding)
+                        }
+                        else {
+                            colorButtons(current: rectColorBinding)
+                        }
                         
                         Divider()
                         
@@ -968,15 +981,28 @@ struct ContentView: View {
                                 }
                             }
                         }
+  
                     } label: {
-                        Label("Shapes", systemImage: "square.dashed")
+                        if selectedTool == .oval {
+                            Label("Shapes", systemImage: "circle.dashed")
+                        }
+                        else {
+                            Label("Shapes", systemImage: "square.dashed")
+                        }
+                        
                     } primaryAction: {
                         selectedTool = .rect
                         selectedObjectID = nil; activeHandle = .none; cropDraftRect = nil; cropRect = nil; cropHandle = .none
                         focusedTextID = nil
                     }
-                    .id(rectColor)
-                    .glassEffect(selectedTool == .rect ? .regular.tint(Color(nsColor:rectColor).opacity(0.7)) : .regular)
+                    .id("\(selectedTool)-\(rectColor.description)-\(ovalColor.description)")
+                    .glassEffect(
+                        selectedTool == .oval
+                            ? .regular.tint(Color(nsColor: ovalColor).opacity(0.7))
+                            : selectedTool == .rect
+                                ? .regular.tint(Color(nsColor: rectColor).opacity(0.7))
+                                : .regular
+                    )
                     .help("Click to draw a shape")
                     
                     // Increment (badge)
@@ -1202,8 +1228,9 @@ struct ContentView: View {
             cropHandle = .none
             focusedTextID = nil
         case "highlighter": selectedTool = .highlighter
-        case "shape":       selectedTool = .rect
-        case "increment":   selectedTool = .badge        // adjust if your enum name differs
+        case "rect":       selectedTool = .rect
+        case "oval":        selectedTool = .oval
+        case "increment":   selectedTool = .badge
         case "text":        selectedTool = .text
         case "crop":        selectedTool = .crop
         default: break
