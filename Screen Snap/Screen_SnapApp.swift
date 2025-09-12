@@ -394,7 +394,7 @@ final class GlobalHotKeyManager {
     }
     
     // Keep existing capture methods unchanged
-    private func captureScreenshot(rect selectedGlobalRect: CGRect) async -> NSImage? {
+    func captureScreenshot(rect selectedGlobalRect: CGRect) async -> NSImage? {
         guard let bestScreen = bestScreenForSelection(selectedGlobalRect) else { return nil }
         let screenFramePts = bestScreen.frame
         let intersectPts = selectedGlobalRect.intersection(screenFramePts)

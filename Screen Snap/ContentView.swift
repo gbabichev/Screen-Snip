@@ -83,7 +83,6 @@ struct ContentView: View {
     @FocusState private var isTextEditorFocused: Bool
     
     @State private var focusedTextID: UUID? = nil
-    @State private var lastCapture: NSImage? = nil
     @State private var showCopiedHUD = false
     @State private var selectedTool: Tool = .pointer
     // Removed lines buffer; we now auto-commit each line on mouse-up.
@@ -141,9 +140,10 @@ struct ContentView: View {
     
     // Undo/Redo stacks of full images and overlays (save-in-place, memory-bounded by user behavior)
     private struct Snapshot {
-        let image: NSImage?
+        let imageURL: URL?
         let objects: [Drawable]
     }
+    
     @State private var undoStack: [Snapshot] = []
     @State private var redoStack: [Snapshot] = []
     @State private var pushedDragUndo = false
@@ -211,7 +211,7 @@ struct ContentView: View {
                 
                 
                 Group {
-                    if let img = lastCapture {
+                    if let img = currentImage {
                         GeometryReader { geo in
                             let baseFitted = imageDisplayMode == "fit" ?
                                 fittedImageSize(original: img.size, in: geo.size) :
@@ -504,7 +504,7 @@ struct ContentView: View {
                         .help("Open Snaps in Finder")
                         
                         Button(action: {
-                            openSnapsInGallery()
+                            //openSnapsInGallery()
                         }) {
                             Image(systemName: "square.grid.2x2")
                                 .imageScale(.small)
@@ -518,61 +518,49 @@ struct ContentView: View {
                     
                     
                     
-                    ScrollView(.horizontal, showsIndicators: true) {
-                        HStack(spacing: 8) {
-                            ForEach(snapURLs, id: \.self) { url in
-                                VStack(spacing: 4) {
-                                    ThumbnailView(
-                                        url: url,
-                                        selected: selectedSnapURL == url,
-                                        onDelete: { deleteSnap(url) },
-                                        width: 140,
-                                        height: 90
-                                    )
-                                    Text(url.lastPathComponent)
-                                        .lineLimit(1)
-                                        .font(.caption2)
-                                        .foregroundStyle(.secondary)
-                                        .frame(width: 140)
-                                }
-                                .contentShape(Rectangle())
-                                .onTapGesture {
-                                    // Check if file exists before trying to load
-                                    let fm = FileManager.default
-                                    if !fm.fileExists(atPath: url.path) {
-                                        // File is missing - add to missing set and remove from snapURLs
-                                        missingSnapURLs.insert(url)
-                                        if let index = snapURLs.firstIndex(of: url) {
-                                            snapURLs.remove(at: index)
-                                        }
-                                        // If this was the selected snap, clear selection and show error
-                                        if selectedSnapURL == url {
-                                            selectedSnapURL = nil
-                                            lastCapture = nil
-                                        }
-                                        return
-                                    }
-                                    
-                                    // File exists - proceed normally
-                                    if let img = NSImage(contentsOf: url) {
-                                        lastCapture = img
-                                        selectedSnapURL = url
-                                        undoStack.removeAll(); redoStack.removeAll()
-                                        objects.removeAll()
-                                        objectSpaceSize = nil
-                                        selectedObjectID = nil
-                                        activeHandle = .none
-                                    }
-                                }
-                                .contextMenu {
-                                    Button("Reveal in Finder") { NSWorkspace.shared.activateFileViewerSelecting([url]) }
-                                }
-                            }
-                        }
-                        .padding(.horizontal, 8)
-                        .padding(.vertical, 6)
-                    }
-                    .background(.quaternary.opacity(0.05))
+//                    ScrollView(.horizontal, showsIndicators: true) {
+//                        HStack(spacing: 8) {
+//                            ForEach(snapURLs, id: \.self) { url in
+//                                VStack(spacing: 4) {
+//                                    ThumbnailView(
+//                                        url: url,
+//                                        selected: selectedSnapURL == url,
+//                                        onDelete: { deleteSnap(url) },
+//                                        width: 140,
+//                                        height: 90
+//                                    )
+//                                    Text(url.lastPathComponent)
+//                                        .lineLimit(1)
+//                                        .font(.caption2)
+//                                        .foregroundStyle(.secondary)
+//                                        .frame(width: 140)
+//                                }
+//                                .contentShape(Rectangle())
+//                                .onTapGesture {
+//                                    // Check if file exists before trying to load
+//                                    let fm = FileManager.default
+//                                    if !fm.fileExists(atPath: url.path) {
+//                                        // File is missing - add to missing set and remove from snapURLs
+//                                        missingSnapURLs.insert(url)
+//                                        if let index = snapURLs.firstIndex(of: url) {
+//                                            snapURLs.remove(at: index)
+//                                        }
+//                                        // If this was the selected snap, clear selection and show error
+//                                        if selectedSnapURL == url {
+//                                            selectedSnapURL = nil
+//                                        }
+//                                        return
+//                                    }
+//                                }
+//                                .contextMenu {
+//                                    Button("Reveal in Finder") { NSWorkspace.shared.activateFileViewerSelecting([url]) }
+//                                }
+//                            }
+//                        }
+//                        .padding(.horizontal, 8)
+//                        .padding(.vertical, 6)
+//                    }
+//                    .background(.quaternary.opacity(0.05))
                 }
                 .padding(.top, 4)
                 .background(.thinMaterial) // keep it distinct and readable
@@ -620,13 +608,12 @@ struct ContentView: View {
                 if selectedTool == .crop, let rect = cropRect, !event.modifierFlags.contains(.command) {
                     if event.keyCode == 36 || event.keyCode == 76 { // Return or Keypad Enter
                         // Perform destructive crop with current overlay
-                        if let base = lastCapture {
+                        if let base = currentImage {
                             if objectSpaceSize == nil { objectSpaceSize = lastFittedSize ?? base.size }
                             pushUndoSnapshot()
                             let flattened = rasterize(base: base, objects: objects) ?? base
                             let imgRectBL = uiRectToImageRect(rect, fitted: objectSpaceSize ?? base.size, image: flattened.size)
                             if let cropped = cropImage(flattened, toBottomLeftRect: imgRectBL) {
-                                lastCapture = cropped
                                 objects.removeAll()
                                 objectSpaceSize = nil
                                 selectedObjectID = nil
@@ -652,6 +639,8 @@ struct ContentView: View {
         .onDisappear {
             if let keyMonitor { NSEvent.removeMonitor(keyMonitor); self.keyMonitor = nil }
         }
+        // Replace the notification handler in ContentView with this enhanced version:
+
         .onReceive(NotificationCenter.default.publisher(for: Notification.Name("com.georgebabichev.screensnap.beginSnapFromIntent"))) { note in
             print("🔥 [DEBUG] ContentView received beginSnapFromIntent notification")
             
@@ -666,28 +655,35 @@ struct ContentView: View {
             
             print("🔥 [DEBUG] beginSnapFromIntent URL: \(url), shouldActivate: \(shouldActivate)")
             
-            if let img = NSImage(contentsOf: url) {
-                print("🔥 [DEBUG] beginSnapFromIntent: Successfully loaded image")
-                lastCapture = img
-                selectedSnapURL = url
-                undoStack.removeAll()
-                redoStack.removeAll()
-                objects.removeAll()
-                objectSpaceSize = nil
-                selectedObjectID = nil
-                activeHandle = .none
-                
-                // Also update the snaps list
-                insertSnapURL(url)
-                loadExistingSnaps()
-                
-                // Only activate if requested
-                if shouldActivate {
-                    NSApp.activate(ignoringOtherApps: true)
-                }
-            } else {
-                print("🔥 [DEBUG] ERROR: beginSnapFromIntent failed to load image")
-            }
+            // CRITICAL: Clear ALL existing state first to prevent memory accumulation
+            objects.removeAll()
+            objectSpaceSize = nil
+            selectedObjectID = nil
+            activeHandle = .none
+            cropRect = nil
+            cropDraftRect = nil
+            cropHandle = .none
+            focusedTextID = nil
+            
+            // CRITICAL: Clear undo/redo stacks to prevent memory growth
+            undoStack.removeAll()
+            redoStack.removeAll()
+            
+            // CRITICAL: Reset all draft states
+            draft = nil
+            draftRect = nil
+            selectedTool = .pointer
+            
+            // CRITICAL: Clear any missing snap tracking
+            missingSnapURLs.removeAll()
+            
+            // Refresh the gallery to ensure the new snap is in our list
+            loadExistingSnaps()
+            
+            // Set the selected snap (this should now work since we refreshed)
+            selectedSnapURL = url
+            
+            print("🔥 [DEBUG] State completely cleared and snap loaded: \(url.lastPathComponent)")
         }
         .onReceive(NotificationCenter.default.publisher(for: .selectTool)) { note in
             guard let raw = note.userInfo?["tool"] as? String else { return }
@@ -766,7 +762,7 @@ struct ContentView: View {
             }
             
             // Items visible only when we have a capture
-            if lastCapture != nil {
+            if currentImage != nil {
                 
                 if imageDisplayMode != "fit"{
                     ToolbarItemGroup(placement: .navigation){
@@ -798,13 +794,13 @@ struct ContentView: View {
                         Button(action: performUndo) {
                             Label("Undo", systemImage: "arrow.uturn.backward")
                         }
-                        .disabled(undoStack.isEmpty || lastCapture == nil)
+                        .disabled(undoStack.isEmpty || currentImage == nil)
                         
                         // Redo
                         Button(action: performRedo) {
                             Label("Redo", systemImage: "arrow.uturn.forward")
                         }
-                        .disabled(redoStack.isEmpty || lastCapture == nil)
+                        .disabled(redoStack.isEmpty || currentImage == nil)
                         
                         // Flatten and Save (in place)
                         Button(action: flattenAndSaveInPlace) {
@@ -1121,7 +1117,6 @@ struct ContentView: View {
                     if let url = urls.first, let img = NSImage(contentsOf: url) {
                         undoStack.removeAll()
                         redoStack.removeAll()
-                        lastCapture = img
                         selectedSnapURL = url
                         objects.removeAll()
                         objectSpaceSize = nil
@@ -1466,24 +1461,14 @@ struct ContentView: View {
         
         SelectionWindowManager.shared.present(onComplete: { rect in
             Task {
-                if let img = await captureAsync(rect: rect) {
-                    undoStack.removeAll(); redoStack.removeAll()
-                    lastCapture = img
-                    objectSpaceSize = nil
-                    objects.removeAll()
-                    selectedObjectID = nil
-                    activeHandle = .none
-                    
-                    if let savedURL = saveSnapToDisk(img) {
-                        insertSnapURL(savedURL)
-                        selectedSnapURL = savedURL
-                        
-                        // Create a new window with the captured image
-                        WindowManager.shared.loadImageIntoWindow(url: savedURL, shouldActivate: true)
-                    } else {
-                        // Even if save failed, we still have the image - create window anyway
-                        WindowManager.shared.ensureMainWindow()
+                // Use the same capture method as the hotkey to avoid duplication
+                if let img = await GlobalHotKeyManager.shared.captureScreenshot(rect: rect) {
+                    if let savedURL = self.saveSnapToDisk(img) {
+                        DispatchQueue.main.async {
+                            WindowManager.shared.loadImageIntoWindow(url: savedURL, shouldActivate: true)
+                        }
                     }
+                    // img goes out of scope and gets deallocated immediately
                 }
             }
         })
@@ -1614,18 +1599,20 @@ struct ContentView: View {
     
     /// Flattens the current canvas into the image, refreshes state, then copies the latest to the clipboard.
     private func flattenRefreshAndCopy() {
-        // 1) Flatten into lastCapture (and save) using existing logic
+        // 1) Flatten into currentImage (and save) using existing logic
         flattenAndSaveInPlace()
         // 2) On the next run loop, copy the refreshed image so we don't grab stale state
         DispatchQueue.main.async {
-            if let current = self.lastCapture {
+            if let current = self.currentImage {
                 self.copyToPasteboard(current)
             }
         }
     }
     
     private func pushUndoSnapshot() {
-        undoStack.append(Snapshot(image: lastCapture, objects: objects))
+        undoStack.append(Snapshot(imageURL: selectedSnapURL, objects: objects))
+        // Limit for 24/7 operation
+        while undoStack.count > 3 { undoStack.removeFirst() }
         redoStack.removeAll()
     }
     
@@ -1685,7 +1672,7 @@ struct ContentView: View {
     
     /// Save As… — prompts for a destination, updates gallery if under snaps folder.
     private func saveAsCurrent() {
-        guard let img = lastCapture else { return }
+        guard let img = currentImage else { return }
         let panel = NSSavePanel()
         panel.allowedContentTypes = [preferredSaveFormat.utType]
         panel.canCreateDirectories = true
@@ -2379,7 +2366,7 @@ struct ContentView: View {
     // Line Tool
     private func selectionForLine(_ o: LineObject) -> some View {
         GeometryReader { geo in
-            if let img = lastCapture {
+            if let img = currentImage {
                 ZStack {
                     let transform = getCoordinateTransform(for: img, in: geo)
                     
@@ -2405,7 +2392,7 @@ struct ContentView: View {
     // Shape Tool (Rectangle)
     private func selectionForRect(_ o: RectObject) -> some View {
         GeometryReader { geo in
-            if let img = lastCapture {
+            if let img = currentImage {
                 ZStack {
                     let transform = getCoordinateTransform(for: img, in: geo)
                     
@@ -2462,7 +2449,7 @@ struct ContentView: View {
     // Highlight Tool
     private func selectionForHighlight(_ o: HighlightObject) -> some View {
         GeometryReader { geo in
-            if let img = lastCapture {
+            if let img = currentImage {
                 ZStack {
                     let transform = getCoordinateTransform(for: img, in: geo)
                     
@@ -2493,7 +2480,7 @@ struct ContentView: View {
     // Increment Badge Tool
     private func selectionForBadge(_ o: BadgeObject) -> some View {
         GeometryReader { geo in
-            if let img = lastCapture {
+            if let img = currentImage {
                 ZStack {
                     let transform = getCoordinateTransform(for: img, in: geo)
                     
@@ -2524,7 +2511,7 @@ struct ContentView: View {
     // Pasted Image Tool
     private func selectionForImage(_ o: PastedImageObject) -> some View {
         GeometryReader { geo in
-            if let img = lastCapture {
+            if let img = currentImage {
                 ZStack {
                     let transform = getCoordinateTransform(for: img, in: geo)
                     
@@ -2555,7 +2542,7 @@ struct ContentView: View {
     // Text Tool
     private func selectionForText(_ o: TextObject) -> some View {
         GeometryReader { geo in
-            if let img = lastCapture {
+            if let img = currentImage {
                 ZStack {
                     let transform = getCoordinateTransform(for: img, in: geo)
                     
@@ -2669,15 +2656,17 @@ struct ContentView: View {
     
     
     private func flattenAndSaveInPlace() {
-        guard let img = lastCapture else { return }
+        guard let img = currentImage else { return }
         if objectSpaceSize == nil { objectSpaceSize = lastFittedSize ?? img.size }
         pushUndoSnapshot()
         if let flattened = rasterize(base: img, objects: objects) {
-            lastCapture = flattened
             objects.removeAll()
             if let url = selectedSnapURL {
+                // Write the flattened image back to the same file
                 if writeImage(flattened, to: url, format: preferredSaveFormat, jpegQuality: CGFloat(saveQuality)) {
                     refreshGalleryAfterSaving(to: url)
+                    // The file is now updated on disk
+                    // currentImage will automatically load the new flattened version next time it's accessed
                 }
             } else {
                 saveAsCurrent()
@@ -2686,11 +2675,10 @@ struct ContentView: View {
     }
     
     private func flattenAndSaveAs() {
-        guard let img = lastCapture else { return }
+        guard let img = currentImage else { return }
         if objectSpaceSize == nil { objectSpaceSize = lastFittedSize ?? img.size }
         pushUndoSnapshot()
         if let flattened = rasterize(base: img, objects: objects) {
-            lastCapture = flattened
             objects.removeAll()
             let panel = NSSavePanel()
             panel.allowedContentTypes = [preferredSaveFormat.utType]
@@ -2699,8 +2687,9 @@ struct ContentView: View {
             panel.nameFieldStringValue = selectedSnapURL?.lastPathComponent ?? defaultSnapFilename()
             if panel.runModal() == .OK, let url = panel.url {
                 if writeImage(flattened, to: url, format: preferredSaveFormat, jpegQuality: CGFloat(saveQuality)) {
-                    selectedSnapURL = url
+                    selectedSnapURL = url  // This switches to the new file
                     refreshGalleryAfterSaving(to: url)
+                    // currentImage will now load from the new file location
                 }
             }
         }
@@ -2822,17 +2811,17 @@ struct ContentView: View {
     
     private func performUndo() {
         guard let prev = undoStack.popLast() else { return }
-        let current = Snapshot(image: lastCapture, objects: objects)
+        let current = Snapshot(imageURL: selectedSnapURL, objects: objects)
         redoStack.append(current)
-        lastCapture = prev.image
+        selectedSnapURL = prev.imageURL  // Just change the URL
         objects = prev.objects
     }
     
     private func performRedo() {
         guard let next = redoStack.popLast() else { return }
-        let current = Snapshot(image: lastCapture, objects: objects)
+        let current = Snapshot(imageURL: selectedSnapURL, objects: objects)
         undoStack.append(current)
-        lastCapture = next.image
+        selectedSnapURL = next.imageURL  // Just change the URL
         objects = next.objects
     }
     
@@ -2904,7 +2893,7 @@ struct ContentView: View {
         if let imgs = pb.readObjects(forClasses: [NSImage.self]) as? [NSImage],
            let img = imgs.first {
             // Choose author space (object coord system)
-            let author = objectSpaceSize ?? lastFittedSize ?? lastCapture?.size ?? CGSize(width: 1200, height: 800)
+            let author = objectSpaceSize ?? lastFittedSize ?? currentImage?.size ?? CGSize(width: 1200, height: 800)
             
             let natural = img.size
             let aspect = (natural.height == 0) ? 1 : (natural.width / natural.height)
@@ -2967,13 +2956,47 @@ struct ContentView: View {
     private func saveSnapToDisk(_ image: NSImage) -> URL? {
         guard let dir = snapsDirectory() else { return nil }
         let url = dir.appendingPathComponent(defaultSnapFilename())
-        if writeImage(image, to: url, format: preferredSaveFormat, jpegQuality: CGFloat(saveQuality)) {
-            // Insert at head of recent list
-            insertSnapURL(url)
-            return url
-        } else {
+        
+        // Convert to data immediately and let image parameter deallocate
+        guard let tiff = image.tiffRepresentation,
+              let rep = NSBitmapImageRep(data: tiff) else {
             return nil
         }
+        
+        // Get the correct NSBitmapImageRep.FileType based on preferredSaveFormat
+        let fileType: NSBitmapImageRep.FileType
+        let properties: [NSBitmapImageRep.PropertyKey: Any]
+        
+        switch preferredSaveFormat {
+        case .png:
+            fileType = .png
+            properties = [:]
+        case .jpeg:
+            fileType = .jpeg
+            properties = [.compressionFactor: saveQuality]
+        case .heic:
+            // HEIC is not supported by NSBitmapImageRep, fall back to PNG
+            fileType = .png
+            properties = [:]
+        }
+        
+        guard let data = rep.representation(using: fileType, properties: properties) else {
+            return nil
+        }
+        
+        // Write immediately
+        do {
+            try data.write(to: url, options: .atomicWrite)
+            insertSnapURL(url)  // Add to gallery
+            return url
+        } catch {
+            return nil
+        }
+    }
+    
+    private var currentImage: NSImage? {
+        guard let url = selectedSnapURL else { return nil }
+        return NSImage(contentsOf: url)  // Load on-demand
     }
     
     /// Loads existing snaps on disk (PNG files), newest first.
@@ -2996,7 +3019,6 @@ struct ContentView: View {
             // If currently selected snap no longer exists, clear selection
             if let sel = selectedSnapURL, !sorted.contains(sel) {
                 selectedSnapURL = nil
-                lastCapture = nil
             }
         } catch {
             snapURLs = []
@@ -3009,58 +3031,57 @@ struct ContentView: View {
         NSWorkspace.shared.open(dir)
     }
     
-    private func openSnapsInGallery() {
-        guard let dir = snapsDirectory() else { return }
-        let fm = FileManager.default
-        var urls: [URL] = []
-        do {
-            let all = try fm.contentsOfDirectory(at: dir,
-                                                 includingPropertiesForKeys: [.contentModificationDateKey, .isRegularFileKey],
-                                                 options: [.skipsHiddenFiles])
-            // Allow common raster image types
-            let allowedExts: Set<String> = ["png", "jpg", "jpeg", "heic"]
-            let filtered = all.filter { allowedExts.contains($0.pathExtension.lowercased()) }
-            let dated: [(URL, Date)] = filtered.compactMap {
-                let vals = try? $0.resourceValues(forKeys: [.contentModificationDateKey])
-                return ($0, vals?.contentModificationDate ?? .distantPast)
-            }
-            urls = dated.sorted { $0.1 > $1.1 }.map { $0.0 }
-        } catch {
-            urls = []
-        }
-        
-        // Fallback: if we failed to enumerate, do nothing
-        guard !urls.isEmpty else { return }
-        
-        GalleryWindow.shared.present(
-            urls: urls,
-            onSelect: { url in
-                if let img = NSImage(contentsOf: url) {
-                    selectedSnapURL = url
-                    lastCapture = img
-                    GalleryWindow.shared.close()
-                }
-            },
-            onReload: {
-                let fm = FileManager.default
-                guard let dir = snapsDirectory() else { return [] }
-                do {
-                    let all = try fm.contentsOfDirectory(at: dir,
-                                                         includingPropertiesForKeys: [.contentModificationDateKey, .isRegularFileKey],
-                                                         options: [.skipsHiddenFiles])
-                    let allowedExts: Set<String> = ["png", "jpg", "jpeg", "heic"]
-                    let filtered = all.filter { allowedExts.contains($0.pathExtension.lowercased()) }
-                    let dated: [(URL, Date)] = filtered.compactMap {
-                        let vals = try? $0.resourceValues(forKeys: [.contentModificationDateKey])
-                        return ($0, vals?.contentModificationDate ?? .distantPast)
-                    }
-                    return dated.sorted { $0.1 > $1.1 }.map { $0.0 }
-                } catch {
-                    return []
-                }
-            }
-        )
-    }
+//    private func openSnapsInGallery() {
+//        guard let dir = snapsDirectory() else { return }
+//        let fm = FileManager.default
+//        var urls: [URL] = []
+//        do {
+//            let all = try fm.contentsOfDirectory(at: dir,
+//                                                 includingPropertiesForKeys: [.contentModificationDateKey, .isRegularFileKey],
+//                                                 options: [.skipsHiddenFiles])
+//            // Allow common raster image types
+//            let allowedExts: Set<String> = ["png", "jpg", "jpeg", "heic"]
+//            let filtered = all.filter { allowedExts.contains($0.pathExtension.lowercased()) }
+//            let dated: [(URL, Date)] = filtered.compactMap {
+//                let vals = try? $0.resourceValues(forKeys: [.contentModificationDateKey])
+//                return ($0, vals?.contentModificationDate ?? .distantPast)
+//            }
+//            urls = dated.sorted { $0.1 > $1.1 }.map { $0.0 }
+//        } catch {
+//            urls = []
+//        }
+//        
+//        // Fallback: if we failed to enumerate, do nothing
+//        guard !urls.isEmpty else { return }
+//        
+//        GalleryWindow.shared.present(
+//            urls: urls,
+//            onSelect: { url in
+//                if let img = NSImage(contentsOf: url) {
+//                    selectedSnapURL = url
+//                    GalleryWindow.shared.close()
+//                }
+//            },
+//            onReload: {
+//                let fm = FileManager.default
+//                guard let dir = snapsDirectory() else { return [] }
+//                do {
+//                    let all = try fm.contentsOfDirectory(at: dir,
+//                                                         includingPropertiesForKeys: [.contentModificationDateKey, .isRegularFileKey],
+//                                                         options: [.skipsHiddenFiles])
+//                    let allowedExts: Set<String> = ["png", "jpg", "jpeg", "heic"]
+//                    let filtered = all.filter { allowedExts.contains($0.pathExtension.lowercased()) }
+//                    let dated: [(URL, Date)] = filtered.compactMap {
+//                        let vals = try? $0.resourceValues(forKeys: [.contentModificationDateKey])
+//                        return ($0, vals?.contentModificationDate ?? .distantPast)
+//                    }
+//                    return dated.sorted { $0.1 > $1.1 }.map { $0.0 }
+//                } catch {
+//                    return []
+//                }
+//            }
+//        )
+//    }
     
     /// Inserts a newly saved URL at the start of the list (leftmost), de-duplicating if necessary.
     private func insertSnapURL(_ url: URL) {
@@ -3087,11 +3108,7 @@ struct ContentView: View {
         // Update current selection / preview
         if selectedSnapURL == url {
             selectedSnapURL = snapURLs.first
-            if let first = selectedSnapURL, let img = NSImage(contentsOf: first) {
-                lastCapture = img
-            } else {
-                lastCapture = nil
-            }
+            // Remove the entire if-else block that tries to assign to currentImage
         }
     }
     
@@ -3409,8 +3426,6 @@ private struct GalleryThumb: View {
         }
     }
 }
-
-
 
 /// A full-desktop translucent overlay that lets the user click–drag to choose a rectangle.
 private struct SelectionOverlay: View {
@@ -4026,25 +4041,35 @@ final class ScreenCapturer: NSObject, SCStreamOutput {
     private var isCapturing = false
     
     func captureImage(using filter: SCContentFilter, display: SCDisplay) async -> CGImage? {
-        let cfg = SCStreamConfiguration()
+        let result = await performCapture(filter: filter, config: createConfig(for: display))
         
+        // CRITICAL: Clear all references immediately after capture
+        defer {
+            captureResult = nil
+            captureError = nil
+            currentStream = nil
+        }
+        
+        return result
+    }
+    
+    private func createConfig(for display: SCDisplay) -> SCStreamConfiguration {
+        let cfg = SCStreamConfiguration()
         let backingScale = getBackingScaleForDisplay(display) ?? 1.0
         cfg.width = Int(CGFloat(display.width) * backingScale)
         cfg.height = Int(CGFloat(display.height) * backingScale)
         cfg.pixelFormat = kCVPixelFormatType_32BGRA
         cfg.showsCursor = false
         cfg.minimumFrameInterval = CMTime(value: 1, timescale: 60)
-        
-        return await performCapture(filter: filter, config: cfg)
+        return cfg
     }
     
     private func performCapture(filter: SCContentFilter, config: SCStreamConfiguration) async -> CGImage? {
-        // Prevent concurrent captures
         guard !isCapturing else { return nil }
         isCapturing = true
         defer { isCapturing = false }
         
-        // Reset state
+        // Clear any previous state
         captureResult = nil
         captureError = nil
         currentStream = nil
@@ -4056,7 +4081,7 @@ final class ScreenCapturer: NSObject, SCStreamOutput {
             try stream.addStreamOutput(self, type: .screen, sampleHandlerQueue: .main)
             try await stream.startCapture()
             
-            // Wait for result with timeout using polling
+            // Wait for result with timeout
             let startTime = CACurrentMediaTime()
             let timeout: TimeInterval = 4.0
             
@@ -4064,10 +4089,9 @@ final class ScreenCapturer: NSObject, SCStreamOutput {
                 if CACurrentMediaTime() - startTime > timeout {
                     break
                 }
-                try await Task.sleep(nanoseconds: 50_000_000) // 50ms polling
+                try await Task.sleep(nanoseconds: 50_000_000)
             }
             
-            // Clean shutdown
             await shutdownStream(stream)
             
             if let error = captureError {
@@ -4129,8 +4153,6 @@ final class ScreenCapturer: NSObject, SCStreamOutput {
         }
     }
 }
-
-
 
 
 final class SelectionWindowManager {
