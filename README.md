@@ -16,8 +16,9 @@ Inspired by Greenshot on Windows - the goal is to make a tiny app that can do th
 </div>
 
 ## Work in Progress
-- Fix line colors changing.
 - Add circle shape. 
+- Add File and Edit Menu Bar entries. 
+- Fix line colors changing.
 - Add double tap to zoom on mouse & trackpad.
 - Update Snap Gallery so I can see dates. 
 - User adjustable highlighter opacity.

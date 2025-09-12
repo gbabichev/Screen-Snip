@@ -7,7 +7,7 @@ import VideoToolbox
 import UniformTypeIdentifiers
 
 
-private enum Tool { case pointer, line, rect, text, crop, badge, highlighter }
+private enum Tool { case pointer, line, rect, oval, text, crop, badge, highlighter }
 
 private enum SaveFormat: String, CaseIterable, Identifiable {
     case png, jpeg, heic
@@ -27,12 +27,6 @@ private enum SaveFormat: String, CaseIterable, Identifiable {
         }
     }
 }
-
-enum MarkupMode: String, CaseIterable {
-    case line, arrow, highlighter
-}
-
-
 
 struct ContentView: View {
     
@@ -161,6 +155,10 @@ struct ContentView: View {
                                                 case .rect(let o):
                                                     o.drawPath(in: author)
                                                         .stroke(Color(nsColor: strokeColor), style: StrokeStyle(lineWidth: o.width))
+                                                case .oval(let o):
+                                                    Ellipse()
+                                                        .path(in: o.rect)
+                                                        .stroke(Color(nsColor: strokeColor), style: StrokeStyle(lineWidth: o.width))
                                                 case .text(let o):
                                                     // Only render static text if it's not currently being edited
                                                     if focusedTextID != o.id {
@@ -202,8 +200,21 @@ struct ContentView: View {
                                                     .stroke(Color(nsColor: strokeColor).opacity(0.8), style: StrokeStyle(lineWidth: d.width, dash: [6,4]))
                                             }
                                             if let r = draftRect {
-                                                Rectangle().path(in: r)
-                                                    .stroke(Color(nsColor: strokeColor).opacity(0.8), style: StrokeStyle(lineWidth: strokeWidth, dash: [6,4]))
+                                                switch selectedTool {
+                                                case .rect:
+                                                    Rectangle()
+                                                        .path(in: r)
+                                                        .stroke(.secondary, style: StrokeStyle(lineWidth: max(1, strokeWidth), dash: [6,4]))
+                                                case .highlighter:
+                                                    Rectangle()
+                                                        .path(in: r)
+                                                        .fill(Color(nsColor: highlighterColor))
+                                                case .line:
+                                                    // no rectangle; the line preview is drawn separately
+                                                    EmptyView()
+                                                default:
+                                                    EmptyView()
+                                                }
                                             }
                                             if let crp = cropRect {
                                                 Rectangle().path(in: crp)
@@ -246,6 +257,7 @@ struct ContentView: View {
                                                 switch objects[idx] {
                                                 case .line(let o):  selectionForLine(o)
                                                 case .rect(let o):  selectionForRect(o)
+                                                case .oval(let o): selectionForOval(o)
                                                 case .text(let o):  selectionForText(o)
                                                 case .badge(let o): selectionForBadge(o)
                                                 case .highlight(let o): selectionForHighlight(o)
@@ -258,6 +270,7 @@ struct ContentView: View {
                                         .simultaneousGesture(selectedTool == .pointer ? pointerGesture(insetOrigin: origin, fitted: fitted, author: author) : nil)
                                         .simultaneousGesture(selectedTool == .line ? lineGesture(insetOrigin: origin, fitted: fitted, author: author) : nil)
                                         .simultaneousGesture(selectedTool == .rect ? rectGesture(insetOrigin: origin, fitted: fitted, author: author) : nil)
+                                        .simultaneousGesture(selectedTool == .oval ? ovalGesture(insetOrigin: origin, fitted: fitted, author: author) : nil)
                                         .simultaneousGesture(selectedTool == .text ? textGesture(insetOrigin: origin, fitted: fitted, author: author) : nil)
                                         .simultaneousGesture(selectedTool == .crop ? cropGesture(insetOrigin: origin, fitted: fitted, author: author) : nil)
                                         .simultaneousGesture(selectedTool == .badge ? badgeGesture(insetOrigin: origin, fitted: fitted, author: author) : nil)
@@ -333,6 +346,10 @@ struct ContentView: View {
                                                 case .rect(let o):
                                                     o.drawPath(in: author)
                                                         .stroke(Color(nsColor: strokeColor), style: StrokeStyle(lineWidth: o.width))
+                                                case .oval(let o):
+                                                    Ellipse()
+                                                        .path(in: o.rect)
+                                                        .stroke(Color(nsColor: strokeColor), style: StrokeStyle(lineWidth: o.width))
                                                 case .text(let o):
                                                     // Only render static text if it's not currently being edited
                                                     if focusedTextID != o.id {
@@ -378,8 +395,21 @@ struct ContentView: View {
                                                 }
                                             }
                                             if let r = draftRect {
-                                                Rectangle().path(in: r)
-                                                    .stroke(Color(nsColor: strokeColor).opacity(0.8), style: StrokeStyle(lineWidth: strokeWidth, dash: [6,4]))
+                                                switch selectedTool {
+                                                case .rect:
+                                                    Rectangle().path(in: r)
+                                                        .stroke(Color(nsColor: strokeColor).opacity(0.8), style: StrokeStyle(lineWidth: strokeWidth, dash: [6,4]))
+                                                case .highlighter:
+                                                    Rectangle().path(in: r)
+                                                        .fill(Color(nsColor: highlighterColor))
+                                                case .oval:
+                                                    Ellipse().path(in: r)
+                                                        .stroke(Color(nsColor: strokeColor).opacity(0.8), style: StrokeStyle(lineWidth: strokeWidth, dash: [6,4]))
+                                                case .line:
+                                                    EmptyView() // line preview handled by `draft` path above
+                                                default:
+                                                    EmptyView()
+                                                }
                                             }
                                             if let crp = cropRect {
                                                 Rectangle().path(in: crp)
@@ -422,6 +452,7 @@ struct ContentView: View {
                                                 switch objects[idx] {
                                                 case .line(let o):  selectionForLine(o)
                                                 case .rect(let o):  selectionForRect(o)
+                                                case .oval(let o):  selectionForOval(o)
                                                 case .text(let o):  selectionForText(o)
                                                 case .badge(let o): selectionForBadge(o)
                                                 case .highlight(let o): selectionForHighlight(o)
@@ -434,6 +465,7 @@ struct ContentView: View {
                                         .simultaneousGesture(selectedTool == .pointer ? pointerGesture(insetOrigin: origin, fitted: fitted, author: author) : nil)
                                         .simultaneousGesture(selectedTool == .line ? lineGesture(insetOrigin: origin, fitted: fitted, author: author) : nil)
                                         .simultaneousGesture(selectedTool == .rect ? rectGesture(insetOrigin: origin, fitted: fitted, author: author) : nil)
+                                        .simultaneousGesture(selectedTool == .oval ? ovalGesture(insetOrigin: origin, fitted: fitted, author: author) : nil)
                                         .simultaneousGesture(selectedTool == .text ? textGesture(insetOrigin: origin, fitted: fitted, author: author) : nil)
                                         .simultaneousGesture(selectedTool == .crop ? cropGesture(insetOrigin: origin, fitted: fitted, author: author) : nil)
                                         .simultaneousGesture(selectedTool == .badge ? badgeGesture(insetOrigin: origin, fitted: fitted, author: author) : nil)
@@ -974,6 +1006,34 @@ struct ContentView: View {
                 // MARK: - TOOLS - SHAPE & Increment
                 
                 ToolbarItemGroup(placement: .principal) {
+                    
+                    // Circle / Oval
+                    Menu {
+                        colorButtons(current: $strokeColor)
+
+                        Divider()
+
+                        Menu("Line Width") {
+                            ForEach([1,2,3,4,6,8,12,16], id: \.self) { w in
+                                Button(action: { strokeWidth = CGFloat(w) }) {
+                                    if Int(strokeWidth) == w { Image(systemName: "checkmark") }
+                                    Text("\(w) pt")
+                                }
+                            }
+                        }
+                    } label: {
+                        Label("Circle", systemImage: "circle.dashed")
+                    } primaryAction: {
+                        selectedTool = .oval
+                        selectedObjectID = nil; activeHandle = .none; cropDraftRect = nil; cropRect = nil; cropHandle = .none
+                        focusedTextID = nil
+                    }
+                    .glassEffect(selectedTool == .oval ? .regular.tint(Color(nsColor: strokeColor).opacity(0.7)) : .regular)
+                    .help("Click to draw a circle/oval")
+                    
+                    
+                    
+                    
                     
                     // Shape rect
                     Menu {
@@ -1702,31 +1762,84 @@ struct ContentView: View {
     private func lineGesture(insetOrigin: CGPoint, fitted: CGSize, author: CGSize) -> some Gesture {
         DragGesture(minimumDistance: 0)
             .onChanged { value in
-                guard allowDraftTick() else { return }
-                let pRaw = CGPoint(x: value.location.x - insetOrigin.x, y: value.location.y - insetOrigin.y)
-                let sRaw = CGPoint(x: value.startLocation.x - insetOrigin.x, y: value.startLocation.y - insetOrigin.y)
-                let pA = fittedToAuthorPoint(pRaw, fitted: fitted, author: author)
-                let sA = fittedToAuthorPoint(sRaw, fitted: fitted, author: author)
-                if draft == nil { draft = Line(start: sA, end: pA, width: strokeWidth) }
+                let startFit = CGPoint(x: value.startLocation.x - insetOrigin.x, y: value.startLocation.y - insetOrigin.y)
+                let currentFit = CGPoint(x: value.location.x - insetOrigin.x, y: value.location.y - insetOrigin.y)
+                var start = fittedToAuthorPoint(startFit, fitted: fitted, author: author)
+                var current = fittedToAuthorPoint(currentFit, fitted: fitted, author: author)
                 let shift = NSEvent.modifierFlags.contains(.shift)
-                if let start = draft?.start {
-                    draft?.end = shift ? snappedPoint(start: start, raw: pA) : pA
+                if shift { current = snappedPoint(start: start, raw: current) }
+
+                if dragStartPoint == nil {
+                    dragStartPoint = start
+                    // Start over an existing line? select + figure out which endpoint (if any) we grabbed
+                    if let idx = objects.lastIndex(where: { obj in
+                        switch obj {
+                        case .line(let o): return o.handleHitTest(start) != .none || o.hitTest(start)
+                        default: return false
+                        }
+                    }) {
+                        selectedObjectID = objects[idx].id
+                        if case .line(let o) = objects[idx] { activeHandle = o.handleHitTest(start) }
+                    } else {
+                        selectedObjectID = nil
+                        activeHandle = .none
+                    }
+                } else if
+                    let sel = selectedObjectID,
+                    let s = dragStartPoint,
+                    let idx = objects.firstIndex(where: { $0.id == sel })
+                {
+                    // Move whole line or resize one endpoint
+                    let delta = CGSize(width: current.x - s.x, height: current.y - s.y)
+                    let dragDistance = hypot(delta.width, delta.height)
+                    if dragDistance > 0.5 {
+                        if !pushedDragUndo { pushUndoSnapshot(); pushedDragUndo = true }
+                        switch objects[idx] {
+                        case .line(let o):
+                            var updated = (activeHandle == .none) ? o.moved(by: delta) : o.resizing(activeHandle, to: current)
+                            updated.start = clampPoint(updated.start, in: author)
+                            updated.end   = clampPoint(updated.end,   in: author)
+                            objects[idx] = .line(updated)
+                        default:
+                            break
+                        }
+                        dragStartPoint = current
+                    }
+                } else {
+                    // Use `draft` for live line preview
+                    draft = Line(start: start, end: current, width: strokeWidth)
                 }
-                draft?.width = strokeWidth
             }
             .onEnded { value in
-                let pRaw = CGPoint(x: value.location.x - insetOrigin.x, y: value.location.y - insetOrigin.y)
-                let shift = NSEvent.modifierFlags.contains(.shift)
-                guard let start = draft?.start else { draft = nil; return }
-                let pA = fittedToAuthorPoint(pRaw, fitted: fitted, author: author)
-                let endUI = shift ? snappedPoint(start: start, raw: pA) : pA
-                let s = clampPoint(start, in: author)
-                let e = clampPoint(endUI, in: author)
-                let newObj = LineObject(start: s, end: e, width: strokeWidth, arrow: lineHasArrow)
-                pushUndoSnapshot()
-                objects.append(.line(newObj))
-                if objectSpaceSize == nil { objectSpaceSize = author }
-                draft = nil
+                let endFit = CGPoint(x: value.location.x - insetOrigin.x, y: value.location.y - insetOrigin.y)
+                var end = fittedToAuthorPoint(endFit, fitted: fitted, author: author)
+                if NSEvent.modifierFlags.contains(.shift), let s = dragStartPoint {
+                    end = snappedPoint(start: s, raw: end)
+                }
+
+                defer { dragStartPoint = nil; pushedDragUndo = false; activeHandle = .none; draft = nil; draftRect = nil }
+
+                // Finished moving/resizing an existing line
+                if let _ = selectedObjectID,
+                   let idx = objects.firstIndex(where: { $0.id == selectedObjectID }),
+                   case .line = objects[idx] {
+                    return
+                }
+
+                // Create new line from the live draft if present, else from start/end
+                if let d = draft {
+                    let new = LineObject(start: d.start, end: d.end, width: d.width, arrow: lineHasArrow)
+                    pushUndoSnapshot()
+                    objects.append(.line(new))
+                    if objectSpaceSize == nil { objectSpaceSize = author }
+                    selectedObjectID = new.id
+                } else if let s = dragStartPoint {
+                    let new = LineObject(start: s, end: end, width: strokeWidth, arrow: lineHasArrow)
+                    pushUndoSnapshot()
+                    objects.append(.line(new))
+                    if objectSpaceSize == nil { objectSpaceSize = author }
+                    selectedObjectID = new.id
+                }
             }
     }
     
@@ -1734,37 +1847,178 @@ struct ContentView: View {
     private func rectGesture(insetOrigin: CGPoint, fitted: CGSize, author: CGSize) -> some Gesture {
         DragGesture(minimumDistance: 0)
             .onChanged { value in
-                guard allowDraftTick() else { return }
                 let startFit = CGPoint(x: value.startLocation.x - insetOrigin.x, y: value.startLocation.y - insetOrigin.y)
                 let currentFit = CGPoint(x: value.location.x - insetOrigin.x, y: value.location.y - insetOrigin.y)
                 let start = fittedToAuthorPoint(startFit, fitted: fitted, author: author)
                 let current = fittedToAuthorPoint(currentFit, fitted: fitted, author: author)
                 let shift = NSEvent.modifierFlags.contains(.shift)
-                
-                func rectFrom(_ a: CGPoint, _ b: CGPoint, square: Bool) -> CGRect {
-                    var x0 = min(a.x, b.x)
-                    var y0 = min(a.y, b.y)
-                    var w = abs(a.x - b.x)
-                    var h = abs(a.y - b.y)
-                    if square {
-                        let side = max(w, h)
-                        x0 = (b.x >= a.x) ? a.x : (a.x - side)
-                        y0 = (b.y >= a.y) ? a.y : (a.y - side)
-                        w = side; h = side
+
+                if dragStartPoint == nil {
+                    dragStartPoint = start
+                    // If starting on an existing rect, select it and capture which handle (if any)
+                    if let idx = objects.lastIndex(where: { obj in
+                        switch obj {
+                        case .rect(let o): return o.handleHitTest(start) != .none || o.hitTest(start)
+                        default: return false
+                        }
+                    }) {
+                        selectedObjectID = objects[idx].id
+                        if case .rect(let o) = objects[idx] { activeHandle = o.handleHitTest(start) }
+                    } else {
+                        selectedObjectID = nil
+                        activeHandle = .none
                     }
-                    return CGRect(x: x0, y: y0, width: w, height: h)
+                } else if
+                    let sel = selectedObjectID,
+                    let s = dragStartPoint,
+                    let idx = objects.firstIndex(where: { $0.id == sel })
+                {
+                    // We are interacting with an existing rectangle: move or resize
+                    let delta = CGSize(width: current.x - s.x, height: current.y - s.y)
+                    let dragDistance = hypot(delta.width, delta.height)
+                    if dragDistance > 0.5 {
+                        if !pushedDragUndo { pushUndoSnapshot(); pushedDragUndo = true }
+                        switch objects[idx] {
+                        case .rect(let o):
+                            let updated = (activeHandle == .none) ? o.moved(by: delta) : o.resizing(activeHandle, to: current)
+                            let clamped = clampRect(updated.rect, in: author)
+                            var u = updated; u.rect = clamped
+                            objects[idx] = .rect(u)
+                        default:
+                            break
+                        }
+                        dragStartPoint = current
+                    }
+                } else {
+                    // No selection: show a draft for creating a new rectangle (Shift = square)
+                    func rectFrom(_ a: CGPoint, _ b: CGPoint, square: Bool) -> CGRect {
+                        var x0 = min(a.x, b.x)
+                        var y0 = min(a.y, b.y)
+                        var w = abs(a.x - b.x)
+                        var h = abs(a.y - b.y)
+                        if square {
+                            let side = max(w, h)
+                            x0 = (b.x >= a.x) ? a.x : (a.x - side)
+                            y0 = (b.y >= a.y) ? a.y : (a.y - side)
+                            w = side; h = side
+                        }
+                        return CGRect(x: x0, y: y0, width: w, height: h)
+                    }
+                    draftRect = rectFrom(start, current, square: shift)
                 }
-                
-                draftRect = rectFrom(start, current, square: shift)
             }
             .onEnded { value in
-                defer { draftRect = nil }
-                guard let uiRect = draftRect else { return }
-                let clamped = clampRect(uiRect, in: author)
-                let newObj = RectObject(rect: clamped, width: strokeWidth)
-                pushUndoSnapshot()
-                objects.append(.rect(newObj))
-                if objectSpaceSize == nil { objectSpaceSize = author }
+                let endFit = CGPoint(x: value.location.x - insetOrigin.x, y: value.location.y - insetOrigin.y)
+                let pEnd = fittedToAuthorPoint(endFit, fitted: fitted, author: author)
+
+                defer { dragStartPoint = nil; pushedDragUndo = false; activeHandle = .none; draftRect = nil }
+
+                // If we were moving/resizing an existing rect, we're done
+                if let _ = selectedObjectID,
+                   let idx = objects.firstIndex(where: { $0.id == selectedObjectID }) {
+                    if case .rect = objects[idx] {
+                        return
+                    }
+                }
+
+                // Create a new rectangle from the draft drag area if present…
+                if let r = draftRect {
+                    let clamped = clampRect(r, in: author)
+                    let newObj = RectObject(rect: clamped, width: strokeWidth)
+                    pushUndoSnapshot()
+                    objects.append(.rect(newObj))
+                    if objectSpaceSize == nil { objectSpaceSize = author }
+                    selectedObjectID = newObj.id
+                } else {
+                    // …or, on simple click with no drag, create a default-sized square
+                    let d: CGFloat = 40
+                    let rect = CGRect(x: max(0, pEnd.x - d/2), y: max(0, pEnd.y - d/2), width: d, height: d)
+                    let clamped = clampRect(rect, in: author)
+                    let newObj = RectObject(rect: clamped, width: strokeWidth)
+                    pushUndoSnapshot()
+                    objects.append(.rect(newObj))
+                    if objectSpaceSize == nil { objectSpaceSize = author }
+                    selectedObjectID = newObj.id
+                }
+            }
+    }
+    
+    private func ovalGesture(insetOrigin: CGPoint, fitted: CGSize, author: CGSize) -> some Gesture {
+        DragGesture(minimumDistance: 0)
+            .onChanged { value in
+                let startFit = CGPoint(x: value.startLocation.x - insetOrigin.x, y: value.startLocation.y - insetOrigin.y)
+                let currentFit = CGPoint(x: value.location.x - insetOrigin.x, y: value.location.y - insetOrigin.y)
+                let start = fittedToAuthorPoint(startFit, fitted: fitted, author: author)
+                let current = fittedToAuthorPoint(currentFit, fitted: fitted, author: author)
+
+                if dragStartPoint == nil {
+                    dragStartPoint = start
+                    if let idx = objects.lastIndex(where: { obj in
+                        switch obj {
+                        case .oval(let o): return o.handleHitTest(start) != .none || o.hitTest(start)
+                        default: return false
+                        }
+                    }) {
+                        selectedObjectID = objects[idx].id
+                        if case .oval(let o) = objects[idx] { activeHandle = o.handleHitTest(start) }
+                    } else {
+                        selectedObjectID = nil
+                        activeHandle = .none
+                    }
+                } else if
+                    let sel = selectedObjectID,
+                    let s = dragStartPoint,
+                    let idx = objects.firstIndex(where: { $0.id == sel })
+                {
+                    let delta = CGSize(width: current.x - s.x, height: current.y - s.y)
+                    let dragDistance = hypot(delta.width, delta.height)
+                    if dragDistance > 0.5 {
+                        if !pushedDragUndo { pushUndoSnapshot(); pushedDragUndo = true }
+                        switch objects[idx] {
+                        case .oval(var o):
+                            let updated = (activeHandle == .none) ? o.moved(by: delta) : o.resizing(activeHandle, to: current)
+                            let clamped = clampRect(updated.rect, in: author)
+                            o.rect = clamped
+                            objects[idx] = .oval(o)
+                        default:
+                            break
+                        }
+                        dragStartPoint = current
+                    }
+                } else {
+                    // show draft rect while dragging a new oval
+                    let x0 = min(start.x, current.x)
+                    let y0 = min(start.y, current.y)
+                    let w = abs(start.x - current.x)
+                    let h = abs(start.y - current.y)
+                    draftRect = CGRect(x: x0, y: y0, width: w, height: h)
+                }
+            }
+            .onEnded { value in
+                let endFit = CGPoint(x: value.location.x - insetOrigin.x, y: value.location.y - insetOrigin.y)
+                let pEnd = fittedToAuthorPoint(endFit, fitted: fitted, author: author)
+
+                defer { dragStartPoint = nil; pushedDragUndo = false; activeHandle = .none; draftRect = nil }
+
+                if let _ = selectedObjectID { return } // finished move/resize
+
+                if let r = draftRect {
+                    let clamped = clampRect(r, in: author)
+                    let newObj = OvalObject(rect: clamped, width: strokeWidth)
+                    pushUndoSnapshot()
+                    objects.append(.oval(newObj))
+                    if objectSpaceSize == nil { objectSpaceSize = author }
+                    selectedObjectID = newObj.id
+                } else {
+                    let d: CGFloat = 40
+                    let rect = CGRect(x: max(0, pEnd.x - d/2), y: max(0, pEnd.y - d/2), width: d, height: d)
+                    let clamped = clampRect(rect, in: author)
+                    let newObj = OvalObject(rect: clamped, width: strokeWidth)
+                    pushUndoSnapshot()
+                    objects.append(.oval(newObj))
+                    if objectSpaceSize == nil { objectSpaceSize = author }
+                    selectedObjectID = newObj.id
+                }
             }
     }
     
@@ -1952,6 +2206,7 @@ struct ContentView: View {
                         switch obj {
                         case .line(let o): return o.handleHitTest(p) != .none || o.hitTest(p)
                         case .rect(let o): return o.handleHitTest(p) != .none || o.hitTest(p)
+                        case .oval(let o): return o.handleHitTest(p) != .none || o.hitTest(p)
                         case .text(let o): return o.handleHitTest(p) != .none || o.hitTest(p)
                         case .badge(let o): return o.handleHitTest(p) != .none || o.hitTest(p)
                         case .highlight(let o): return o.handleHitTest(p) != .none || o.hitTest(p)
@@ -1962,6 +2217,7 @@ struct ContentView: View {
                         switch objects[idx] {
                         case .line(let o): activeHandle = o.handleHitTest(p)
                         case .rect(let o): activeHandle = o.handleHitTest(p)
+                        case .oval(let o): activeHandle = o.handleHitTest(p)
                         case .text(let o): activeHandle = o.handleHitTest(p)
                         case .badge(let o): activeHandle = o.handleHitTest(p)
                         case .highlight(let o): activeHandle = o.handleHitTest(p)
@@ -1994,6 +2250,11 @@ struct ContentView: View {
                         let clamped = clampRect(updated.rect, in: author)
                         var u = updated; u.rect = clamped
                         objects[idx] = .rect(u)
+                    case .oval(let o):
+                        let updated = (activeHandle == .none) ? o.moved(by: delta) : o.resizing(activeHandle, to: p)
+                        let clamped = clampRect(updated.rect, in: author)
+                        var u = updated; u.rect = clamped
+                        objects[idx] = .oval(u)
                     case .text(let o):
                         let updated = (activeHandle == .none) ? o.moved(by: delta) : o.resizing(activeHandle, to: p)
                         let clamped = clampRect(updated.rect, in: author)
@@ -2159,6 +2420,30 @@ struct ContentView: View {
                 }
             }
         }
+    }
+    
+    // Shape Tool (Oval)
+    private func selectionForOval(_ o: OvalObject) -> some View {
+        Rectangle()
+            .path(in: o.rect)
+            .stroke(.blue.opacity(0.9), style: StrokeStyle(lineWidth: max(1, strokeWidth), dash: [6,4]))
+            .overlay(
+                Group {
+                    let pts = [
+                        CGPoint(x: o.rect.minX, y: o.rect.minY),
+                        CGPoint(x: o.rect.maxX, y: o.rect.minY),
+                        CGPoint(x: o.rect.minX, y: o.rect.maxY),
+                        CGPoint(x: o.rect.maxX, y: o.rect.maxY),
+                    ]
+                    ForEach(Array(pts.enumerated()), id: \.offset) { _, pt in
+                        Circle()
+                            .stroke(Color.blue, lineWidth: 1)
+                            .background(Circle().fill(Color.white))
+                            .frame(width: 12, height: 12)
+                            .position(pt)
+                    }
+                }
+            )
     }
     
     // Highlight Tool
@@ -2458,6 +2743,11 @@ struct ContentView: View {
             case .rect(let o):
                 let r = uiRectToImageRect(o.rect, fitted: fitted, image: imgSize)
                 let path = NSBezierPath(rect: r); path.lineWidth = o.width * scaleW; path.stroke()
+            case .oval(let o):
+                let r = uiRectToImageRect(o.rect, fitted: fitted, image: imgSize)
+                let path = NSBezierPath(ovalIn: r)
+                path.lineWidth = o.width * scaleW
+                path.stroke()
             case .text(let o):
                 let r = uiRectToImageRect(o.rect, fitted: fitted, image: imgSize)
                 if o.bgEnabled {
@@ -3324,6 +3614,88 @@ private struct RectObject: DrawableObject {
     }
 }
 
+private struct OvalObject: DrawableObject {
+    let id: UUID
+    var rect: CGRect
+    var width: CGFloat
+
+    init(id: UUID = UUID(), rect: CGRect, width: CGFloat) {
+        self.id = id
+        self.rect = rect
+        self.width = width
+    }
+
+    // Synthesized Equatable is fine since all members are Equatable
+
+    func drawPath(in _: CGSize) -> Path {
+        Ellipse().path(in: rect)
+    }
+
+    func hitTest(_ p: CGPoint) -> Bool {
+        // Ellipse hit test: normalize point into ellipse space and check if inside
+        let rx = rect.width / 2.0
+        let ry = rect.height / 2.0
+        guard rx > 0, ry > 0 else { return false }
+        let cx = rect.midX
+        let cy = rect.midY
+        let nx = (p.x - cx) / rx
+        let ny = (p.y - cy) / ry
+        return (nx * nx + ny * ny) <= 1.0
+    }
+
+    func handleHitTest(_ p: CGPoint) -> Handle {
+        let r: CGFloat = 8
+        let tl = CGRect(x: rect.minX - r, y: rect.minY - r, width: 2*r, height: 2*r)
+        let tr = CGRect(x: rect.maxX - r, y: rect.minY - r, width: 2*r, height: 2*r)
+        let bl = CGRect(x: rect.minX - r, y: rect.maxY - r, width: 2*r, height: 2*r)
+        let br = CGRect(x: rect.maxX - r, y: rect.maxY - r, width: 2*r, height: 2*r)
+        if tl.contains(p) { return .rectTopLeft }
+        if tr.contains(p) { return .rectTopRight }
+        if bl.contains(p) { return .rectBottomLeft }
+        if br.contains(p) { return .rectBottomRight }
+        return .none
+    }
+
+    func moved(by d: CGSize) -> OvalObject {
+        var c = self
+        c.rect.origin.x += d.width
+        c.rect.origin.y += d.height
+        return c
+    }
+
+    func resizing(_ handle: Handle, to p: CGPoint) -> OvalObject {
+        var c = self
+        switch handle {
+        case .rectTopLeft:
+            c.rect = CGRect(x: p.x,
+                            y: p.y,
+                            width: rect.maxX - p.x,
+                            height: rect.maxY - p.y)
+        case .rectTopRight:
+            c.rect = CGRect(x: rect.minX,
+                            y: p.y,
+                            width: p.x - rect.minX,
+                            height: rect.maxY - p.y)
+        case .rectBottomLeft:
+            c.rect = CGRect(x: p.x,
+                            y: rect.minY,
+                            width: rect.maxX - p.x,
+                            height: p.y - rect.minY)
+        case .rectBottomRight:
+            c.rect = CGRect(x: rect.minX,
+                            y: rect.minY,
+                            width: p.x - rect.minX,
+                            height: p.y - rect.minY)
+        default:
+            break
+        }
+        // Prevent negative or tiny sizes
+        c.rect.size.width = max(2, c.rect.size.width)
+        c.rect.size.height = max(2, c.rect.size.height)
+        return c
+    }
+}
+
 private struct HighlightObject: DrawableObject {
     let id: UUID
     var rect: CGRect
@@ -3593,6 +3965,7 @@ private enum Drawable: Identifiable, Equatable {
     case badge(BadgeObject)
     case highlight(HighlightObject)
     case image(PastedImageObject)
+    case oval(OvalObject)
     
     var id: UUID {
         switch self {
@@ -3602,6 +3975,7 @@ private enum Drawable: Identifiable, Equatable {
         case .badge(let o): return o.id
         case .highlight(let o): return o.id
         case .image(let o): return o.id
+        case .oval(let o): return o.id
         }
     }
 }
