@@ -17,8 +17,10 @@ Inspired by Greenshot on Windows - the goal is to make a tiny app that can do th
 
 ## Work in Progress
 - Pen colors, shape colors, etc should be saved across app launches.
-- Fix line colors changing.
+- line, oval, rect need to have separate colors not share the same color. 
+- <del>Fix line colors changing.
 - Add File and Edit Menu Bar entries. 
+- Remove debug prints
 - Add double tap to zoom on mouse & trackpad.
 - Update Snap Gallery so I can see dates. 
 - User adjustable highlighter opacity.

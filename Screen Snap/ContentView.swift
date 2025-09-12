@@ -66,7 +66,10 @@ struct ContentView: View {
     @State private var cropDragStart: CGPoint? = nil
     @State private var cropOriginalRect: CGRect? = nil
     @State private var strokeWidth: CGFloat = 3
-    @State private var strokeColor: NSColor = .black
+    //@State private var strokeColor: NSColor = .black
+    @State private var lineColor: NSColor = .black
+    @State private var rectColor: NSColor = .black
+    @State private var ovalColor: NSColor = .black
     @State private var lineHasArrow: Bool = false
     // Snaps persisted on disk (newest first). Each element is a file URL to a PNG.
     @State private var snapURLs: [URL] = []
@@ -107,7 +110,6 @@ struct ContentView: View {
         return true
     }
     
-    
     var body: some View {
         ZStack(alignment: .topLeading) {
             // Main canvas
@@ -146,22 +148,22 @@ struct ContentView: View {
                                             switch obj {
                                             case .line(let o):
                                                 let base = o.drawPath(in: author)
-                                                // Always draw the line
-                                                base.stroke(Color(nsColor: strokeColor), style: StrokeStyle(lineWidth: o.width, lineCap: .round))
+                                                // Use the object's stored color instead of global strokeColor
+                                                base.stroke(Color(nsColor: o.color), style: StrokeStyle(lineWidth: o.width, lineCap: .round))
                                                 // If this line uses an arrow, draw the head at the end point
                                                 if o.arrow {
                                                     arrowHeadPath(from: o.start, to: o.end, lineWidth: o.width)
-                                                        .fill(Color(nsColor: strokeColor))
+                                                        .fill(Color(nsColor: o.color))  // Use object's color
                                                 }
                                             case .rect(let o):
                                                 o.drawPath(in: author)
-                                                    .stroke(Color(nsColor: strokeColor), style: StrokeStyle(lineWidth: o.width))
+                                                    .stroke(Color(nsColor: o.color), style: StrokeStyle(lineWidth: o.width))  // Use object's color
                                             case .oval(let o):
                                                 Ellipse()
                                                     .path(in: o.rect)
-                                                    .stroke(Color(nsColor: strokeColor), style: StrokeStyle(lineWidth: o.width))
+                                                    .stroke(Color(nsColor: o.color), style: StrokeStyle(lineWidth: o.width))  // Use object's color
                                             case .text(let o):
-                                                // Only render static text if it's not currently being edited
+                                                // Text rendering stays the same (already uses object colors)
                                                 if focusedTextID != o.id {
                                                     Text(o.text.isEmpty ? " " : o.text)
                                                         .font(.system(size: o.fontSize))
@@ -172,6 +174,7 @@ struct ContentView: View {
                                                         .position(x: o.rect.midX, y: o.rect.midY)
                                                 }
                                             case .badge(let o):
+                                                // Badge rendering stays the same (already uses object colors)
                                                 Circle()
                                                     .fill(Color(nsColor: o.fillColor))
                                                     .frame(width: o.rect.width, height: o.rect.height)
@@ -183,11 +186,13 @@ struct ContentView: View {
                                                             .position(x: o.rect.midX, y: o.rect.midY)
                                                     }
                                             case .highlight(let o):
+                                                // Highlight rendering stays the same (already uses object color)
                                                 Rectangle()
                                                     .fill(Color(nsColor: o.color))
                                                     .frame(width: o.rect.width, height: o.rect.height)
                                                     .position(x: o.rect.midX, y: o.rect.midY)
                                             case .image(let o):
+                                                // Image rendering stays the same
                                                 Image(nsImage: o.image)
                                                     .resizable()
                                                     .interpolation(.high)
@@ -199,12 +204,12 @@ struct ContentView: View {
                                         // Draft feedback while creating (draft is stored in author space)
                                         if let d = draft {
                                             Path { p in p.move(to: d.start); p.addLine(to: d.end) }
-                                                .stroke(Color(nsColor: strokeColor).opacity(0.8), style: StrokeStyle(lineWidth: d.width, dash: [6,4]))
+                                                .stroke(Color(nsColor: lineColor).opacity(0.8), style: StrokeStyle(lineWidth: d.width, dash: [6,4]))
                                             
                                             // Show arrow in draft for actual size mode only
                                             if imageDisplayMode != "fit" && lineHasArrow {
                                                 arrowHeadPath(from: d.start, to: d.end, lineWidth: d.width)
-                                                    .fill(Color(nsColor: strokeColor).opacity(0.8))
+                                                    .fill(Color(nsColor: lineColor).opacity(0.8))
                                             }
                                         }
                                         
@@ -215,7 +220,7 @@ struct ContentView: View {
                                                     .path(in: r)
                                                     .stroke(imageDisplayMode == "fit" ?
                                                            .secondary :
-                                                           Color(nsColor: strokeColor).opacity(0.8),
+                                                           Color(nsColor: rectColor).opacity(0.8),
                                                            style: StrokeStyle(lineWidth: imageDisplayMode == "fit" ?
                                                                              max(1, strokeWidth) :
                                                                              strokeWidth,
@@ -228,7 +233,7 @@ struct ContentView: View {
                                                 // Only show oval draft in actual size mode
                                                 if imageDisplayMode != "fit" {
                                                     Ellipse().path(in: r)
-                                                        .stroke(Color(nsColor: strokeColor).opacity(0.8), style: StrokeStyle(lineWidth: strokeWidth, dash: [6,4]))
+                                                        .stroke(Color(nsColor: rectColor).opacity(0.8), style: StrokeStyle(lineWidth: strokeWidth, dash: [6,4]))
                                                 }
                                             case .line:
                                                 // no rectangle; the line preview is drawn separately
@@ -789,10 +794,10 @@ struct ContentView: View {
                         // Show options based on selected tool
                         if selectedTool == .line {
                             
-                            Section("Pen Color") {
-                                colorButtons(current: $strokeColor)
+                            colorButtons(current: $lineColor)
 
-                            }
+
+                            
                             
                             Menu("Line Width") {
                                 ForEach([1,2,3,4,6,8,12,16], id: \.self) { w in
@@ -824,7 +829,7 @@ struct ContentView: View {
                         )
                         .foregroundStyle(selectedTool == .line || selectedTool == .highlighter ? Color.white : Color.primary)
                     }
-                    .glassEffect(selectedTool == .line || selectedTool == .highlighter ? .regular.tint(Color(nsColor: strokeColor).opacity(0.7)) : .regular)
+                    .glassEffect(selectedTool == .line || selectedTool == .highlighter ? .regular.tint(Color(nsColor: lineColor).opacity(0.7)) : .regular)
                     .help(selectedTool == .line ? "Pen tool selected" : selectedTool == .highlighter ? "Highlighter tool selected" : "Select drawing tool")
                 }
                 
@@ -835,7 +840,7 @@ struct ContentView: View {
                     
                     // Circle / Oval
                     Menu {
-                        colorButtons(current: $strokeColor)
+                        colorButtons(current: $ovalColor)
 
                         Divider()
 
@@ -854,7 +859,7 @@ struct ContentView: View {
                         selectedObjectID = nil; activeHandle = .none; cropDraftRect = nil; cropRect = nil; cropHandle = .none
                         focusedTextID = nil
                     }
-                    .glassEffect(selectedTool == .oval ? .regular.tint(Color(nsColor: strokeColor).opacity(0.7)) : .regular)
+                    .glassEffect(selectedTool == .oval ? .regular.tint(Color(nsColor: ovalColor).opacity(0.7)) : .regular)
                     .help("Click to draw a circle/oval")
                     
                     
@@ -863,7 +868,7 @@ struct ContentView: View {
                     
                     // Shape rect
                     Menu {
-                        colorButtons(current: $strokeColor)
+                        colorButtons(current: $rectColor)
                         
                         Divider()
                         
@@ -882,8 +887,8 @@ struct ContentView: View {
                         selectedObjectID = nil; activeHandle = .none; cropDraftRect = nil; cropRect = nil; cropHandle = .none
                         focusedTextID = nil
                     }
-                    .id(strokeColor)
-                    .glassEffect(selectedTool == .rect ? .regular.tint(Color(nsColor: strokeColor).opacity(0.7)) : .regular)
+                    .id(rectColor)
+                    .glassEffect(selectedTool == .rect ? .regular.tint(Color(nsColor:rectColor).opacity(0.7)) : .regular)
                     .help("Click to draw a shape")
                     
                     // Increment (badge)
@@ -1654,13 +1659,13 @@ struct ContentView: View {
 
                 // Create new line from the live draft if present, else from start/end
                 if let d = draft {
-                    let new = LineObject(start: d.start, end: d.end, width: d.width, arrow: lineHasArrow)
+                    let new = LineObject(start: d.start, end: d.end, width: d.width, arrow: lineHasArrow, color: lineColor)
                     pushUndoSnapshot()
                     objects.append(.line(new))
                     if objectSpaceSize == nil { objectSpaceSize = author }
                     selectedObjectID = new.id
                 } else if let s = dragStartPoint {
-                    let new = LineObject(start: s, end: end, width: strokeWidth, arrow: lineHasArrow)
+                    let new = LineObject(start: s, end: end, width: strokeWidth, arrow: lineHasArrow, color: lineColor)
                     pushUndoSnapshot()
                     objects.append(.line(new))
                     if objectSpaceSize == nil { objectSpaceSize = author }
@@ -1750,17 +1755,17 @@ struct ContentView: View {
                 // Create a new rectangle from the draft drag area if present…
                 if let r = draftRect {
                     let clamped = clampRect(r, in: author)
-                    let newObj = RectObject(rect: clamped, width: strokeWidth)
+                    let newObj = RectObject(rect: clamped, width: strokeWidth, color: rectColor)  // Pass current color
                     pushUndoSnapshot()
                     objects.append(.rect(newObj))
                     if objectSpaceSize == nil { objectSpaceSize = author }
                     selectedObjectID = newObj.id
                 } else {
-                    // …or, on simple click with no drag, create a default-sized square
+                    // on simple click with no drag, create a default-sized square
                     let d: CGFloat = 40
                     let rect = CGRect(x: max(0, pEnd.x - d/2), y: max(0, pEnd.y - d/2), width: d, height: d)
                     let clamped = clampRect(rect, in: author)
-                    let newObj = RectObject(rect: clamped, width: strokeWidth)
+                    let newObj = RectObject(rect: clamped, width: strokeWidth, color: rectColor)  // Pass current color
                     pushUndoSnapshot()
                     objects.append(.rect(newObj))
                     if objectSpaceSize == nil { objectSpaceSize = author }
@@ -1830,7 +1835,7 @@ struct ContentView: View {
 
                 if let r = draftRect {
                     let clamped = clampRect(r, in: author)
-                    let newObj = OvalObject(rect: clamped, width: strokeWidth)
+                    let newObj = OvalObject(rect: clamped, width: strokeWidth, color: ovalColor)  // Pass current color
                     pushUndoSnapshot()
                     objects.append(.oval(newObj))
                     if objectSpaceSize == nil { objectSpaceSize = author }
@@ -1839,7 +1844,7 @@ struct ContentView: View {
                     let d: CGFloat = 40
                     let rect = CGRect(x: max(0, pEnd.x - d/2), y: max(0, pEnd.y - d/2), width: d, height: d)
                     let clamped = clampRect(rect, in: author)
-                    let newObj = OvalObject(rect: clamped, width: strokeWidth)
+                    let newObj = OvalObject(rect: clamped, width: strokeWidth, color: ovalColor)  // Pass current color
                     pushUndoSnapshot()
                     objects.append(.oval(newObj))
                     if objectSpaceSize == nil { objectSpaceSize = author }
@@ -2592,7 +2597,6 @@ struct ContentView: View {
         NSGraphicsContext.saveGraphicsState()
         NSGraphicsContext.current = NSGraphicsContext(bitmapImageRep: rep)
         base.draw(in: CGRect(origin: .zero, size: imgSize))
-        strokeColor.setStroke(); strokeColor.setFill()
         
         // Use the objectSpaceSize (UI space) that objects were laid out in; fall back to lastFittedSize or image size if unknown
         let fitted = objectSpaceSize ?? lastFittedSize ?? imgSize
@@ -2606,6 +2610,7 @@ struct ContentView: View {
                 let s = uiToImagePoint(o.start, fitted: fitted, image: imgSize)
                 let e = uiToImagePoint(o.end,   fitted: fitted, image: imgSize)
                 let widthScaled = o.width * scaleW
+                o.color.setStroke(); o.color.setFill()  // Use object's color
                 let path = NSBezierPath(); path.lineWidth = widthScaled; path.lineCapStyle = .round
                 path.move(to: s); path.line(to: e); path.stroke()
                 if o.arrow {
@@ -2622,9 +2627,11 @@ struct ContentView: View {
                 }
             case .rect(let o):
                 let r = uiRectToImageRect(o.rect, fitted: fitted, image: imgSize)
+                o.color.setStroke()  // Use object's color
                 let path = NSBezierPath(rect: r); path.lineWidth = o.width * scaleW; path.stroke()
             case .oval(let o):
                 let r = uiRectToImageRect(o.rect, fitted: fitted, image: imgSize)
+                o.color.setStroke()  // Use object's color
                 let path = NSBezierPath(ovalIn: r)
                 path.lineWidth = o.width * scaleW
                 path.stroke()
@@ -3406,12 +3413,15 @@ private struct LineObject: DrawableObject {
     var end: CGPoint
     var width: CGFloat
     var arrow: Bool
+    var color: NSColor  // Add color property
     
-    init(id: UUID = UUID(), start: CGPoint, end: CGPoint, width: CGFloat, arrow: Bool) {
-        self.id = id; self.start = start; self.end = end; self.width = width; self.arrow = arrow
+    init(id: UUID = UUID(), start: CGPoint, end: CGPoint, width: CGFloat, arrow: Bool, color: NSColor = .black) {
+        self.id = id; self.start = start; self.end = end; self.width = width; self.arrow = arrow; self.color = color
     }
     
-    static func == (lhs: LineObject, rhs: LineObject) -> Bool { lhs.id == rhs.id && lhs.start == rhs.start && lhs.end == rhs.end && lhs.width == rhs.width && lhs.arrow == rhs.arrow }
+    static func == (lhs: LineObject, rhs: LineObject) -> Bool {
+        lhs.id == rhs.id && lhs.start == rhs.start && lhs.end == rhs.end && lhs.width == rhs.width && lhs.arrow == rhs.arrow && lhs.color == rhs.color
+    }
     
     func drawPath(in _: CGSize) -> Path { var p = Path(); p.move(to: start); p.addLine(to: end); return p }
     
@@ -3450,10 +3460,15 @@ private struct RectObject: DrawableObject {
     let id: UUID
     var rect: CGRect
     var width: CGFloat
+    var color: NSColor  // Add color property
     
-    init(id: UUID = UUID(), rect: CGRect, width: CGFloat) { self.id = id; self.rect = rect; self.width = width }
+    init(id: UUID = UUID(), rect: CGRect, width: CGFloat, color: NSColor = .black) {
+        self.id = id; self.rect = rect; self.width = width; self.color = color
+    }
     
-    static func == (lhs: RectObject, rhs: RectObject) -> Bool { lhs.id == rhs.id && lhs.rect == rhs.rect && lhs.width == rhs.width }
+    static func == (lhs: RectObject, rhs: RectObject) -> Bool {
+        lhs.id == rhs.id && lhs.rect == rhs.rect && lhs.width == rhs.width && lhs.color == rhs.color
+    }
     
     func drawPath(in _: CGSize) -> Path { Rectangle().path(in: rect) }
     
@@ -3498,14 +3513,18 @@ private struct OvalObject: DrawableObject {
     let id: UUID
     var rect: CGRect
     var width: CGFloat
+    var color: NSColor  // Add color property
 
-    init(id: UUID = UUID(), rect: CGRect, width: CGFloat) {
+    init(id: UUID = UUID(), rect: CGRect, width: CGFloat, color: NSColor = .black) {
         self.id = id
         self.rect = rect
         self.width = width
+        self.color = color
     }
 
-    // Synthesized Equatable is fine since all members are Equatable
+    static func == (lhs: OvalObject, rhs: OvalObject) -> Bool {
+        lhs.id == rhs.id && lhs.rect == rhs.rect && lhs.width == rhs.width && lhs.color == rhs.color
+    }
 
     func drawPath(in _: CGSize) -> Path {
         Ellipse().path(in: rect)
@@ -4196,6 +4215,27 @@ private struct LocalScrollWheelZoomView: NSViewRepresentable {
         nsView.onZoom = { factor in
             let newZoom = min(max(zoomLevel * Double(factor), minZoom), maxZoom)
             zoomLevel = newZoom
+        }
+    }
+}
+
+
+// Helper so that we can save tool colors as AppStorage.
+extension NSColor {
+    func toData() -> Data {
+        do {
+            return try NSKeyedArchiver.archivedData(withRootObject: self, requiringSecureCoding: false)
+        } catch {
+            // Fallback to black if archiving fails
+            return try! NSKeyedArchiver.archivedData(withRootObject: NSColor.black, requiringSecureCoding: false)
+        }
+    }
+    
+    static func fromData(_ data: Data) -> NSColor? {
+        do {
+            return try NSKeyedUnarchiver.unarchivedObject(ofClass: NSColor.self, from: data)
+        } catch {
+            return nil
         }
     }
 }
