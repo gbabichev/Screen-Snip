@@ -16,9 +16,11 @@ Inspired by Greenshot on Windows - the goal is to make a tiny app that can do th
 </div>
 
 ## Work in Progress
-- Add circle shape. 
-- Add File and Edit Menu Bar entries. 
+- <del>Add circle shape. 
+- <del>Adjust tools so i can also move objects around in the same tool. 
+- Remove the double ContentView for the two modes.
 - Fix line colors changing.
+- Add File and Edit Menu Bar entries. 
 - Add double tap to zoom on mouse & trackpad.
 - Update Snap Gallery so I can see dates. 
 - User adjustable highlighter opacity.

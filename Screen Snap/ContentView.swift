@@ -1764,7 +1764,7 @@ struct ContentView: View {
             .onChanged { value in
                 let startFit = CGPoint(x: value.startLocation.x - insetOrigin.x, y: value.startLocation.y - insetOrigin.y)
                 let currentFit = CGPoint(x: value.location.x - insetOrigin.x, y: value.location.y - insetOrigin.y)
-                var start = fittedToAuthorPoint(startFit, fitted: fitted, author: author)
+                let start = fittedToAuthorPoint(startFit, fitted: fitted, author: author)
                 var current = fittedToAuthorPoint(currentFit, fitted: fitted, author: author)
                 let shift = NSEvent.modifierFlags.contains(.shift)
                 if shift { current = snappedPoint(start: start, raw: current) }
@@ -2026,36 +2026,90 @@ struct ContentView: View {
         DragGesture(minimumDistance: 0)
             .onChanged { value in
                 guard allowDraftTick() else { return }
+
                 let startFit = CGPoint(x: value.startLocation.x - insetOrigin.x, y: value.startLocation.y - insetOrigin.y)
                 let currentFit = CGPoint(x: value.location.x - insetOrigin.x, y: value.location.y - insetOrigin.y)
                 let start = fittedToAuthorPoint(startFit, fitted: fitted, author: author)
                 let current = fittedToAuthorPoint(currentFit, fitted: fitted, author: author)
-                let shift = NSEvent.modifierFlags.contains(.shift)
-                
-                func rectFrom(_ a: CGPoint, _ b: CGPoint, square: Bool) -> CGRect {
-                    var x0 = min(a.x, b.x)
-                    var y0 = min(a.y, b.y)
-                    var w = abs(a.x - b.x)
-                    var h = abs(a.y - b.y)
-                    if square {
-                        let side = max(w, h)
-                        x0 = (b.x >= a.x) ? a.x : (a.x - side)
-                        y0 = (b.y >= a.y) ? a.y : (a.y - side)
-                        w = side; h = side
+
+                if dragStartPoint == nil {
+                    dragStartPoint = start
+                    // If starting on an existing highlight, select it and capture handle (if any)
+                    if let idx = objects.lastIndex(where: { obj in
+                        switch obj {
+                        case .highlight(let o): return o.handleHitTest(start) != .none || o.hitTest(start)
+                        default: return false
+                        }
+                    }) {
+                        selectedObjectID = objects[idx].id
+                        if case .highlight(let o) = objects[idx] { activeHandle = o.handleHitTest(start) }
+                    } else {
+                        selectedObjectID = nil
+                        activeHandle = .none
                     }
-                    return CGRect(x: x0, y: y0, width: w, height: h)
+                } else if
+                    let sel = selectedObjectID,
+                    let s = dragStartPoint,
+                    let idx = objects.firstIndex(where: { $0.id == sel })
+                {
+                    // Move or resize existing highlight
+                    let delta = CGSize(width: current.x - s.x, height: current.y - s.y)
+                    let dragDistance = hypot(delta.width, delta.height)
+                    if dragDistance > 0.5 {
+                        if !pushedDragUndo { pushUndoSnapshot(); pushedDragUndo = true }
+                        switch objects[idx] {
+                        case .highlight(let o):
+                            let updated = (activeHandle == .none) ? o.moved(by: delta) : o.resizing(activeHandle, to: current)
+                            let clamped = clampRect(updated.rect, in: author)
+                            var u = updated; u.rect = clamped
+                            objects[idx] = .highlight(u)
+                        default:
+                            break
+                        }
+                        dragStartPoint = current
+                    }
+                } else {
+                    // No selection: live draft (filled) while creating a new highlight
+                    let x0 = min(start.x, current.x)
+                    let y0 = min(start.y, current.y)
+                    let w = abs(start.x - current.x)
+                    let h = abs(start.y - current.y)
+                    draftRect = CGRect(x: x0, y: y0, width: w, height: h)
                 }
-                
-                draftRect = rectFrom(start, current, square: shift)
             }
-            .onEnded { _ in
-                defer { draftRect = nil }
-                guard let uiRect = draftRect else { return }
-                let clamped = clampRect(uiRect, in: author)
-                let newObj = HighlightObject(rect: clamped, color: highlighterColor)
-                pushUndoSnapshot()
-                objects.append(.highlight(newObj))
-                if objectSpaceSize == nil { objectSpaceSize = author }
+            .onEnded { value in
+                let endFit = CGPoint(x: value.location.x - insetOrigin.x, y: value.location.y - insetOrigin.y)
+                _ = fittedToAuthorPoint(endFit, fitted: fitted, author: author) // not used directly
+
+                defer { dragStartPoint = nil; pushedDragUndo = false; activeHandle = .none; draftRect = nil }
+
+                // If we were moving/resizing an existing highlight, we're done
+                if let _ = selectedObjectID,
+                   let idx = objects.firstIndex(where: { $0.id == selectedObjectID }),
+                   case .highlight = objects[idx] {
+                    return
+                }
+
+                // Otherwise create a new highlight from the draft
+                if let r = draftRect {
+                    let clamped = clampRect(r, in: author)
+                    let newObj = HighlightObject(rect: clamped, color: highlighterColor)
+                    pushUndoSnapshot()
+                    objects.append(.highlight(newObj))
+                    if objectSpaceSize == nil { objectSpaceSize = author }
+                    selectedObjectID = newObj.id
+                } else {
+                    // Click without drag → drop a small highlight
+                    let d: CGFloat = 40
+                    let center = dragStartPoint ?? .zero
+                    let rect = CGRect(x: max(0, center.x - d/2), y: max(0, center.y - d/2), width: d, height: d)
+                    let clamped = clampRect(rect, in: author)
+                    let newObj = HighlightObject(rect: clamped, color: highlighterColor)
+                    pushUndoSnapshot()
+                    objects.append(.highlight(newObj))
+                    if objectSpaceSize == nil { objectSpaceSize = author }
+                    selectedObjectID = newObj.id
+                }
             }
     }
     
