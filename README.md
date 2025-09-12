@@ -16,9 +16,7 @@ Inspired by Greenshot on Windows - the goal is to make a tiny app that can do th
 </div>
 
 ## Work in Progress
-- <del>Add circle shape. 
-- <del>Adjust tools so i can also move objects around in the same tool. 
-- Remove the double ContentView for the two modes.
+- Pen colors, shape colors, etc should be saved across app launches.
 - Fix line colors changing.
 - Add File and Edit Menu Bar entries. 
 - Add double tap to zoom on mouse & trackpad.
@@ -57,7 +55,10 @@ Inspired by Greenshot on Windows - the goal is to make a tiny app that can do th
 - <del>Add pinch to zoom on trackpad.
 - <del>User friendly menus. 
 - <del>Hotkeys for tools.
-- <del> Working Menu Bar commands with icons. 
+- <del> Working Menu Bar commands with icons.
+- <del>Add circle shape. 
+- <del>Adjust tools so i can also move objects around in the same tool. 
+- <del>Remove the double ContentView for the two modes.
 
 ### Stretch Goals 
 - User adjustable hotkey for taking a snap. 
