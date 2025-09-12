@@ -61,7 +61,7 @@ private enum SaveFormat: String, CaseIterable, Identifiable {
 struct ContentView: View {
     
     @State private var selectedImageSize: CGSize? = nil
-    
+    @State private var imageReloadTrigger = UUID()
     
     @State private var missingSnapURLs: Set<URL> = []
     @State private var zoomLevel: Double = 1.0
@@ -257,6 +257,7 @@ struct ContentView: View {
                                             Color.clear.frame(width: fitted.width, height: fitted.height)
                                         }
                                     }
+                                    .id(imageReloadTrigger)
 
                                     // Object Overlay
                                     
@@ -616,19 +617,55 @@ struct ContentView: View {
                     if event.keyCode == 36 || event.keyCode == 76 { // Return or Keypad Enter
                         // Perform destructive crop with current overlay
                         if let url = selectedSnapURL {
-                            if objectSpaceSize == nil { objectSpaceSize = lastFittedSize ?? (selectedImageSize ?? .zero) }
                             pushUndoSnapshot()
                             if let base = NSImage(contentsOf: url) {
                                 let flattened = rasterize(base: base, objects: objects) ?? base
-                                let imgRectBL = uiRectToImageRect(rect, fitted: objectSpaceSize ?? base.size, image: flattened.size)
+                                
+                                // FIXED: Convert crop rect from fitted space to author space first
+                                let fittedSpaceForMapping: CGSize = {
+                                    if let s = objectSpaceSize { return s }
+                                    if let s = lastFittedSize { return s }
+                                    return flattened.size
+                                }()
+                                
+                                // Get the fitted size used for the crop UI
+                                let currentFittedSize: CGSize = {
+                                    if imageDisplayMode == "fit" {
+                                        // In fit mode, we need to calculate the actual fitted size
+                                        if let imgSize = selectedImageSize,
+                                           let windowSize = NSApp.keyWindow?.contentView?.bounds.size {
+                                            return fittedImageSize(original: imgSize, in: windowSize)
+                                        }
+                                    }
+                                    return fittedSpaceForMapping
+                                }()
+                                
+                                // Convert from fitted space to author space
+                                let rectInAuthorSpace = fittedRectToAuthorRect(rect,
+                                                                              fitted: currentFittedSize,
+                                                                              author: fittedSpaceForMapping)
+                                
+                                // Now map from author space to image space
+                                let imgRectBL = uiRectToImageRect(rectInAuthorSpace,
+                                                                 fitted: fittedSpaceForMapping,
+                                                                 image: flattened.size)
+                                
                                 if let cropped = cropImage(flattened, toBottomLeftRect: imgRectBL) {
-                                    objects.removeAll()
-                                    objectSpaceSize = nil
-                                    selectedObjectID = nil
-                                    activeHandle = .none
-                                    cropRect = nil
-                                    cropDraftRect = nil
-                                    cropHandle = .none
+                                    // Write the cropped image back to the file
+                                    if writeImage(cropped, to: url, format: preferredSaveFormat, jpegQuality: CGFloat(saveQuality)) {
+                                        // Clear all state and reload the cropped image
+                                        objects.removeAll()
+                                        lastFittedSize = nil
+                                        objectSpaceSize = nil
+                                        selectedObjectID = nil
+                                        activeHandle = .none
+                                        cropRect = nil
+                                        cropDraftRect = nil
+                                        cropHandle = .none
+                                        selectedImageSize = probeImageSize(url) // Update the image size
+                                        lastFittedSize = nil
+                                        imageReloadTrigger = UUID()
+                                    }
                                 }
                             }
                         }
@@ -642,6 +679,7 @@ struct ContentView: View {
                         return nil
                     }
                 }
+
                 return event
             }
         }
@@ -1153,8 +1191,15 @@ struct ContentView: View {
     
     // MARK: - Helpers
     
-    private func testSize(){
-        print(snapURLs.count)
+    private func fittedRectToAuthorRect(_ rect: CGRect, fitted: CGSize, author: CGSize) -> CGRect {
+        let sx = author.width / max(1, fitted.width)
+        let sy = author.height / max(1, fitted.height)
+        return CGRect(
+            x: rect.origin.x * sx,
+            y: rect.origin.y * sy,
+            width: rect.width * sx,
+            height: rect.height * sy
+        )
     }
     
     /// Probe image dimensions without instantiating NSImage (low RAM)
@@ -1296,157 +1341,7 @@ struct ContentView: View {
         return downsampledImage
     }
     
-    private func badgeGesture(insetOrigin: CGPoint, fitted: CGSize, author: CGSize) -> some Gesture {
-        DragGesture(minimumDistance: 0)
-            .onChanged { value in
-                let pFit = CGPoint(x: value.location.x - insetOrigin.x, y: value.location.y - insetOrigin.y)
-                let p = fittedToAuthorPoint(pFit, fitted: fitted, author: author)
-                
-                if dragStartPoint == nil {
-                    dragStartPoint = p
-                    // If starting on a badge, select it and decide handle (resize vs move)
-                    if let idx = objects.lastIndex(where: { obj in
-                        switch obj {
-                        case .badge(let o): return o.handleHitTest(p) != .none || o.hitTest(p)
-                        default: return false
-                        }
-                    }) {
-                        selectedObjectID = objects[idx].id
-                        if case .badge(let o) = objects[idx] { activeHandle = o.handleHitTest(p) }
-                    } else {
-                        selectedObjectID = nil
-                        activeHandle = .none
-                    }
-                } else if
-                    let sel = selectedObjectID,
-                    let start = dragStartPoint,
-                    let idx = objects.firstIndex(where: { $0.id == sel })
-                {
-                    let delta = CGSize(width: p.x - start.x, height: p.y - start.y)
-                    let dragDistance = hypot(delta.width, delta.height)
-                    
-                    if dragDistance > 0.5 { // any movement begins interaction
-                        if !pushedDragUndo { pushUndoSnapshot(); pushedDragUndo = true }
-                        switch objects[idx] {
-                        case .badge(let o):
-                            let updated = (activeHandle == .none) ? o.moved(by: delta) : o.resizing(activeHandle, to: p)
-                            let clamped = clampRect(updated.rect, in: author)
-                            var u = updated; u.rect = clamped
-                            objects[idx] = .badge(u)
-                        default:
-                            break
-                        }
-                        dragStartPoint = p
-                    }
-                }
-            }
-            .onEnded { value in
-                let endFit = CGPoint(x: value.location.x - insetOrigin.x, y: value.location.y - insetOrigin.y)
-                let startFit = CGPoint(x: value.startLocation.x - insetOrigin.x, y: value.startLocation.y - insetOrigin.y)
-                let pEnd = fittedToAuthorPoint(endFit, fitted: fitted, author: author)
-                let pStart = fittedToAuthorPoint(startFit, fitted: fitted, author: author)
-                
-                let dx = pEnd.x - pStart.x
-                let dy = pEnd.y - pStart.y
-                let moved = hypot(dx, dy) > 5 // threshold similar to text/pointer
-                
-                defer { dragStartPoint = nil; pushedDragUndo = false; activeHandle = .none }
-                
-                // If we interacted with an existing badge (moved/resized), do not create a new one
-                if moved, selectedObjectID != nil {
-                    return
-                }
-                
-                // If we started on a badge but didn’t move enough, just select it and return
-                if let sel = selectedObjectID, let idx = objects.firstIndex(where: { $0.id == sel }) {
-                    if case .badge(let o) = objects[idx], o.hitTest(pStart) || o.handleHitTest(pStart) != .none {
-                        return
-                    }
-                }
-                
-                // Otherwise, create a new badge at the click location
-                let diameter: CGFloat = 32
-                let rect = CGRect(x: max(0, pEnd.x - diameter/2),
-                                  y: max(0, pEnd.y - diameter/2),
-                                  width: diameter,
-                                  height: diameter)
-                let rectClamped = clampRect(rect, in: author)
-                badgeCount &+= 1
-                let newObj = BadgeObject(rect: rectClamped, number: badgeCount, fillColor: badgeColor, textColor: .white)
-                pushUndoSnapshot()
-                objects.append(.badge(newObj))
-                if objectSpaceSize == nil { objectSpaceSize = author }
-                selectedObjectID = newObj.id
-            }
-    }
-    
-    private func cropGesture(insetOrigin: CGPoint, fitted: CGSize, author: CGSize) -> some Gesture {
-        DragGesture(minimumDistance: 0)
-            .onChanged { value in
-                guard allowDraftTick() else { return }
-                let startFit = CGPoint(x: value.startLocation.x - insetOrigin.x, y: value.startLocation.y - insetOrigin.y)
-                let currentFit = CGPoint(x: value.location.x - insetOrigin.x, y: value.location.y - insetOrigin.y)
-                let start = fittedToAuthorPoint(startFit, fitted: fitted, author: author)
-                let current = fittedToAuthorPoint(currentFit, fitted: fitted, author: author)
-                
-                // If we already have a cropRect, interpret drags as edits (handles or move)
-                if let existing = cropRect {
-                    if cropDragStart == nil {
-                        cropDragStart = start
-                        cropOriginalRect = existing
-                        // Decide if we're on a handle; otherwise, treat as move if inside rect
-                        cropHandle = cropHandleHitTest(existing, at: start)
-                        if cropHandle == .none && existing.contains(start) {
-                            cropHandle = .none // move
-                        }
-                    }
-                    if let originRect = cropOriginalRect, let s = cropDragStart {
-                        if cropHandle == .none && originRect.contains(s) {
-                            // Move
-                            let dx = current.x - s.x
-                            let dy = current.y - s.y
-                            var moved = originRect
-                            moved.origin.x += dx
-                            moved.origin.y += dy
-                            cropRect = clampRect(moved, in: author)
-                        } else {
-                            // Resize using handle
-                            cropRect = clampRect(resizeRect(originRect, handle: cropHandle, to: current), in: author)
-                        }
-                    }
-                    return
-                }
-                
-                // No existing cropRect — create a new draft selection
-                func rectFrom(_ a: CGPoint, _ b: CGPoint) -> CGRect {
-                    let x0 = min(a.x, b.x)
-                    let y0 = min(a.y, b.y)
-                    let w = abs(a.x - b.x)
-                    let h = abs(a.y - b.y)
-                    return CGRect(x: x0, y: y0, width: w, height: h)
-                }
-                cropDraftRect = rectFrom(start, current)
-            }
-            .onEnded { value in
-                let currentFit = CGPoint(x: value.location.x - insetOrigin.x, y: value.location.y - insetOrigin.y)
-                _ = fittedToAuthorPoint(currentFit, fitted: fitted, author: author)
-                
-                if let _ = cropOriginalRect {
-                    // Finish edit
-                    cropDragStart = nil
-                    cropOriginalRect = nil
-                    cropHandle = .none
-                    return
-                }
-                
-                // Finish creation
-                if let draft = cropDraftRect {
-                    let clamped = clampRect(draft, in: author)
-                    cropRect = clamped.width > 2 && clamped.height > 2 ? clamped : nil
-                }
-                cropDraftRect = nil
-            }
-    }
+
     
     private func cropHandleHitTest(_ rect: CGRect, at p: CGPoint) -> Handle {
         let r: CGFloat = 8
@@ -1706,6 +1601,7 @@ struct ContentView: View {
     private func lineGesture(insetOrigin: CGPoint, fitted: CGSize, author: CGSize) -> some Gesture {
         DragGesture(minimumDistance: 0)
             .onChanged { value in
+                guard allowDraftTick() else { return }
                 let startFit = CGPoint(x: value.startLocation.x - insetOrigin.x, y: value.startLocation.y - insetOrigin.y)
                 let currentFit = CGPoint(x: value.location.x - insetOrigin.x, y: value.location.y - insetOrigin.y)
                 let start = fittedToAuthorPoint(startFit, fitted: fitted, author: author)
@@ -1787,10 +1683,10 @@ struct ContentView: View {
             }
     }
     
-    
     private func rectGesture(insetOrigin: CGPoint, fitted: CGSize, author: CGSize) -> some Gesture {
         DragGesture(minimumDistance: 0)
             .onChanged { value in
+                guard allowDraftTick() else { return }
                 let startFit = CGPoint(x: value.startLocation.x - insetOrigin.x, y: value.startLocation.y - insetOrigin.y)
                 let currentFit = CGPoint(x: value.location.x - insetOrigin.x, y: value.location.y - insetOrigin.y)
                 let start = fittedToAuthorPoint(startFit, fitted: fitted, author: author)
@@ -1890,6 +1786,7 @@ struct ContentView: View {
     private func ovalGesture(insetOrigin: CGPoint, fitted: CGSize, author: CGSize) -> some Gesture {
         DragGesture(minimumDistance: 0)
             .onChanged { value in
+                guard allowDraftTick() else { return }
                 let startFit = CGPoint(x: value.startLocation.x - insetOrigin.x, y: value.startLocation.y - insetOrigin.y)
                 let currentFit = CGPoint(x: value.location.x - insetOrigin.x, y: value.location.y - insetOrigin.y)
                 let start = fittedToAuthorPoint(startFit, fitted: fitted, author: author)
@@ -2060,6 +1957,7 @@ struct ContentView: View {
     private func textGesture(insetOrigin: CGPoint, fitted: CGSize, author: CGSize) -> some Gesture {
         DragGesture(minimumDistance: 0)
             .onChanged { value in
+                guard allowDraftTick() else { return }
                 let pFit = CGPoint(x: value.location.x - insetOrigin.x, y: value.location.y - insetOrigin.y)
                 let p = fittedToAuthorPoint(pFit, fitted: fitted, author: author)
                 
@@ -2196,6 +2094,7 @@ struct ContentView: View {
     private func pointerGesture(insetOrigin: CGPoint, fitted: CGSize, author: CGSize) -> some Gesture {
         DragGesture(minimumDistance: 0)
             .onChanged { value in
+                guard allowDraftTick() else { return }
                 let pFit = CGPoint(x: value.location.x - insetOrigin.x, y: value.location.y - insetOrigin.y)
                 let p = fittedToAuthorPoint(pFit, fitted: fitted, author: author)
                 if dragStartPoint == nil {
@@ -2327,6 +2226,172 @@ struct ContentView: View {
             }
     }
     
+    private func badgeGesture(insetOrigin: CGPoint, fitted: CGSize, author: CGSize) -> some Gesture {
+        DragGesture(minimumDistance: 0)
+            .onChanged { value in
+                guard allowDraftTick() else { return }
+                let pFit = CGPoint(x: value.location.x - insetOrigin.x, y: value.location.y - insetOrigin.y)
+                let p = fittedToAuthorPoint(pFit, fitted: fitted, author: author)
+                
+                if dragStartPoint == nil {
+                    dragStartPoint = p
+                    // If starting on a badge, select it and decide handle (resize vs move)
+                    if let idx = objects.lastIndex(where: { obj in
+                        switch obj {
+                        case .badge(let o): return o.handleHitTest(p) != .none || o.hitTest(p)
+                        default: return false
+                        }
+                    }) {
+                        selectedObjectID = objects[idx].id
+                        if case .badge(let o) = objects[idx] { activeHandle = o.handleHitTest(p) }
+                    } else {
+                        selectedObjectID = nil
+                        activeHandle = .none
+                    }
+                } else if
+                    let sel = selectedObjectID,
+                    let start = dragStartPoint,
+                    let idx = objects.firstIndex(where: { $0.id == sel })
+                {
+                    let delta = CGSize(width: p.x - start.x, height: p.y - start.y)
+                    let dragDistance = hypot(delta.width, delta.height)
+                    
+                    if dragDistance > 0.5 { // any movement begins interaction
+                        if !pushedDragUndo { pushUndoSnapshot(); pushedDragUndo = true }
+                        switch objects[idx] {
+                        case .badge(let o):
+                            let updated = (activeHandle == .none) ? o.moved(by: delta) : o.resizing(activeHandle, to: p)
+                            let clamped = clampRect(updated.rect, in: author)
+                            var u = updated; u.rect = clamped
+                            objects[idx] = .badge(u)
+                        default:
+                            break
+                        }
+                        dragStartPoint = p
+                    }
+                }
+            }
+            .onEnded { value in
+                let endFit = CGPoint(x: value.location.x - insetOrigin.x, y: value.location.y - insetOrigin.y)
+                let startFit = CGPoint(x: value.startLocation.x - insetOrigin.x, y: value.startLocation.y - insetOrigin.y)
+                let pEnd = fittedToAuthorPoint(endFit, fitted: fitted, author: author)
+                let pStart = fittedToAuthorPoint(startFit, fitted: fitted, author: author)
+                
+                let dx = pEnd.x - pStart.x
+                let dy = pEnd.y - pStart.y
+                let moved = hypot(dx, dy) > 5 // threshold similar to text/pointer
+                
+                defer { dragStartPoint = nil; pushedDragUndo = false; activeHandle = .none }
+                
+                // If we interacted with an existing badge (moved/resized), do not create a new one
+                if moved, selectedObjectID != nil {
+                    return
+                }
+                
+                // If we started on a badge but didn’t move enough, just select it and return
+                if let sel = selectedObjectID, let idx = objects.firstIndex(where: { $0.id == sel }) {
+                    if case .badge(let o) = objects[idx], o.hitTest(pStart) || o.handleHitTest(pStart) != .none {
+                        return
+                    }
+                }
+                
+                // Otherwise, create a new badge at the click location
+                let diameter: CGFloat = 32
+                let rect = CGRect(x: max(0, pEnd.x - diameter/2),
+                                  y: max(0, pEnd.y - diameter/2),
+                                  width: diameter,
+                                  height: diameter)
+                let rectClamped = clampRect(rect, in: author)
+                badgeCount &+= 1
+                let newObj = BadgeObject(rect: rectClamped, number: badgeCount, fillColor: badgeColor, textColor: .white)
+                pushUndoSnapshot()
+                objects.append(.badge(newObj))
+                if objectSpaceSize == nil { objectSpaceSize = author }
+                selectedObjectID = newObj.id
+            }
+    }
+    
+    private func cropGesture(insetOrigin: CGPoint, fitted: CGSize, author: CGSize) -> some Gesture {
+        DragGesture(minimumDistance: 0)
+            .onChanged { value in
+                guard allowDraftTick() else { return }
+                let startFit = CGPoint(x: value.startLocation.x - insetOrigin.x, y: value.startLocation.y - insetOrigin.y)
+                let currentFit = CGPoint(x: value.location.x - insetOrigin.x, y: value.location.y - insetOrigin.y)
+                
+                // Convert to fitted coordinate space for crop (not author space)
+                let startFitted = startFit
+                let currentFitted = currentFit
+                
+                // If we already have a cropRect, interpret drags as edits (handles or move)
+                if let existing = cropRect {
+                    if cropDragStart == nil {
+                        cropDragStart = startFitted
+                        cropOriginalRect = existing
+                        // Decide if we're on a handle; otherwise, treat as move if inside rect
+                        cropHandle = cropHandleHitTest(existing, at: startFitted)
+                        if cropHandle == .none && existing.contains(startFitted) {
+                            cropHandle = .none // move
+                        }
+                    }
+                    if let originRect = cropOriginalRect, let s = cropDragStart {
+                        if cropHandle == .none && originRect.contains(s) {
+                            // Move
+                            let dx = currentFitted.x - s.x
+                            let dy = currentFitted.y - s.y
+                            var moved = originRect
+                            moved.origin.x += dx
+                            moved.origin.y += dy
+                            cropRect = clampRect(moved, in: fitted) // clamp to fitted space
+                        } else {
+                            // Resize using handle
+                            cropRect = clampRect(resizeRect(originRect, handle: cropHandle, to: currentFitted), in: fitted)
+                        }
+                    }
+                    return
+                }
+                
+                // No existing cropRect – create a new draft selection in fitted space
+                func rectFrom(_ a: CGPoint, _ b: CGPoint) -> CGRect {
+                    let x0 = min(a.x, b.x)
+                    let y0 = min(a.y, b.y)
+                    let w = abs(a.x - b.x)
+                    let h = abs(a.y - b.y)
+                    return CGRect(x: x0, y: y0, width: w, height: h)
+                }
+                cropDraftRect = rectFrom(startFitted, currentFitted)
+            }
+            .onEnded { value in
+                let currentFit = CGPoint(x: value.location.x - insetOrigin.x, y: value.location.y - insetOrigin.y)
+                
+                if let _ = cropOriginalRect {
+                    // Finish edit
+                    cropDragStart = nil
+                    cropOriginalRect = nil
+                    cropHandle = .none
+                    return
+                }
+                
+                // Finish creation - store in fitted coordinate space
+                if let draft = cropDraftRect {
+                    let clamped = clampRect(draft, in: fitted)
+                    // Derive image pixel size of this selection based on current image pixel size and the un-zoomed author space.
+                    // Using `author` avoids incorporating the current zoom level (which would skew the math in Fill mode).
+                    let imgSize = selectedImageSize ?? currentImage?.size ?? .zero
+                    let scaleX = (imgSize.width  > 0) ? (imgSize.width  / max(1, author.width))  : 0
+                    let scaleY = (imgSize.height > 0) ? (imgSize.height / max(1, author.height)) : 0
+                    let pxW = clamped.width  * scaleX
+                    let pxH = clamped.height * scaleY
+                    // Accept if at least 1×1 px in image space, or if it’s a tiny but non-zero UI rect (>0.1pt) which cropImage will clamp to 1px
+                    if (pxW >= 1 && pxH >= 1) || (clamped.width > 0.1 && clamped.height > 0.1) {
+                        cropRect = clamped
+                    } else {
+                        cropRect = nil
+                    }
+                }
+                cropDraftRect = nil
+            }
+    }
+
     
     
     // MARK: - Canvas Coordinate System.
@@ -4107,13 +4172,24 @@ private func fittedToAuthorPoint(_ p: CGPoint, fitted: CGSize, author: CGSize) -
 /// Crops an NSImage using a rect expressed in image coordinates with bottom-left origin.
 private func cropImage(_ image: NSImage, toBottomLeftRect rBL: CGRect) -> NSImage? {
     guard let cg = image.cgImage(forProposedRect: nil, context: nil, hints: nil) else { return nil }
+    let imgW = CGFloat(cg.width)
     let imgH = CGFloat(cg.height)
     // Convert to CoreGraphics top-left origin
-    let rectTL = CGRect(x: rBL.origin.x,
+    var rectTL = CGRect(x: rBL.origin.x,
                         y: imgH - (rBL.origin.y + rBL.height),
                         width: rBL.width,
-                        height: rBL.height).integral
-    guard rectTL.width > 1, rectTL.height > 1 else { return nil }
+                        height: rBL.height)
+    // Normalize negative or tiny sizes
+    if rectTL.width < 0 { rectTL.origin.x += rectTL.width; rectTL.size.width = -rectTL.width }
+    if rectTL.height < 0 { rectTL.origin.y += rectTL.height; rectTL.size.height = -rectTL.height }
+    // Clamp to image bounds
+    rectTL.origin.x = max(0, min(rectTL.origin.x, imgW))
+    rectTL.origin.y = max(0, min(rectTL.origin.y, imgH))
+    rectTL.size.width  = max(1, min(rectTL.size.width,  imgW - rectTL.origin.x))
+    rectTL.size.height = max(1, min(rectTL.size.height, imgH - rectTL.origin.y))
+    // Integral pixel edges
+    rectTL = rectTL.integral
+    guard rectTL.width >= 1, rectTL.height >= 1 else { return nil }
     guard let sub = cg.cropping(to: rectTL) else { return nil }
     return NSImage(cgImage: sub, size: NSSize(width: rectTL.width, height: rectTL.height))
 }
