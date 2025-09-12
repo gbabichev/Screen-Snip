@@ -38,68 +38,84 @@ struct Screen_SnapApp: App {
         }
         .commands {
             CommandMenu("Tools") {
-                Button("Pointer") {
+                Button {
                     NotificationCenter.default.post(
                         name: .selectTool,
                         object: nil,
                         userInfo: ["tool": ToolKind.pointer.rawValue]
                     )
+                } label: {
+                    Label("Pointer", systemImage: "cursorarrow")
                 }
                 .keyboardShortcut("1", modifiers: .command)
-                Button("Pen") {
+                Button {
                     NotificationCenter.default.post(
                         name: .selectTool,
                         object: nil,
                         userInfo: ["tool": ToolKind.pen.rawValue]
                     )
+                } label: {
+                    Label("Pen", systemImage: "pencil.line")
                 }
                 .keyboardShortcut("2", modifiers: .command)
-                Button("Arrow") {
+                Button {
                     NotificationCenter.default.post(
                         name: .selectTool,
                         object: nil,
                         userInfo: ["tool": ToolKind.arrow.rawValue]
                     )
+                } label: {
+                    Label("Arrow", systemImage: "arrow.right")
                 }
                 .keyboardShortcut("3", modifiers: .command)
-                Button("Highlighter") {
+                Button {
                     NotificationCenter.default.post(
                         name: .selectTool,
                         object: nil,
                         userInfo: ["tool": ToolKind.highlighter.rawValue]
                     )
+                } label: {
+                    Label("Highlighter", systemImage: "highlighter")
                 }
                 .keyboardShortcut("4", modifiers: .command)
-                Button("Shape") {
+                Button {
                     NotificationCenter.default.post(
                         name: .selectTool,
                         object: nil,
                         userInfo: ["tool": ToolKind.shape.rawValue]
                     )
+                } label: {
+                    Label("Rectangle", systemImage: "square.dashed")
                 }
                 .keyboardShortcut("5", modifiers: .command)
-                Button("Increment") {
+                Button {
                     NotificationCenter.default.post(
                         name: .selectTool,
                         object: nil,
                         userInfo: ["tool": ToolKind.increment.rawValue]
                     )
+                } label: {
+                    Label("Badge", systemImage: "1.circle")
                 }
                 .keyboardShortcut("6", modifiers: .command)
-                Button("Text") {
+                Button {
                     NotificationCenter.default.post(
                         name: .selectTool,
                         object: nil,
                         userInfo: ["tool": ToolKind.text.rawValue]
                     )
+                } label: {
+                    Label("Text", systemImage: "textformat")
                 }
                 .keyboardShortcut("7", modifiers: .command)
-                Button("Crop") {
+                Button {
                     NotificationCenter.default.post(
                         name: .selectTool,
                         object: nil,
                         userInfo: ["tool": ToolKind.crop.rawValue]
                     )
+                } label: {
+                    Label("Crop", systemImage: "crop")
                 }
                 .keyboardShortcut("8", modifiers: .command)
             }

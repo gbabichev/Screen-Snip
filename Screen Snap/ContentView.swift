@@ -96,7 +96,7 @@ struct ContentView: View {
     @State private var textColor: NSColor = .white
     @State private var textBGEnabled: Bool = true
     @State private var textBGColor: NSColor = .black.withAlphaComponent(0.6)
-    @State private var badgeColor: NSColor = .systemRed
+    @State private var badgeColor: NSColor = .red
     @State private var badgeCount: Int = 0
     @State private var highlighterColor: NSColor = NSColor.systemYellow.withAlphaComponent(0.35)
     
@@ -860,7 +860,7 @@ struct ContentView: View {
                         }
                         
                     } label: {
-                        Label("Copy Last", systemImage: "doc.on.doc")
+                        Label("Copy to Clipboard", systemImage: "doc.on.doc")
                     } primaryAction: {
                         // Flatten & Copy to Clipboard
                         flattenRefreshAndCopy()
@@ -932,12 +932,8 @@ struct ContentView: View {
                         if selectedTool == .line {
                             
                             Section("Pen Color") {
-                                PenColorButton(current: $strokeColor, color: .black, name: "Black")
-                                PenColorButton(current: $strokeColor, color: .red, name: "Red")
-                                PenColorButton(current: $strokeColor, color: .blue, name: "Blue")
-                                PenColorButton(current: $strokeColor, color: .systemGreen, name: "Green")
-                                PenColorButton(current: $strokeColor, color: .systemYellow, name: "Yellow")
-                                PenColorButton(current: $strokeColor, color: .white, name: "White")
+                                colorButtons(current: $strokeColor)
+
                             }
                             
                             Menu("Line Width") {
@@ -970,7 +966,7 @@ struct ContentView: View {
                         )
                         .foregroundStyle(selectedTool == .line || selectedTool == .highlighter ? Color.white : Color.primary)
                     }
-                    .glassEffect(selectedTool == .line || selectedTool == .highlighter ? .regular.tint(.blue) : .regular)
+                    .glassEffect(selectedTool == .line || selectedTool == .highlighter ? .regular.tint(Color(nsColor: strokeColor).opacity(0.7)) : .regular)
                     .help(selectedTool == .line ? "Pen tool selected" : selectedTool == .highlighter ? "Highlighter tool selected" : "Select drawing tool")
                 }
                 
@@ -981,7 +977,10 @@ struct ContentView: View {
                     
                     // Shape rect
                     Menu {
-                        // Reuse stroke controls for shapes
+                        colorButtons(current: $strokeColor)
+                        
+                        Divider()
+                        
                         Menu("Line Width") {
                             ForEach([1,2,3,4,6,8,12,16], id: \.self) { w in
                                 Button(action: { strokeWidth = CGFloat(w) }) {
@@ -990,42 +989,26 @@ struct ContentView: View {
                                 }
                             }
                         }
-                        Section("Color") {
-                            PenColorButton(current: $strokeColor, color: .black, name: "Black")
-                            PenColorButton(current: $strokeColor, color: .red, name: "Red")
-                            PenColorButton(current: $strokeColor, color: .blue, name: "Blue")
-                            PenColorButton(current: $strokeColor, color: .systemGreen, name: "Green")
-                            PenColorButton(current: $strokeColor, color: .systemYellow, name: "Yellow")
-                            PenColorButton(current: $strokeColor, color: .white, name: "White")
-                        }
-                        Divider()
-                        Text("Hold ⇧ for a perfect square")
-                            .foregroundStyle(.secondary)
                     } label: {
                         Label("Shapes", systemImage: "square.dashed")
                     } primaryAction: {
                         selectedTool = .rect
                         selectedObjectID = nil; activeHandle = .none; cropDraftRect = nil; cropRect = nil; cropHandle = .none
                         focusedTextID = nil
-                        
                     }
+                    .id(strokeColor)
+                    .glassEffect(selectedTool == .rect ? .regular.tint(Color(nsColor: strokeColor).opacity(0.7)) : .regular)
+                    .help("Click to draw a shape")
                     
                     // Increment (badge)
-                    
-                    
                     Menu {
-                        badgeColorButton(color: .red, name: "Red")
-                        badgeColorButton(color: .blue, name: "Blue")
-                        badgeColorButton(color: .green, name: "Green")
-                        badgeColorButton(color: .yellow, name: "Yellow")
+                        colorButtons(current: $badgeColor)
 
                         Divider()
                         
                         Button("Reset Counter") { badgeCount = 0 }
                     } label: {
-                        Image(systemName: "1.circle")
-                            .symbolRenderingMode(.monochrome)
-                            .foregroundStyle(selectedTool == .badge ? Color.white : Color.primary)
+                        Label("Badges", systemImage: "1.circle")
                     } primaryAction: {
                         selectedTool = .badge
                         selectedObjectID = nil
@@ -1035,20 +1018,17 @@ struct ContentView: View {
                         cropHandle = .none
                         focusedTextID = nil
                     }
-                    .glassEffect(selectedTool == .badge ? .regular.tint(.gray) : .regular)
                     .id(badgeColor)
+                    .glassEffect(selectedTool == .badge ? .regular.tint(Color(nsColor: badgeColor).opacity(0.7)) : .regular)
                     .help("Click to place numbered badge")
                     
-                }
-                
-                
-                
-                
-                ToolbarItemGroup(placement: .principal) {
-                    
-                    
-                    
+                    // Text Tool
                     Menu {
+                        
+                        colorButtons(current: $textColor)
+                        
+                        Divider()
+                        
                         Menu("Font Size") {
                             ForEach([10,12,14,16,18,22,26,32,40,48], id: \.self) { s in
                                 Button(action: { textFontSize = CGFloat(s) }) {
@@ -1057,15 +1037,11 @@ struct ContentView: View {
                                 }
                             }
                         }
-                        Menu("Text Color") {
-                            PenColorButton(current: $textColor, color: .black, name: "Black")
-                            PenColorButton(current: $textColor, color: .white, name: "White")
-                            PenColorButton(current: $textColor, color: .red, name: "Red")
-                            PenColorButton(current: $textColor, color: .blue, name: "Blue")
-                            PenColorButton(current: $textColor, color: .systemGreen, name: "Green")
-                            PenColorButton(current: $textColor, color: .systemYellow, name: "Yellow")
-                        }
+                        
+                        Divider()
+                        
                         Toggle("Background", isOn: $textBGEnabled)
+                                                
                         Menu("Background Color") {
                             PenColorButton(current: $textBGColor, color: .black.withAlphaComponent(0.6), name: "Black 60%")
                             PenColorButton(current: $textBGColor, color: NSColor.white.withAlphaComponent(0.7), name: "White 70%")
@@ -1085,13 +1061,13 @@ struct ContentView: View {
                         selectedTool = .text
                         selectedObjectID = nil; activeHandle = .none; cropDraftRect = nil; cropRect = nil; cropHandle = .none
                     }
-                    .glassEffect(selectedTool == .text ? .regular.tint(.blue) : .regular)
+                    .id(textColor)
+                    .id(textBGEnabled)
+                    .id(textBGColor)
+                    .glassEffect(selectedTool == .badge ? .regular.tint(Color(nsColor: textColor).opacity(0.7)) : .regular)
+                    .help("Click to place a text box.")
                     
-                    
-                    
-                    
-                    
-                    // CROP
+                    // Crop
                     Button(action: {
                         selectedTool = .crop
                         selectedObjectID = nil
@@ -1105,12 +1081,7 @@ struct ContentView: View {
                     .glassEffect(selectedTool == .crop ? .regular.tint(.blue) : .regular)
                     .help("Drag to select an area to crop")
                     
-                    
-                    
-                    
                 }
-                
-                
             }        else {
                 ToolbarItem(placement: .principal) {
                     Spacer()
@@ -1170,20 +1141,47 @@ struct ContentView: View {
     
     // MARK: - Helpers
     
-    func badgeColorButton(color: Color, name: String) -> some View {
-        let nsColor = NSColor(color)
-        return Button {
-            badgeColor = nsColor
-        } label: {
+    func colorButtons(current: Binding<NSColor>) -> some View {
+        let availableColors = ["red", "blue", "green", "yellow", "black", "white", "orange", "purple", "pink", "gray"]
+        
+        return VStack(alignment: .leading, spacing: 8) {
+            ForEach(availableColors, id: \.self) { colorName in
+                colorButton(current: current, colorName: colorName)
+            }
+        }
+    }
+    
+    func colorButton(current: Binding<NSColor>, colorName: String) -> some View {
+        // Map string to NSColor - add more colors as needed
+        let color: NSColor = {
+            switch colorName.lowercased() {
+            case "red": return .systemRed
+            case "blue": return .systemBlue
+            case "green": return .systemGreen
+            case "yellow": return .systemYellow
+            case "black": return .black
+            case "white": return .white
+            case "orange": return .systemOrange
+            case "purple": return .systemPurple
+            case "pink": return .systemPink
+            case "gray", "grey": return .systemGray
+            default: return .black // fallback
+            }
+        }()
+        
+        // Capitalize first letter for display
+        let displayName = colorName.prefix(1).uppercased() + colorName.dropFirst().lowercased()
+        
+        return Button(action: { current.wrappedValue = color }) {
             HStack {
-                if badgeColor == nsColor {
+                if current.wrappedValue == color {
                     Image(systemName: "checkmark")
-                        .foregroundStyle(color, .primary, .secondary)
+                        .foregroundStyle(Color(nsColor: color), .primary, .secondary)
                 } else {
                     Image(systemName: "circle.fill")
-                        .foregroundStyle(color, .primary, .secondary)
+                        .foregroundStyle(Color(nsColor: color), .primary, .secondary)
                 }
-                Text(name)
+                Text(displayName)
             }
         }
     }

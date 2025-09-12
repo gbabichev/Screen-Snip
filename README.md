@@ -16,15 +16,13 @@ Inspired by Greenshot on Windows - the goal is to make a tiny app that can do th
 </div>
 
 ## Work in Progress
-- User friendly menus. 
-- Hotkeys for tools.
-- Working Menu Bar commands with icons. 
-
 - Fix line colors changing.
 - Add circle shape. 
 - Add double tap to zoom on mouse & trackpad.
 - Update Snap Gallery so I can see dates. 
-- User adjustable highlighter opacity 
+- User adjustable highlighter opacity.
+- User adjustable dock icon
+- Start on Login
 
 
 
@@ -54,7 +52,9 @@ Inspired by Greenshot on Windows - the goal is to make a tiny app that can do th
 - <del>Adjust liquid glass in app icon.
 - <del>Add cmd+scroll with mouse.
 - <del>Add pinch to zoom on trackpad.
-
+- <del>User friendly menus. 
+- <del>Hotkeys for tools.
+- <del> Working Menu Bar commands with icons. 
 
 ### Stretch Goals 
 - User adjustable hotkey for taking a snap. 
