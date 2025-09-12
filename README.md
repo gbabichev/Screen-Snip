@@ -16,11 +16,11 @@ Inspired by Greenshot on Windows - the goal is to make a tiny app that can do th
 </div>
 
 ## Work in Progress
-- Pen colors, shape colors, etc should be saved across app launches.
-- line, oval, rect need to have separate colors not share the same color. 
-- <del>Fix line colors changing.
+- Update Pen & Oval tool menu bars being weird. 
 - Add File and Edit Menu Bar entries. 
 - Remove debug prints
+- Refresh thumbnail on click. 
+- Investigate RAM usage.
 - Add double tap to zoom on mouse & trackpad.
 - Update Snap Gallery so I can see dates. 
 - User adjustable highlighter opacity.
@@ -61,6 +61,9 @@ Inspired by Greenshot on Windows - the goal is to make a tiny app that can do th
 - <del>Add circle shape. 
 - <del>Adjust tools so i can also move objects around in the same tool. 
 - <del>Remove the double ContentView for the two modes.
+- <del>line, oval, rect need to have separate colors not share the same color. 
+- <del>Fix line colors changing.
+- <del>Pen colors, shape colors, etc should be saved across app launches.
 
 ### Stretch Goals 
 - User adjustable hotkey for taking a snap. 

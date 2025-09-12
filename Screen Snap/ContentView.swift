@@ -1,10 +1,39 @@
 
 
+
 import SwiftUI
 import AppKit
 @preconcurrency import ScreenCaptureKit
 import VideoToolbox
 import UniformTypeIdentifiers
+
+// MARK: - NSColor Hex Conversion Helper (no RawRepresentable conformance)
+extension NSColor {
+    /// Initialize from hex string like "#RRGGBB" or "#RRGGBBAA" (case-insensitive)
+    convenience init?(hexRGBA: String) {
+        let trimmed = hexRGBA.trimmingCharacters(in: .whitespacesAndNewlines)
+        var hex = trimmed.replacingOccurrences(of: "#", with: "").uppercased()
+        if hex.count == 6 { hex += "FF" }
+        guard hex.count == 8, let val = UInt32(hex, radix: 16) else { return nil }
+        let r = CGFloat((val >> 24) & 0xFF) / 255.0
+        let g = CGFloat((val >> 16) & 0xFF) / 255.0
+        let b = CGFloat((val >> 8)  & 0xFF) / 255.0
+        let a = CGFloat( val        & 0xFF) / 255.0
+        self.init(srgbRed: r, green: g, blue: b, alpha: a)
+    }
+
+    /// Convert to hex string `#RRGGBBAA` in sRGB
+    func toHexRGBA() -> String {
+        guard let srgb = usingColorSpace(.sRGB) else { return "#000000FF" }
+        var r: CGFloat = 0, g: CGFloat = 0, b: CGFloat = 0, a: CGFloat = 0
+        srgb.getRed(&r, green: &g, blue: &b, alpha: &a)
+        let ri = UInt8(round(r * 255))
+        let gi = UInt8(round(g * 255))
+        let bi = UInt8(round(b * 255))
+        let ai = UInt8(round(a * 255))
+        return String(format: "#%02X%02X%02X%02X", ri, gi, bi, ai)
+    }
+}
 
 
 private enum Tool { case pointer, line, rect, oval, text, crop, badge, highlighter }
@@ -66,10 +95,41 @@ struct ContentView: View {
     @State private var cropDragStart: CGPoint? = nil
     @State private var cropOriginalRect: CGRect? = nil
     @State private var strokeWidth: CGFloat = 3
-    //@State private var strokeColor: NSColor = .black
-    @State private var lineColor: NSColor = .black
-    @State private var rectColor: NSColor = .black
-    @State private var ovalColor: NSColor = .black
+    @AppStorage("lineColor") private var lineColorRaw: String = "#000000FF"
+    private var lineColor: NSColor {
+        get { NSColor(hexRGBA: lineColorRaw) ?? .black }
+        set { lineColorRaw = newValue.toHexRGBA() }
+    }
+    private var lineColorBinding: Binding<NSColor> {
+        Binding(
+            get: { lineColor },
+            set: { newValue in
+                lineColorRaw = newValue.toHexRGBA()
+            }
+        )
+    }
+    @AppStorage("rectColor") private var rectColorRaw: String = "#000000FF"
+    private var rectColor: NSColor {
+        get { NSColor(hexRGBA: rectColorRaw) ?? .black }
+        set { rectColorRaw = newValue.toHexRGBA() }
+    }
+    private var rectColorBinding: Binding<NSColor> {
+        Binding(
+            get: { rectColor },
+            set: { newValue in rectColorRaw = newValue.toHexRGBA() }
+        )
+    }
+    @AppStorage("ovalColor") private var ovalColorRaw: String = "#000000FF"
+    private var ovalColor: NSColor {
+        get { NSColor(hexRGBA: ovalColorRaw) ?? .black }
+        set { ovalColorRaw = newValue.toHexRGBA() }
+    }
+    private var ovalColorBinding: Binding<NSColor> {
+        Binding(
+            get: { ovalColor },
+            set: { newValue in ovalColorRaw = newValue.toHexRGBA() }
+        )
+    }
     @State private var lineHasArrow: Bool = false
     // Snaps persisted on disk (newest first). Each element is a file URL to a PNG.
     @State private var snapURLs: [URL] = []
@@ -90,12 +150,46 @@ struct ContentView: View {
     @State private var keyMonitor: Any? = nil
     
     @State private var textFontSize: CGFloat = 18
-    @State private var textColor: NSColor = .white
+    
+    @AppStorage("textColor") private var textColorRaw: String = "#FFFFFFFF"
+    private var textColor: NSColor {
+        get { NSColor(hexRGBA: textColorRaw) ?? .white }
+        set { textColorRaw = newValue.toHexRGBA() }
+    }
+    private var textColorBinding: Binding<NSColor> {
+        Binding(get: { textColor }, set: { textColorRaw = $0.toHexRGBA() })
+    }
+    
     @State private var textBGEnabled: Bool = true
-    @State private var textBGColor: NSColor = .black.withAlphaComponent(0.6)
-    @State private var badgeColor: NSColor = .red
+    
+    @AppStorage("textBGColor") private var textBGColorRaw: String = "#00000099"
+    private var textBGColor: NSColor {
+        get { NSColor(hexRGBA: textBGColorRaw) ?? NSColor.black.withAlphaComponent(0.6) }
+        set { textBGColorRaw = newValue.toHexRGBA() }
+    }
+    private var textBGColorBinding: Binding<NSColor> {
+        Binding(get: { textBGColor }, set: { textBGColorRaw = $0.toHexRGBA() })
+    }
+    
+    @AppStorage("badgeColor") private var badgeColorRaw: String = "#FF0000FF"
+    private var badgeColor: NSColor {
+        get { NSColor(hexRGBA: badgeColorRaw) ?? .red }
+        set { badgeColorRaw = newValue.toHexRGBA() }
+    }
+    private var badgeColorBinding: Binding<NSColor> {
+        Binding(get: { badgeColor }, set: { badgeColorRaw = $0.toHexRGBA() })
+    }
+    
     @State private var badgeCount: Int = 0
-    @State private var highlighterColor: NSColor = NSColor.systemYellow.withAlphaComponent(0.35)
+    
+    @AppStorage("highlighterColor") private var highlighterColorRaw: String = "#FFFF59FF"
+    private var highlighterColor: NSColor {
+        get { NSColor(hexRGBA: highlighterColorRaw) ?? NSColor.systemYellow.withAlphaComponent(0.35) }
+        set { highlighterColorRaw = newValue.toHexRGBA() }
+    }
+    private var highlighterColorBinding: Binding<NSColor> {
+        Binding(get: { highlighterColor }, set: { highlighterColorRaw = $0.toHexRGBA() })
+    }
     
     @State private var lastFittedSize: CGSize? = nil
     @State private var objectSpaceSize: CGSize? = nil  // tracks the UI coordinate space size the objects are authored in
@@ -793,12 +887,7 @@ struct ContentView: View {
                         
                         // Show options based on selected tool
                         if selectedTool == .line {
-                            
-                            colorButtons(current: $lineColor)
-
-
-                            
-                            
+                            colorButtons(current: lineColorBinding)
                             Menu("Line Width") {
                                 ForEach([1,2,3,4,6,8,12,16], id: \.self) { w in
                                     Button(action: { strokeWidth = CGFloat(w) }) {
@@ -811,14 +900,13 @@ struct ContentView: View {
                                     }
                                 }
                             }
-                            
                         } else if selectedTool == .highlighter {
                             
                             Section("Highlighter Color") {
-                                PenColorButton(current: $highlighterColor, color: NSColor.systemYellow.withAlphaComponent(0.35), name: "Yellow")
-                                PenColorButton(current: $highlighterColor, color: NSColor.systemGreen.withAlphaComponent(0.35), name: "Green")
-                                PenColorButton(current: $highlighterColor, color: NSColor.systemBlue.withAlphaComponent(0.35), name: "Blue")
-                                PenColorButton(current: $highlighterColor, color: NSColor.systemPink.withAlphaComponent(0.35), name: "Pink")
+                                PenColorButton(current: highlighterColorBinding, color: NSColor.systemYellow.withAlphaComponent(0.35), name: "Yellow")
+                                PenColorButton(current: highlighterColorBinding, color: NSColor.systemGreen.withAlphaComponent(0.35), name: "Green")
+                                PenColorButton(current: highlighterColorBinding, color: NSColor.systemBlue.withAlphaComponent(0.35), name: "Blue")
+                                PenColorButton(current:highlighterColorBinding, color: NSColor.systemPink.withAlphaComponent(0.35), name: "Pink")
                             }
                         }
                     } label: {
@@ -840,7 +928,7 @@ struct ContentView: View {
                     
                     // Circle / Oval
                     Menu {
-                        colorButtons(current: $ovalColor)
+                        colorButtons(current: ovalColorBinding)
 
                         Divider()
 
@@ -868,7 +956,7 @@ struct ContentView: View {
                     
                     // Shape rect
                     Menu {
-                        colorButtons(current: $rectColor)
+                        colorButtons(current: rectColorBinding)
                         
                         Divider()
                         
@@ -893,7 +981,7 @@ struct ContentView: View {
                     
                     // Increment (badge)
                     Menu {
-                        colorButtons(current: $badgeColor)
+                        colorButtons(current: badgeColorBinding)
 
                         Divider()
                         
@@ -916,7 +1004,7 @@ struct ContentView: View {
                     // Text Tool
                     Menu {
                         
-                        colorButtons(current: $textColor)
+                        colorButtons(current: textColorBinding)
                         
                         Divider()
                         
@@ -934,12 +1022,12 @@ struct ContentView: View {
                         Toggle("Background", isOn: $textBGEnabled)
                                                 
                         Menu("Background Color") {
-                            PenColorButton(current: $textBGColor, color: .black.withAlphaComponent(0.6), name: "Black 60%")
-                            PenColorButton(current: $textBGColor, color: NSColor.white.withAlphaComponent(0.7), name: "White 70%")
-                            PenColorButton(current: $textBGColor, color: NSColor.red.withAlphaComponent(0.5), name: "Red 50%")
-                            PenColorButton(current: $textBGColor, color: NSColor.blue.withAlphaComponent(0.5), name: "Blue 50%")
-                            PenColorButton(current: $textBGColor, color: NSColor.systemGreen.withAlphaComponent(0.5), name: "Green 50%")
-                            PenColorButton(current: $textBGColor, color: NSColor.systemYellow.withAlphaComponent(0.5), name: "Yellow 50%")
+                            PenColorButton(current: textBGColorBinding, color: .black.withAlphaComponent(0.6), name: "Black 60%")
+                            PenColorButton(current: textBGColorBinding, color: NSColor.white.withAlphaComponent(0.7), name: "White 70%")
+                            PenColorButton(current: textBGColorBinding, color: NSColor.red.withAlphaComponent(0.5), name: "Red 50%")
+                            PenColorButton(current: textBGColorBinding, color: NSColor.blue.withAlphaComponent(0.5), name: "Blue 50%")
+                            PenColorButton(current: textBGColorBinding, color: NSColor.systemGreen.withAlphaComponent(0.5), name: "Green 50%")
+                            PenColorButton(current: textBGColorBinding, color: NSColor.systemYellow.withAlphaComponent(0.5), name: "Yellow 50%")
                         }
                         
                         
@@ -955,7 +1043,8 @@ struct ContentView: View {
                     .id(textColor)
                     .id(textBGEnabled)
                     .id(textBGColor)
-                    .glassEffect(selectedTool == .badge ? .regular.tint(Color(nsColor: textColor).opacity(0.7)) : .regular)
+                    .id(textFontSize)
+                    .glassEffect(selectedTool == .text ? .regular.tint(Color(nsColor: textColor).opacity(0.7)) : .regular)
                     .help("Click to place a text box.")
                     
                     // Crop
@@ -1042,36 +1131,48 @@ struct ContentView: View {
         }
     }
     
+    func colorsEqual(_ a: NSColor, _ b: NSColor, tol: CGFloat = 0.001) -> Bool {
+        // Prefer sRGB; fall back to deviceRGB; finally fall back to NSObject equality.
+        if let ar = a.usingColorSpace(.sRGB), let br = b.usingColorSpace(.sRGB) {
+            return abs(ar.redComponent   - br.redComponent)   < tol &&
+                   abs(ar.greenComponent - br.greenComponent) < tol &&
+                   abs(ar.blueComponent  - br.blueComponent)  < tol &&
+                   abs(ar.alphaComponent - br.alphaComponent) < tol
+        }
+        if let ar = a.usingColorSpace(.deviceRGB), let br = b.usingColorSpace(.deviceRGB) {
+            return abs(ar.redComponent   - br.redComponent)   < tol &&
+                   abs(ar.greenComponent - br.greenComponent) < tol &&
+                   abs(ar.blueComponent  - br.blueComponent)  < tol &&
+                   abs(ar.alphaComponent - br.alphaComponent) < tol
+        }
+        return a.isEqual(b)
+    }
+    
     func colorButton(current: Binding<NSColor>, colorName: String) -> some View {
-        // Map string to NSColor - add more colors as needed
+        // Map string to NSColor
         let color: NSColor = {
             switch colorName.lowercased() {
-            case "red": return .systemRed
-            case "blue": return .systemBlue
-            case "green": return .systemGreen
-            case "yellow": return .systemYellow
-            case "black": return .black
-            case "white": return .white
-            case "orange": return .systemOrange
-            case "purple": return .systemPurple
-            case "pink": return .systemPink
-            case "gray", "grey": return .systemGray
-            default: return .black // fallback
+            case "red":    .systemRed
+            case "blue":   .systemBlue
+            case "green":  .systemGreen
+            case "yellow": .systemYellow
+            case "black":  .black
+            case "white":  .white
+            case "orange": .systemOrange
+            case "purple": .systemPurple
+            case "pink":   .systemPink
+            case "gray", "grey": .systemGray
+            default:       .black
             }
         }()
-        
-        // Capitalize first letter for display
+
         let displayName = colorName.prefix(1).uppercased() + colorName.dropFirst().lowercased()
-        
+        let isSelected = colorsEqual(current.wrappedValue, color)
+
         return Button(action: { current.wrappedValue = color }) {
             HStack {
-                if current.wrappedValue == color {
-                    Image(systemName: "checkmark")
-                        .foregroundStyle(Color(nsColor: color), .primary, .secondary)
-                } else {
-                    Image(systemName: "circle.fill")
-                        .foregroundStyle(Color(nsColor: color), .primary, .secondary)
-                }
+                Image(systemName: isSelected ? "checkmark" : "circle.fill")
+                    .foregroundStyle(Color(nsColor: color), .primary, .secondary)
                 Text(displayName)
             }
         }
