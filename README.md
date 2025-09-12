@@ -16,16 +16,16 @@ Inspired by Greenshot on Windows - the goal is to make a tiny app that can do th
 </div>
 
 ## Work in Progress
+- Fix RAM usage.
+- Update Snap Gallery so I can see dates.
 - Update Pen & Oval tool menu bars being weird. 
 - Add File and Edit Menu Bar entries. 
-- Remove debug prints
+- Remove debug prints.
 - Refresh thumbnail on click. 
-- Investigate RAM usage.
 - Add double tap to zoom on mouse & trackpad.
-- Update Snap Gallery so I can see dates. 
 - User adjustable highlighter opacity.
-- User adjustable dock icon
-- Start on Login
+- User adjustable dock icon.
+- Start on Login.
 
 
 

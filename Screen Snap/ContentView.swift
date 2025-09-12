@@ -6,6 +6,7 @@ import AppKit
 @preconcurrency import ScreenCaptureKit
 import VideoToolbox
 import UniformTypeIdentifiers
+import ImageIO
 
 // MARK: - NSColor Hex Conversion Helper (no RawRepresentable conformance)
 extension NSColor {
@@ -59,6 +60,7 @@ private enum SaveFormat: String, CaseIterable, Identifiable {
 
 struct ContentView: View {
     
+    @State private var selectedImageSize: CGSize? = nil
     
     
     @State private var missingSnapURLs: Set<URL> = []
@@ -211,13 +213,14 @@ struct ContentView: View {
                 
                 
                 Group {
-                    if let img = currentImage {
+                    if let url = selectedSnapURL, let imgSize = selectedImageSize {
                         GeometryReader { geo in
-                            let baseFitted = imageDisplayMode == "fit" ?
-                                fittedImageSize(original: img.size, in: geo.size) :
-                                img.size // actual size
-                            let fitted = CGSize(width: baseFitted.width * zoomLevel, height: baseFitted.height * zoomLevel)
-                            
+                            let baseFitted = imageDisplayMode == "fit"
+                                ? fittedImageSize(original: imgSize, in: geo.size)
+                                : imgSize
+                            let fitted = CGSize(width: baseFitted.width * zoomLevel,
+                                                height: baseFitted.height * zoomLevel)
+
                             ScrollView([.horizontal, .vertical], showsIndicators: true) {
                                 ZStack {
                                     let author = objectSpaceSize ?? baseFitted
@@ -228,36 +231,56 @@ struct ContentView: View {
                                         x: max(0, (fitted.width  - scaledSize.width)  / 2),
                                         y: max(0, (fitted.height - scaledSize.height) / 2)
                                     )
-                                    
-                                    // Base image
-                                    Image(nsImage: img)
-                                        .resizable()
-                                        .interpolation(.high)
-                                        .frame(width: fitted.width, height: fitted.height)
-                                    
-                                    // Object overlay drawn in author space and scaled live
+
+                                    // Base image streamed without holding NSImage in @State
+                                    AsyncImage(url: url) { phase in
+                                        switch phase {
+                                        case .success(let img):
+                                            img.resizable()
+                                               .interpolation(.high)
+                                               .frame(width: fitted.width, height: fitted.height)
+                                        case .empty:
+                                            ProgressView()
+                                                .frame(width: fitted.width, height: fitted.height)
+                                        case .failure(_):
+                                            Color.secondary.opacity(0.1)
+                                                .frame(width: fitted.width, height: fitted.height)
+                                                .overlay(
+                                                    VStack(spacing: 6) {
+                                                        Image(systemName: "exclamationmark.triangle")
+                                                        Text("Failed to load image")
+                                                            .font(.caption)
+                                                            .foregroundStyle(.secondary)
+                                                    }
+                                                )
+                                        @unknown default:
+                                            Color.clear.frame(width: fitted.width, height: fitted.height)
+                                        }
+                                    }
+
+                                    // ======== your overlay (unchanged) ========
                                     ZStack {
                                         // Persisted objects
                                         ForEach(objects) { obj in
                                             switch obj {
                                             case .line(let o):
                                                 let base = o.drawPath(in: author)
-                                                // Use the object's stored color instead of global strokeColor
-                                                base.stroke(Color(nsColor: o.color), style: StrokeStyle(lineWidth: o.width, lineCap: .round))
-                                                // If this line uses an arrow, draw the head at the end point
+                                                base.stroke(Color(nsColor: o.color),
+                                                            style: StrokeStyle(lineWidth: o.width, lineCap: .round))
                                                 if o.arrow {
                                                     arrowHeadPath(from: o.start, to: o.end, lineWidth: o.width)
-                                                        .fill(Color(nsColor: o.color))  // Use object's color
+                                                        .fill(Color(nsColor: o.color))
                                                 }
                                             case .rect(let o):
                                                 o.drawPath(in: author)
-                                                    .stroke(Color(nsColor: o.color), style: StrokeStyle(lineWidth: o.width))  // Use object's color
+                                                    .stroke(Color(nsColor: o.color),
+                                                            style: StrokeStyle(lineWidth: o.width))
                                             case .oval(let o):
                                                 Ellipse()
                                                     .path(in: o.rect)
-                                                    .stroke(Color(nsColor: o.color), style: StrokeStyle(lineWidth: o.width))  // Use object's color
+                                                    .stroke(Color(nsColor: o.color),
+                                                            style: StrokeStyle(lineWidth: o.width))
                                             case .text(let o):
-                                                // Text rendering stays the same (already uses object colors)
                                                 if focusedTextID != o.id {
                                                     Text(o.text.isEmpty ? " " : o.text)
                                                         .font(.system(size: o.fontSize))
@@ -268,7 +291,6 @@ struct ContentView: View {
                                                         .position(x: o.rect.midX, y: o.rect.midY)
                                                 }
                                             case .badge(let o):
-                                                // Badge rendering stays the same (already uses object colors)
                                                 Circle()
                                                     .fill(Color(nsColor: o.fillColor))
                                                     .frame(width: o.rect.width, height: o.rect.height)
@@ -280,13 +302,11 @@ struct ContentView: View {
                                                             .position(x: o.rect.midX, y: o.rect.midY)
                                                     }
                                             case .highlight(let o):
-                                                // Highlight rendering stays the same (already uses object color)
                                                 Rectangle()
                                                     .fill(Color(nsColor: o.color))
                                                     .frame(width: o.rect.width, height: o.rect.height)
                                                     .position(x: o.rect.midX, y: o.rect.midY)
                                             case .image(let o):
-                                                // Image rendering stays the same
                                                 Image(nsImage: o.image)
                                                     .resizable()
                                                     .interpolation(.high)
@@ -294,57 +314,46 @@ struct ContentView: View {
                                                     .position(x: o.rect.midX, y: o.rect.midY)
                                             }
                                         }
-                                        
-                                        // Draft feedback while creating (draft is stored in author space)
+
+                                        // Drafts, crop visuals — leave exactly as your code has them
                                         if let d = draft {
                                             Path { p in p.move(to: d.start); p.addLine(to: d.end) }
-                                                .stroke(Color(nsColor: lineColor).opacity(0.8), style: StrokeStyle(lineWidth: d.width, dash: [6,4]))
-                                            
-                                            // Show arrow in draft for actual size mode only
+                                                .stroke(Color(nsColor: lineColor).opacity(0.8),
+                                                        style: StrokeStyle(lineWidth: d.width, dash: [6,4]))
                                             if imageDisplayMode != "fit" && lineHasArrow {
                                                 arrowHeadPath(from: d.start, to: d.end, lineWidth: d.width)
                                                     .fill(Color(nsColor: lineColor).opacity(0.8))
                                             }
                                         }
-                                        
+
                                         if let r = draftRect {
                                             switch selectedTool {
                                             case .rect:
                                                 Rectangle()
                                                     .path(in: r)
-                                                    .stroke(imageDisplayMode == "fit" ?
-                                                           .secondary :
-                                                           Color(nsColor: rectColor).opacity(0.8),
-                                                           style: StrokeStyle(lineWidth: imageDisplayMode == "fit" ?
-                                                                             max(1, strokeWidth) :
-                                                                             strokeWidth,
-                                                                             dash: [6,4]))
+                                                    .stroke(imageDisplayMode == "fit" ? .secondary : Color(nsColor: rectColor).opacity(0.8),
+                                                            style: StrokeStyle(lineWidth: imageDisplayMode == "fit" ? max(1, strokeWidth) : strokeWidth, dash: [6,4]))
                                             case .highlighter:
-                                                Rectangle()
-                                                    .path(in: r)
-                                                    .fill(Color(nsColor: highlighterColor))
+                                                Rectangle().path(in: r).fill(Color(nsColor: highlighterColor))
                                             case .oval:
-                                                // Only show oval draft in actual size mode
                                                 if imageDisplayMode != "fit" {
                                                     Ellipse().path(in: r)
-                                                        .stroke(Color(nsColor: rectColor).opacity(0.8), style: StrokeStyle(lineWidth: strokeWidth, dash: [6,4]))
+                                                        .stroke(Color(nsColor: rectColor).opacity(0.8),
+                                                                style: StrokeStyle(lineWidth: strokeWidth, dash: [6,4]))
                                                 }
                                             case .line:
-                                                // no rectangle; the line preview is drawn separately
                                                 EmptyView()
                                             default:
                                                 EmptyView()
                                             }
                                         }
-                                        
+
                                         if let crp = cropRect {
                                             Rectangle().path(in: crp)
-                                                .stroke(Color.orange.opacity(0.95), style: StrokeStyle(lineWidth: max(1, strokeWidth), dash: [8,4]))
-                                                .overlay(
-                                                    Rectangle().path(in: crp).fill(Color.orange.opacity(0.10))
-                                                )
-                                            
-                                            // Corner handles to indicate the crop can be dragged/resized
+                                                .stroke(Color.orange.opacity(0.95),
+                                                        style: StrokeStyle(lineWidth: max(1, strokeWidth), dash: [8,4]))
+                                                .overlay(Rectangle().path(in: crp).fill(Color.orange.opacity(0.10)))
+
                                             let pts = [
                                                 CGPoint(x: crp.minX, y: crp.minY),
                                                 CGPoint(x: crp.maxX, y: crp.minY),
@@ -352,20 +361,18 @@ struct ContentView: View {
                                                 CGPoint(x: crp.maxX, y: crp.maxY)
                                             ]
                                             ForEach(Array(pts.enumerated()), id: \.offset) { _, pt in
-                                                Circle()
-                                                    .stroke(Color.orange, lineWidth: 1)
+                                                Circle().stroke(Color.orange, lineWidth: 1)
                                                     .background(Circle().fill(Color.white))
                                                     .frame(width: 12, height: 12)
                                                     .position(pt)
                                             }
                                         }
-                                        
+
                                         if let cr = cropDraftRect {
                                             Rectangle().path(in: cr)
-                                                .stroke(Color.orange.opacity(0.9), style: StrokeStyle(lineWidth: max(1, strokeWidth), dash: [8,4]))
-                                                .overlay(
-                                                    Rectangle().path(in: cr).fill(Color.orange.opacity(0.12))
-                                                )
+                                                .stroke(Color.orange.opacity(0.9),
+                                                        style: StrokeStyle(lineWidth: max(1, strokeWidth), dash: [8,4]))
+                                                .overlay(Rectangle().path(in: cr).fill(Color.orange.opacity(0.12)))
                                         }
                                     }
                                     .frame(width: author.width, height: author.height)
@@ -389,74 +396,53 @@ struct ContentView: View {
                                     }
                                     .contentShape(Rectangle())
                                     .allowsHitTesting(true)
-                                    .simultaneousGesture(selectedTool == .pointer ? pointerGesture(insetOrigin: origin, fitted: fitted, author: author) : nil)
-                                    .simultaneousGesture(selectedTool == .line ? lineGesture(insetOrigin: origin, fitted: fitted, author: author) : nil)
-                                    .simultaneousGesture(selectedTool == .rect ? rectGesture(insetOrigin: origin, fitted: fitted, author: author) : nil)
-                                    .simultaneousGesture(selectedTool == .oval ? ovalGesture(insetOrigin: origin, fitted: fitted, author: author) : nil)
-                                    .simultaneousGesture(selectedTool == .text ? textGesture(insetOrigin: origin, fitted: fitted, author: author) : nil)
-                                    .simultaneousGesture(selectedTool == .crop ? cropGesture(insetOrigin: origin, fitted: fitted, author: author) : nil)
-                                    .simultaneousGesture(selectedTool == .badge ? badgeGesture(insetOrigin: origin, fitted: fitted, author: author) : nil)
-                                    .simultaneousGesture(selectedTool == .highlighter ? highlightGesture(insetOrigin: origin, fitted: fitted, author: author) : nil)
+                                    .simultaneousGesture(selectedTool == .pointer    ? pointerGesture(insetOrigin: origin, fitted: fitted, author: author) : nil)
+                                    .simultaneousGesture(selectedTool == .line       ? lineGesture(insetOrigin: origin, fitted: fitted, author: author)    : nil)
+                                    .simultaneousGesture(selectedTool == .rect       ? rectGesture(insetOrigin: origin, fitted: fitted, author: author)    : nil)
+                                    .simultaneousGesture(selectedTool == .oval       ? ovalGesture(insetOrigin: origin, fitted: fitted, author: author)    : nil)
+                                    .simultaneousGesture(selectedTool == .text       ? textGesture(insetOrigin: origin, fitted: fitted, author: author)    : nil)
+                                    .simultaneousGesture(selectedTool == .crop       ? cropGesture(insetOrigin: origin, fitted: fitted, author: author)    : nil)
+                                    .simultaneousGesture(selectedTool == .badge      ? badgeGesture(insetOrigin: origin, fitted: fitted, author: author)   : nil)
+                                    .simultaneousGesture(selectedTool == .highlighter ? highlightGesture(insetOrigin: origin, fitted: fitted, author: author): nil)
                                     .onAppear {
                                         lastFittedSize = baseFitted
                                         if objectSpaceSize == nil { objectSpaceSize = baseFitted }
                                     }
                                 }
                                 .frame(width: fitted.width, height: fitted.height)
-                                // Center the content within the visible scroll area when smaller than viewport
                                 .frame(minWidth: geo.size.width, minHeight: geo.size.height, alignment: .center)
                             }
                             .frame(maxWidth: .infinity, maxHeight: .infinity)
                             .overlay(
-                                LocalScrollWheelZoomView(
-                                    zoomLevel: $zoomLevel,
-                                    minZoom: 1.0,
-                                    maxZoom: 3.0
-                                )
-                                .allowsHitTesting(true)
+                                LocalScrollWheelZoomView(zoomLevel: $zoomLevel, minZoom: 1.0, maxZoom: 3.0)
+                                    .allowsHitTesting(true)
                             )
                             .gesture(
                                 MagnificationGesture(minimumScaleDelta: 0.01)
                                     .onChanged { scale in
                                         if pinchBaseZoom == nil { pinchBaseZoom = zoomLevel }
                                         let proposed = (pinchBaseZoom ?? zoomLevel) * Double(scale)
-                                        let minZoom = 1.0
-                                        let maxZoom = 3.0
-                                        zoomLevel = min(max(proposed, minZoom), maxZoom)
+                                        zoomLevel = min(max(proposed, 1.0), 3.0)
                                     }
-                                    .onEnded { _ in
-                                        pinchBaseZoom = nil
-                                    }
+                                    .onEnded { _ in pinchBaseZoom = nil }
                             )
                         }
                     } else {
+                        // your empty/missing states unchanged
                         VStack(spacing: 12) {
-                            // Show different content based on whether we have snaps but they're missing
                             if !missingSnapURLs.isEmpty {
-                                // We had snaps but some are missing - show error state
                                 VStack(spacing: 8) {
-                                    Image(systemName: "exclamationmark.triangle")
-                                        .imageScale(.large)
-                                        .foregroundStyle(.orange)
-                                    Text("Some images were deleted from disk")
-                                        .fontWeight(.medium)
-                                    Text("Press ⇧⌘2 to capture a new screenshot")
-                                        .font(.caption)
-                                        .foregroundStyle(.secondary)
+                                    Image(systemName: "exclamationmark.triangle").imageScale(.large).foregroundStyle(.orange)
+                                    Text("Some images were deleted from disk").fontWeight(.medium)
+                                    Text("Press ⇧⌘2 to capture a new screenshot").font(.caption).foregroundStyle(.secondary)
                                 }
                             } else if !snapURLs.isEmpty {
-                                // We have snaps, but no image selected - show the camera icon
-                                Image(systemName: "camera")
-                                    .imageScale(.large)
-                                    .foregroundStyle(.tint)
+                                Image(systemName: "camera").imageScale(.large).foregroundStyle(.tint)
                                 Text("Press ⇧⌘2 or click 'Capture Region' to begin.")
                                     .multilineTextAlignment(.center)
                                     .foregroundStyle(.secondary)
                             } else {
-                                // No snaps at all - show normal empty state
-                                Image(systemName: "camera")
-                                    .imageScale(.large)
-                                    .foregroundStyle(.tint)
+                                Image(systemName: "camera").imageScale(.large).foregroundStyle(.tint)
                                 Text("Press ⇧⌘2 or click 'Capture Region' to begin.")
                                     .multilineTextAlignment(.center)
                                     .foregroundStyle(.secondary)
@@ -466,8 +452,10 @@ struct ContentView: View {
                     }
                 }
                 
-                // SPACER LIVES HERE AT THE BOTTOM OF VSTACK
-                //Spacer()
+                
+                
+
+                
             }
             
             if showCopiedHUD {
@@ -518,49 +506,65 @@ struct ContentView: View {
                     
                     
                     
-//                    ScrollView(.horizontal, showsIndicators: true) {
-//                        HStack(spacing: 8) {
-//                            ForEach(snapURLs, id: \.self) { url in
-//                                VStack(spacing: 4) {
-//                                    ThumbnailView(
-//                                        url: url,
-//                                        selected: selectedSnapURL == url,
-//                                        onDelete: { deleteSnap(url) },
-//                                        width: 140,
-//                                        height: 90
-//                                    )
-//                                    Text(url.lastPathComponent)
-//                                        .lineLimit(1)
-//                                        .font(.caption2)
-//                                        .foregroundStyle(.secondary)
-//                                        .frame(width: 140)
-//                                }
-//                                .contentShape(Rectangle())
-//                                .onTapGesture {
-//                                    // Check if file exists before trying to load
-//                                    let fm = FileManager.default
-//                                    if !fm.fileExists(atPath: url.path) {
-//                                        // File is missing - add to missing set and remove from snapURLs
-//                                        missingSnapURLs.insert(url)
-//                                        if let index = snapURLs.firstIndex(of: url) {
-//                                            snapURLs.remove(at: index)
-//                                        }
-//                                        // If this was the selected snap, clear selection and show error
-//                                        if selectedSnapURL == url {
-//                                            selectedSnapURL = nil
-//                                        }
-//                                        return
-//                                    }
-//                                }
-//                                .contextMenu {
-//                                    Button("Reveal in Finder") { NSWorkspace.shared.activateFileViewerSelecting([url]) }
-//                                }
-//                            }
-//                        }
-//                        .padding(.horizontal, 8)
-//                        .padding(.vertical, 6)
-//                    }
-//                    .background(.quaternary.opacity(0.05))
+                    ScrollView(.horizontal, showsIndicators: true) {
+                        HStack(spacing: 8) {
+                            ForEach(snapURLs, id: \.self) { url in
+                                VStack(spacing: 4) {
+                                    ThumbnailView(
+                                        url: url,
+                                        selected: selectedSnapURL == url,
+                                        onDelete: { deleteSnap(url) },
+                                        width: 140,
+                                        height: 90
+                                    )
+                                    Text(url.lastPathComponent)
+                                        .lineLimit(1)
+                                        .font(.caption2)
+                                        .foregroundStyle(.secondary)
+                                        .frame(width: 140)
+                                }
+                                .contentShape(Rectangle())
+                                .onTapGesture {
+                                    // Check if file exists before trying to load
+                                    let fm = FileManager.default
+                                    if !fm.fileExists(atPath: url.path) {
+                                        // File is missing - add to missing set and remove from snapURLs
+                                        missingSnapURLs.insert(url)
+                                        if let index = snapURLs.firstIndex(of: url) {
+                                            snapURLs.remove(at: index)
+                                        }
+                                        // If this was the selected snap, clear selection and show error
+                                        if selectedSnapURL == url {
+                                            selectedSnapURL = nil
+                                        }
+                                        return
+                                    }
+                                    
+                                    // File exists - load it into the editor
+                                    selectedSnapURL = url
+                                    selectedImageSize = probeImageSize(url)
+                                    // Clear all editing state when switching images
+                                    objects.removeAll()
+                                    objectSpaceSize = nil
+                                    selectedObjectID = nil
+                                    activeHandle = .none
+                                    cropRect = nil
+                                    cropDraftRect = nil
+                                    cropHandle = .none
+                                    focusedTextID = nil
+                                    
+                                    // Clear undo/redo stacks for the new image
+                                    undoStack.removeAll()
+                                    redoStack.removeAll()
+                                }
+                                .contextMenu {
+                                    Button("Reveal in Finder") { NSWorkspace.shared.activateFileViewerSelecting([url]) }
+                                }
+                            }
+                        }
+                        .padding(.horizontal, 8)
+                        .padding(.vertical, 6)
+                    }
                 }
                 .padding(.top, 4)
                 .background(.thinMaterial) // keep it distinct and readable
@@ -608,19 +612,21 @@ struct ContentView: View {
                 if selectedTool == .crop, let rect = cropRect, !event.modifierFlags.contains(.command) {
                     if event.keyCode == 36 || event.keyCode == 76 { // Return or Keypad Enter
                         // Perform destructive crop with current overlay
-                        if let base = currentImage {
-                            if objectSpaceSize == nil { objectSpaceSize = lastFittedSize ?? base.size }
+                        if let url = selectedSnapURL {
+                            if objectSpaceSize == nil { objectSpaceSize = lastFittedSize ?? (selectedImageSize ?? .zero) }
                             pushUndoSnapshot()
-                            let flattened = rasterize(base: base, objects: objects) ?? base
-                            let imgRectBL = uiRectToImageRect(rect, fitted: objectSpaceSize ?? base.size, image: flattened.size)
-                            if let cropped = cropImage(flattened, toBottomLeftRect: imgRectBL) {
-                                objects.removeAll()
-                                objectSpaceSize = nil
-                                selectedObjectID = nil
-                                activeHandle = .none
-                                cropRect = nil
-                                cropDraftRect = nil
-                                cropHandle = .none
+                            if let base = NSImage(contentsOf: url) {
+                                let flattened = rasterize(base: base, objects: objects) ?? base
+                                let imgRectBL = uiRectToImageRect(rect, fitted: objectSpaceSize ?? base.size, image: flattened.size)
+                                if let cropped = cropImage(flattened, toBottomLeftRect: imgRectBL) {
+                                    objects.removeAll()
+                                    objectSpaceSize = nil
+                                    selectedObjectID = nil
+                                    activeHandle = .none
+                                    cropRect = nil
+                                    cropDraftRect = nil
+                                    cropHandle = .none
+                                }
                             }
                         }
                         return nil
@@ -682,6 +688,7 @@ struct ContentView: View {
             
             // Set the selected snap (this should now work since we refreshed)
             selectedSnapURL = url
+            selectedImageSize = probeImageSize(url)
             
             print("🔥 [DEBUG] State completely cleared and snap loaded: \(url.lastPathComponent)")
         }
@@ -762,7 +769,7 @@ struct ContentView: View {
             }
             
             // Items visible only when we have a capture
-            if currentImage != nil {
+            if selectedSnapURL != nil {
                 
                 if imageDisplayMode != "fit"{
                     ToolbarItemGroup(placement: .navigation){
@@ -794,13 +801,13 @@ struct ContentView: View {
                         Button(action: performUndo) {
                             Label("Undo", systemImage: "arrow.uturn.backward")
                         }
-                        .disabled(undoStack.isEmpty || currentImage == nil)
+                        .disabled(undoStack.isEmpty || selectedSnapURL == nil)
                         
                         // Redo
                         Button(action: performRedo) {
                             Label("Redo", systemImage: "arrow.uturn.forward")
                         }
-                        .disabled(redoStack.isEmpty || currentImage == nil)
+                        .disabled(redoStack.isEmpty || selectedSnapURL == nil)
                         
                         // Flatten and Save (in place)
                         Button(action: flattenAndSaveInPlace) {
@@ -838,7 +845,7 @@ struct ContentView: View {
                         Label("Pointer", systemImage: "cursorarrow")
                             .foregroundStyle(selectedTool == .pointer ? Color.white : Color.primary)
                         
-                    } 
+                    }
                     .glassEffect(selectedTool == .pointer ? .regular.tint(.blue) : .regular)
                 }
                 
@@ -1114,10 +1121,11 @@ struct ContentView: View {
                         loadExistingSnaps()
                     }
                 } else {
-                    if let url = urls.first, let img = NSImage(contentsOf: url) {
+                    if let url = urls.first {
                         undoStack.removeAll()
                         redoStack.removeAll()
                         selectedSnapURL = url
+                        lastFittedSize = nil
                         objects.removeAll()
                         objectSpaceSize = nil
                         selectedObjectID = nil
@@ -1141,6 +1149,20 @@ struct ContentView: View {
     }
     
     // MARK: - Helpers
+    
+    private func testSize(){
+        print(snapURLs.count)
+    }
+    
+    /// Probe image dimensions without instantiating NSImage (low RAM)
+    private func probeImageSize(_ url: URL) -> CGSize? {
+        guard let src = CGImageSourceCreateWithURL(url as CFURL, nil),
+              let props = CGImageSourceCopyPropertiesAtIndex(src, 0, nil) as? [CFString: Any] else { return nil }
+        let w = (props[kCGImagePropertyPixelWidth]  as? NSNumber)?.doubleValue ?? 0
+        let h = (props[kCGImagePropertyPixelHeight] as? NSNumber)?.doubleValue ?? 0
+        return (w > 0 && h > 0) ? CGSize(width: w, height: h) : nil
+    }
+    
     
     func colorButtons(current: Binding<NSColor>) -> some View {
         let availableColors = ["red", "blue", "green", "yellow", "black", "white", "orange", "purple", "pink", "gray"]
@@ -1482,16 +1504,11 @@ struct ContentView: View {
     private func captureAsync(rect selectedGlobalRect: CGRect) async -> NSImage? {
         defer { endSelectionCleanup() }
         
-        // 1) Determine which NSScreen the selection mostly lies on.
         guard let bestScreen = bestScreenForSelection(selectedGlobalRect) else { return nil }
         let screenFramePts = bestScreen.frame
-        // let scale = bestScreen.backingScaleFactor // REMOVED
-        
-        // 2) Map selection to that screen and intersect.
         let intersectPts = selectedGlobalRect.intersection(screenFramePts)
         if intersectPts.isNull || intersectPts.isEmpty { return nil }
         
-        // 3) Find matching SCDisplay by CGDisplayID.
         guard let cgIDNum = bestScreen.deviceDescription[NSDeviceDescriptionKey("NSScreenNumber")] as? NSNumber else { return nil }
         let cgID = CGDirectDisplayID(truncating: cgIDNum)
         
@@ -1499,63 +1516,41 @@ struct ContentView: View {
             let content = try await SCShareableContent.current
             guard let scDisplay = content.displays.first(where: { $0.displayID == cgID }) else { return nil }
             
-            // Compute precise pixels-per-point per axis from SCDisplay + NSScreen
             let scale = bestScreen.backingScaleFactor
-            let pxPerPtX = scale
-            let pxPerPtY = scale
-            
-            //            print("🔍 Scale Factor Debug:")
-            //            print("  scDisplay.width: \(scDisplay.width)")
-            //            print("  scDisplay.height: \(scDisplay.height)")
-            //            print("  screenFramePts.width: \(screenFramePts.width)")
-            //            print("  screenFramePts.height: \(screenFramePts.height)")
-            //            print("  bestScreen.backingScaleFactor: \(bestScreen.backingScaleFactor)")
-            
-            // 4) Build a filter for that display and capture one frame.
             let filter = SCContentFilter(display: scDisplay, excludingWindows: [])
+            
+            // CRITICAL: Capture and process immediately
             guard let fullCG = await ScreenCapturer.shared.captureImage(using: filter, display: scDisplay) else { return nil }
-            //            print("Full capture dimensions: \(fullCG.width) × \(fullCG.height)")
-            //            print("Expected for 5K display: should be around 5120 × 2880")
-            // 5) Convert the intersected rect (points) to pixel crop in the captured image space.
+            
             let cropPx = cropRectPixels(intersectPts,
                                         withinScreenFramePts: screenFramePts,
                                         imageSizePx: CGSize(width: fullCG.width, height: fullCG.height),
-                                        scaleX: pxPerPtX,
-                                        scaleY: pxPerPtY)
+                                        scaleX: scale, scaleY: scale)
             
             let clamped = CGRect(x: max(0, cropPx.origin.x),
                                  y: max(0, cropPx.origin.y),
                                  width: min(cropPx.width, CGFloat(fullCG.width) - max(0, cropPx.origin.x)),
                                  height: min(cropPx.height, CGFloat(fullCG.height) - max(0, cropPx.origin.y)))
-            guard clamped.width > 1, clamped.height > 1 else { return nil }
             
-            guard let cropped = fullCG.cropping(to: clamped) else { return nil }
+            guard clamped.width > 1, clamped.height > 1,
+                  let cropped = fullCG.cropping(to: clamped) else { return nil }
+            
+            // Create final image and return immediately
+            let pointSize = CGSize(width: CGFloat(cropped.width) / scale,
+                                   height: CGFloat(cropped.height) / scale)
             
             let rep = NSBitmapImageRep(cgImage: cropped)
-            let pointSize = CGSize(
-                width: CGFloat(cropped.width) / pxPerPtX,
-                height: CGFloat(cropped.height) / pxPerPtY
-            )
             rep.size = pointSize
             
-            let nsImage = NSImage(size: pointSize)
-            nsImage.addRepresentation(rep)
+            let result = NSImage(size: pointSize)
+            result.addRepresentation(rep)
+            return result
+            // fullCG, cropped, and rep all deallocate here
             
-            // Debug logging
-            //            print("🔍 Capture Debug:")
-            //            print("  Screen scale factors: pxPerPtX=\(pxPerPtX), pxPerPtY=\(pxPerPtY)")
-            //            print("  CGImage pixel size: \(cropped.width) × \(cropped.height)")
-            //            print("  Calculated point size: \(pointSize.width) × \(pointSize.height)")
-            //            print("  NSImage.size: \(nsImage.size.width) × \(nsImage.size.height)")
-            //            print("  Rep.size: \(rep.size.width) × \(rep.size.height)")
-            //            print("  Rep pixels: \(rep.pixelsWide) × \(rep.pixelsHigh)")
-            
-            return nsImage
         } catch {
             return nil
         }
     }
-    
     /// Returns the screen with the largest intersection area with the selection.
     private func bestScreenForSelection(_ selection: CGRect) -> NSScreen? {
         var best: (screen: NSScreen, area: CGFloat)?
@@ -2988,6 +2983,14 @@ struct ContentView: View {
         do {
             try data.write(to: url, options: .atomicWrite)
             insertSnapURL(url)  // Add to gallery
+            
+            defer {
+                // Clear any retained image references
+                selectedImageSize = nil
+                // Limit undo stack growth
+                if undoStack.count > 5 { undoStack.removeFirst(undoStack.count - 5) }
+                if redoStack.count > 5 { redoStack.removeFirst(redoStack.count - 5) }
+            }
             return url
         } catch {
             return nil
@@ -3050,10 +3053,10 @@ struct ContentView: View {
 //        } catch {
 //            urls = []
 //        }
-//        
+//
 //        // Fallback: if we failed to enumerate, do nothing
 //        guard !urls.isEmpty else { return }
-//        
+//
 //        GalleryWindow.shared.present(
 //            urls: urls,
 //            onSelect: { url in
@@ -3090,6 +3093,24 @@ struct ContentView: View {
         }
         snapURLs.insert(url, at: 0)
     }
+
+    /// Select a snap URL, probe its pixel size and reset view state
+    private func selectSnap(_ url: URL) {
+        // Reset undo/redo for a fresh image session
+        undoStack.removeAll()
+        redoStack.removeAll()
+        // Set selection and compute size (no NSImage held in state)
+        selectedSnapURL = url
+        lastFittedSize = nil
+        // Clear editing state
+        objects.removeAll()
+        objectSpaceSize = nil
+        selectedObjectID = nil
+        activeHandle = .none
+        cropRect = nil
+        cropDraftRect = nil
+        cropHandle = .none
+    }
     
     /// Delete a snap from disk and update gallery/selection.
     private func deleteSnap(_ url: URL) {
@@ -3108,101 +3129,15 @@ struct ContentView: View {
         // Update current selection / preview
         if selectedSnapURL == url {
             selectedSnapURL = snapURLs.first
-            // Remove the entire if-else block that tries to assign to currentImage
-        }
-    }
-    
-    // MARK: - Thumbnail View
-    
-    private struct ThumbnailView: View {
-        let url: URL
-        let selected: Bool
-        let onDelete: () -> Void
-        let width: CGFloat
-        let height: CGFloat
-        @State private var hovering = false
-        @State private var hoverDebounce = 0
-        @State private var image: NSImage? = nil
-        
-        var body: some View {
-            ZStack {
-                if let img = image {
-                    Image(nsImage: img)
-                        .resizable()
-                        .interpolation(.low)
-                        .aspectRatio(contentMode: .fill)
-                } else {
-                    ZStack {
-                        Rectangle().fill(.secondary.opacity(0.1))
-                        Image(systemName: "photo")
-                    }
-                }
-            }
-            .frame(width: width, height: height)
-            .clipShape(RoundedRectangle(cornerRadius: 6))
-            .contentShape(RoundedRectangle(cornerRadius: 6))
-            .onHover { isIn in
-                if isIn {
-                    hovering = true
-                    hoverDebounce &+= 1
-                } else {
-                    let token = hoverDebounce
-                    DispatchQueue.main.asyncAfter(deadline: .now() + 0.12) {
-                        if token == hoverDebounce {
-                            hovering = false
-                        }
-                    }
-                }
-            }
-            // Simple selection border
-            .overlay(
-                RoundedRectangle(cornerRadius: 6)
-                    .stroke(selected ? Color.accentColor : Color.secondary.opacity(0.3),
-                            lineWidth: selected ? 2 : 1)
-            )
-            // Hover controls + selected checkmark
-            .overlay(alignment: .topTrailing) {
-                HStack(spacing: 6) {
-                    Button(action: onDelete) {
-                        Image(systemName: "xmark.circle.fill")
-                            .imageScale(.large)
-                    }
-                    .buttonStyle(.plain)
-                    .help("Delete")
-                    .opacity(hovering ? 1 : 0.001)
-                    .allowsHitTesting(hovering)
-                    .onHover { isIn in
-                        if isIn {
-                            hovering = true
-                            hoverDebounce &+= 1
-                        } else {
-                            let token = hoverDebounce
-                            DispatchQueue.main.asyncAfter(deadline: .now() + 0.12) {
-                                if token == hoverDebounce {
-                                    hovering = false
-                                }
-                            }
-                        }
-                    }
-                    if selected {
-                        Image(systemName: "checkmark.circle.fill")
-                            .symbolRenderingMode(.multicolor)
-                    }
-                }
-                .padding(4)
-            }
-            .onAppear {
-                if image == nil {
-                    image = NSImage(contentsOf: url)
-                }
-            }
-            .onChange(of: url) { _, newURL in
-                image = NSImage(contentsOf: newURL)
+            if let sel = selectedSnapURL {
+                selectedImageSize = probeImageSize(sel)
+                lastFittedSize = nil
+            } else {
+                selectedImageSize = nil
+                lastFittedSize = nil
             }
         }
     }
-    
-    
     
 }
 
@@ -3360,7 +3295,9 @@ private struct GalleryView: View {
             LazyVGrid(columns: columns, spacing: 10) {
                 ForEach(urlsLocal, id: \.self) { url in
                     GalleryThumb(url: url)
-                        .onTapGesture { onSelect(url) }
+                        .onTapGesture {
+                            onSelect(url)
+                        }
                 }
             }
             .padding(16)
@@ -4096,6 +4033,16 @@ final class ScreenCapturer: NSObject, SCStreamOutput {
             
             if let error = captureError {
                 throw error
+            }
+            
+            defer {
+                captureResult = nil
+                captureError = nil
+                currentStream = nil
+                // Add explicit autoreleasepool drain
+                autoreleasepool {
+                    // Force any retained objects to release
+                }
             }
             
             return captureResult
