@@ -62,7 +62,6 @@ struct ContentView: View {
     
     @State private var selectedImageSize: CGSize? = nil
     @State private var imageReloadTrigger = UUID()
-    
     @State private var missingSnapURLs: Set<URL> = []
     @State private var zoomLevel: Double = 1.0
     @State private var pinchBaseZoom: Double? = nil
@@ -206,6 +205,22 @@ struct ContentView: View {
         return true
     }
     
+    private func getActualDisplaySize(_ pixelSize: CGSize) -> CGSize {
+        guard let url = selectedSnapURL else { return pixelSize }
+        
+        // Load NSImage to get proper point size (retina-aware)
+        if let nsImage = NSImage(contentsOf: url) {
+            return nsImage.size  // This gives you 1440x900 for a 2880x1800 retina image
+        }
+        
+        // Fallback detection
+        if pixelSize.width > 1800 || pixelSize.height > 1800 {
+            return CGSize(width: pixelSize.width / 2, height: pixelSize.height / 2)
+        }
+        
+        return pixelSize
+    }
+    
     var body: some View {
         ZStack(alignment: .topLeading) {
             // Main canvas
@@ -216,8 +231,8 @@ struct ContentView: View {
                     if let url = selectedSnapURL, let imgSize = selectedImageSize {
                         GeometryReader { geo in
                             let baseFitted = imageDisplayMode == "fit"
-                                ? fittedImageSize(original: imgSize, in: geo.size)
-                                : imgSize
+                                ? fittedImageSize(original: getActualDisplaySize(imgSize), in: geo.size)  // Use point size for fitting
+                                : getActualDisplaySize(imgSize)  // Use point size for actual
                             let fitted = CGSize(width: baseFitted.width * zoomLevel,
                                                 height: baseFitted.height * zoomLevel)
 

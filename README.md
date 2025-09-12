@@ -16,14 +16,11 @@ Inspired by Greenshot on Windows - the goal is to make a tiny app that can do th
 </div>
 
 ## Work in Progress
-- Fix RAM usage.
+- Refresh thumbnail on click / copy to clipboard. 
 - Update Snap Gallery so I can see dates.
-- Update Pen & Oval tool menu bars being weird. 
 - Add File and Edit Menu Bar entries. 
 - Remove debug prints.
-- Refresh thumbnail on click. 
 - Add double tap to zoom on mouse & trackpad.
-- User adjustable highlighter opacity.
 - User adjustable dock icon.
 - Start on Login.
 
@@ -64,6 +61,9 @@ Inspired by Greenshot on Windows - the goal is to make a tiny app that can do th
 - <del>line, oval, rect need to have separate colors not share the same color. 
 - <del>Fix line colors changing.
 - <del>Pen colors, shape colors, etc should be saved across app launches.
+- <del>Update Pen & Oval tool menu bars being weird. 
+- <del>Fix RAM usage.
+
 
 ### Stretch Goals 
 - User adjustable hotkey for taking a snap. 
