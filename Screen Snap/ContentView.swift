@@ -667,7 +667,7 @@ struct ContentView: View {
                                 
                                 if let cropped = cropImage(flattened, toBottomLeftRect: imgRectBL) {
                                     // Write the cropped image back to the file
-                                    if writeImage(cropped, to: url, format: preferredSaveFormat, jpegQuality: CGFloat(saveQuality)) {
+                                    if ImageSaver.writeImage(cropped, to: url, format: preferredSaveFormat.rawValue, quality: saveQuality) {
                                         // Clear all state and reload the cropped image
                                         objects.removeAll()
                                         lastFittedSize = nil
@@ -1398,7 +1398,7 @@ struct ContentView: View {
             Task {
                 // Use the same capture method as the hotkey to avoid duplication
                 if let img = await GlobalHotKeyManager.shared.captureScreenshot(rect: rect) {
-                    if let savedURL = ImageSaver.saveImage(img) {
+                    if let savedURL = ImageSaver.saveImage(img, to: snapsDirectory()) {
                         DispatchQueue.main.async {
                             // Handle the ContentView-specific cleanup that was in saveSnapToDisk
                             self.insertSnapURL(savedURL)  // Add to gallery
@@ -1535,58 +1535,6 @@ struct ContentView: View {
     
     // MARK: - Save / Save As
     
-    private func defaultSnapFilename() -> String {
-        let formatter = DateFormatter()
-        formatter.dateFormat = "yyyyMMdd_HHmmss_SSS"
-        return "snap_\(formatter.string(from: Date())).\(preferredSaveFormat.fileExtension)"
-    }
-    
-    
-    @discardableResult
-    private func writeImage(_ image: NSImage, to url: URL, format: SaveFormat, jpegQuality: CGFloat? = nil) -> Bool {
-        guard let tiff = image.tiffRepresentation,
-              let rep = NSBitmapImageRep(data: tiff) else { return false }
-        
-        let data: Data?
-        switch format {
-        case .png:
-            data = rep.representation(using: .png, properties: [:])
-        case .jpeg:
-            let q = (jpegQuality ?? 0.9)
-            data = rep.representation(using: .jpeg, properties: [.compressionFactor: q])
-        case .heic:
-            guard let cgimg = image.cgImage(forProposedRect: nil, context: nil, hints: nil) else {
-                data = nil
-                break
-            }
-            let mutable = NSMutableData()
-            guard let dest = CGImageDestinationCreateWithData(
-                mutable as CFMutableData,
-                UTType.heic.identifier as CFString,
-                1,
-                nil
-            ) else {
-                data = nil
-                break
-            }
-            
-            let q = (jpegQuality ?? 0.9) as CGFloat
-            // Pass lossy compression quality (0.0 ... 1.0)
-            let props: CFDictionary = [kCGImageDestinationLossyCompressionQuality: q] as CFDictionary
-            CGImageDestinationAddImage(dest, cgimg, props)
-            
-            data = CGImageDestinationFinalize(dest) ? (mutable as Data) : nil
-        }
-        
-        guard let data else { return false }
-        do {
-            try data.write(to: url, options: .atomic)
-            return true
-        } catch {
-            return false
-        }
-    }
-    
     /// Save As… — prompts for a destination, updates gallery if under snaps folder.
     private func saveAsCurrent() {
         guard let img = currentImage else { return }
@@ -1602,12 +1550,12 @@ struct ContentView: View {
             panel.nameFieldStringValue = sel.lastPathComponent
         } else if let dir = snapsDirectory() {
             panel.directoryURL = dir
-            panel.nameFieldStringValue = defaultSnapFilename()
+            panel.nameFieldStringValue = ImageSaver.generateFilename(for: preferredSaveFormat.rawValue)
         } else {
-            panel.nameFieldStringValue = defaultSnapFilename()
+            panel.nameFieldStringValue = ImageSaver.generateFilename(for: preferredSaveFormat.rawValue)
         }
         if panel.runModal() == .OK, let url = panel.url {
-            if writeImage(img, to: url, format: preferredSaveFormat, jpegQuality: CGFloat(saveQuality)) {
+            if ImageSaver.writeImage(img, to: url, format: preferredSaveFormat.rawValue, quality: saveQuality) {
                 selectedSnapURL = url
                 refreshGalleryAfterSaving(to: url)
             }
@@ -2645,10 +2593,8 @@ struct ContentView: View {
             objects.removeAll()
             if let url = selectedSnapURL {
                 // Write the flattened image back to the same file
-                if writeImage(flattened, to: url, format: preferredSaveFormat, jpegQuality: CGFloat(saveQuality)) {
+                if ImageSaver.writeImage(flattened, to: url, format: preferredSaveFormat.rawValue, quality: saveQuality) {
                     refreshGalleryAfterSaving(to: url)
-                    // The file is now updated on disk
-                    // currentImage will automatically load the new flattened version next time it's accessed
                 }
             } else {
                 saveAsCurrent()
@@ -2666,12 +2612,17 @@ struct ContentView: View {
             panel.allowedContentTypes = [preferredSaveFormat.utType]
             panel.canCreateDirectories = true
             panel.isExtensionHidden = false
-            panel.nameFieldStringValue = selectedSnapURL?.lastPathComponent ?? defaultSnapFilename()
+            if let sel = selectedSnapURL {
+                panel.directoryURL = sel.deletingLastPathComponent()
+                panel.nameFieldStringValue = sel.lastPathComponent
+            } else if let dir = snapsDirectory() {
+                panel.directoryURL = dir
+                panel.nameFieldStringValue = ImageSaver.generateFilename(for: preferredSaveFormat.rawValue)
+            }
             if panel.runModal() == .OK, let url = panel.url {
-                if writeImage(flattened, to: url, format: preferredSaveFormat, jpegQuality: CGFloat(saveQuality)) {
-                    selectedSnapURL = url  // This switches to the new file
+                if ImageSaver.writeImage(flattened, to: url, format: preferredSaveFormat.rawValue, quality: saveQuality) {
+                    selectedSnapURL = url
                     refreshGalleryAfterSaving(to: url)
-                    // currentImage will now load from the new file location
                 }
             }
         }
