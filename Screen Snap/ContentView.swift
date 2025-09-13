@@ -38,9 +38,9 @@ extension NSColor {
 }
 
 
-private enum Tool { case pointer, line, rect, oval, text, crop, badge, highlighter }
+enum Tool { case pointer, line, rect, oval, text, crop, badge, highlighter }
 
-private enum SaveFormat: String, CaseIterable, Identifiable {
+enum SaveFormat: String, CaseIterable, Identifiable {
     case png, jpeg, heic
     var id: String { rawValue }
     var utType: UTType {
@@ -60,6 +60,9 @@ private enum SaveFormat: String, CaseIterable, Identifiable {
 }
 
 struct ContentView: View {
+    
+    @State private var currentGeometrySize: CGSize = CGSize(width: 800, height: 600)
+
     
     @State private var thumbnailRefreshTrigger = UUID()
 
@@ -280,6 +283,8 @@ struct ContentView: View {
                                         }
                                     }
                                     .id(imageReloadTrigger)
+                                    .onAppear { currentGeometrySize = geo.size }
+                                    .onChange(of: geo.size) { _, newSize in currentGeometrySize = newSize }
 
                                     // Object Overlay
                                     
@@ -693,27 +698,42 @@ struct ContentView: View {
                             if let base = NSImage(contentsOf: url) {
                                 let flattened = rasterize(base: base, objects: objects) ?? base
 
-                                // Determine the fitted size currently used for the crop UI
-                                let fittedForUI: CGSize = {
-                                    if imageDisplayMode == "fit" {
-                                        if let imgSize = selectedImageSize,
-                                           let windowSize = NSApp.keyWindow?.contentView?.bounds.size {
-                                            return fittedImageSize(original: imgSize, in: windowSize)
-                                        }
-                                    }
-                                    // fallback: previous fitted size or image point size
-                                    if let s = lastFittedSize { return s }
-                                    if let s = objectSpaceSize { return s }
-                                    return flattened.size
-                                }()
+                                // Use the SAME coordinate space calculations as the main view
+                                let actualDisplaySize = getActualDisplaySize(selectedImageSize ?? CGSize(width: flattened.size.width, height: flattened.size.height))
+                                
+                                let fittedForUI: CGSize
+                                if imageDisplayMode == "fit" {
+                                    fittedForUI = fittedImageSize(original: actualDisplaySize, in: currentGeometrySize)
+                                } else {
+                                    fittedForUI = actualDisplaySize
+                                }
 
-                                // Compute the *pixel* size of the flattened image
+                                // The crop rect is in author space - convert to fitted space first
+                                let authorSpace = objectSpaceSize ?? fittedForUI
+                                
+                                let rectInFittedSpace: CGRect
+                                if authorSpace == fittedForUI {
+                                    // No conversion needed - already in fitted space
+                                    rectInFittedSpace = rect
+                                } else {
+                                    // Convert from author space to fitted space
+                                    rectInFittedSpace = CGRect(
+                                        x: rect.origin.x * (fittedForUI.width / authorSpace.width),
+                                        y: rect.origin.y * (fittedForUI.height / authorSpace.height),
+                                        width: rect.width * (fittedForUI.width / authorSpace.width),
+                                        height: rect.height * (fittedForUI.height / authorSpace.height)
+                                    )
+                                }
+
+                                // Get pixel dimensions
                                 let imagePxSize = pixelSize(of: flattened)
 
-                                // Map from fitted-space (UI) rect directly into pixel-space (bottom-left origin)
-                                let imgRectBL = fittedRectToImageBottomLeftRect(crpRect: rect,
-                                                                                fitted: fittedForUI,
-                                                                                imagePx: imagePxSize)
+                                // Convert from fitted space to pixel space (bottom-left origin)
+                                let imgRectBL = fittedRectToImageBottomLeftRect(
+                                    crpRect: rectInFittedSpace,
+                                    fitted: fittedForUI,
+                                    imagePx: imagePxSize
+                                )
 
                                 if let cropped = cropImage(flattened, toBottomLeftRect: imgRectBL) {
                                     // Write the cropped image back to the file
@@ -727,23 +747,20 @@ struct ContentView: View {
                                         cropRect = nil
                                         cropDraftRect = nil
                                         cropHandle = .none
-                                        selectedImageSize = probeImageSize(url) // Update the image size
+                                        selectedImageSize = probeImageSize(url)
                                         lastFittedSize = nil
                                         imageReloadTrigger = UUID()
+                                        zoomLevel = 1.0
                                     }
                                 }
                             }
                         }
                         return nil
                     }
-                    // Escape cancels current crop overlay
-                    if event.keyCode == 53 { // Escape
-                        cropRect = nil
-                        cropDraftRect = nil
-                        cropHandle = .none
-                        return nil
-                    }
                 }
+
+
+
 
                 return event
             }
@@ -767,8 +784,44 @@ struct ContentView: View {
                 }
                 .popover(isPresented: $showSettingsPopover, arrowEdge: .bottom) {
                     VStack(alignment: .leading, spacing: 12) {
-                        Text("Settings").font(.headline)
+                        
+                        VStack(alignment: .leading, spacing: 6) {
+                            Text("Save destination").bold()
+                            HStack(spacing: 8) {
+                                let pathText = saveDirectoryPath.isEmpty ? "Default (Pictures/Screen Snap)" : saveDirectoryPath
+                                Image(systemName: "folder")
+                                Text(pathText)
+                                    .lineLimit(1)
+                                    .truncationMode(.middle)
+                                    .foregroundStyle(.secondary)
+                                Spacer()
+                                Button("Change…") { activeImporter = .folder }
+                                if !saveDirectoryPath.isEmpty {
+                                    Button("Reset") { saveDirectoryPath = ""; loadExistingSnaps() }
+                                }
+                            }
+                        }
+                        
+                        Picker("Save format", selection: $preferredSaveFormatRaw) {
+                            Text("PNG").tag(SaveFormat.png.rawValue)
+                            Text("JPEG").tag(SaveFormat.jpeg.rawValue)
+                            Text("HEIC").tag(SaveFormat.heic.rawValue)
+                        }
+                        .bold()
+                        .pickerStyle(.segmented)
+                        
+                        if preferredSaveFormat == .jpeg || preferredSaveFormat == .heic {
+                            HStack {
+                                Text("Quality")
+                                    .bold()
+                                Slider(value: $saveQuality, in: 0.4...1.0)
+                                Text(String(format: "%.0f%%", saveQuality * 100))
+                                    .frame(width: 44, alignment: .trailing)
+                            }
+                        }
+                        
                         Divider()
+                        
                         
                         Toggle("Hide Dock icon (requires no Dock/App Switcher)", isOn: $hideDockIcon)
                             .toggleStyle(.switch)
@@ -797,39 +850,8 @@ struct ContentView: View {
                             .disabled(downsampleToNonRetinaForSave && saveOnCopy)
                         
                         
-                        Picker("Save format", selection: $preferredSaveFormatRaw) {
-                            Text("PNG").tag(SaveFormat.png.rawValue)
-                            Text("JPEG").tag(SaveFormat.jpeg.rawValue)
-                            Text("HEIC").tag(SaveFormat.heic.rawValue)
-                        }
-                        .pickerStyle(.segmented)
-                        
-                        if preferredSaveFormat == .jpeg || preferredSaveFormat == .heic {
-                            HStack {
-                                Text("Quality")
-                                Slider(value: $saveQuality, in: 0.4...1.0)
-                                Text(String(format: "%.0f%%", saveQuality * 100))
-                                    .frame(width: 44, alignment: .trailing)
-                            }
-                        }
-                        
-                        Divider()
-                        VStack(alignment: .leading, spacing: 6) {
-                            Text("Save destination").font(.subheadline)
-                            HStack(spacing: 8) {
-                                let pathText = saveDirectoryPath.isEmpty ? "Default (Pictures/Screen Snap)" : saveDirectoryPath
-                                Image(systemName: "folder")
-                                Text(pathText)
-                                    .lineLimit(1)
-                                    .truncationMode(.middle)
-                                    .foregroundStyle(.secondary)
-                                Spacer()
-                                Button("Change…") { activeImporter = .folder }
-                                if !saveDirectoryPath.isEmpty {
-                                    Button("Reset") { saveDirectoryPath = ""; loadExistingSnaps() }
-                                }
-                            }
-                        }
+
+
                         
                     }
                     .padding(16)
@@ -2568,87 +2590,97 @@ struct ContentView: View {
             }
     }
     
+    @inline(__always)
+    private func fittedToAuthorPoint(_ p: CGPoint, fitted: CGSize, author: CGSize) -> CGPoint {
+        let sx = author.width  / max(1, fitted.width)
+        let sy = author.height / max(1, fitted.height)
+        return CGPoint(x: p.x * sx, y: p.y * sy)
+    }
+
+    @inline(__always)
+    private func normalizeRect(_ r: CGRect) -> CGRect {
+        CGRect(x: min(r.minX, r.maxX),
+               y: min(r.minY, r.maxY),
+               width: abs(r.width),
+               height: abs(r.height))
+    }
+    
+    private func authorRectToImageBottomLeftRect(_ r: CGRect, author: CGSize, image: CGSize) -> CGRect {
+        let scaleX = image.width  / max(1, author.width)
+        let scaleY = image.height / max(1, author.height)
+        return CGRect(
+            x: r.origin.x * scaleX,
+            y: r.origin.y * scaleY,
+            width:  r.width  * scaleX,
+            height: r.height * scaleY
+        )
+    }
+    
     private func cropGesture(insetOrigin: CGPoint, fitted: CGSize, author: CGSize) -> some Gesture {
         DragGesture(minimumDistance: 0)
             .onChanged { value in
-                guard allowDraftTick() else { return }
-                let startFit = CGPoint(x: value.startLocation.x - insetOrigin.x, y: value.startLocation.y - insetOrigin.y)
-                let currentFit = CGPoint(x: value.location.x - insetOrigin.x, y: value.location.y - insetOrigin.y)
-                
-                // Convert to fitted coordinate space for crop (not author space)
-                let startFitted = startFit
-                let currentFitted = currentFit
-                
-                // If we already have a cropRect, interpret drags as edits (handles or move)
-                if let existing = cropRect {
-                    if cropDragStart == nil {
-                        cropDragStart = startFitted
-                        cropOriginalRect = existing
-                        // Decide if we're on a handle; otherwise, treat as move if inside rect
-                        cropHandle = cropHandleHitTest(existing, at: startFitted)
-                        if cropHandle == .none && existing.contains(startFitted) {
-                            cropHandle = .none // move
+                // 1) Pointer in fitted space (subtract centering inset)
+                let locFitted = CGPoint(
+                    x: value.location.x - insetOrigin.x,
+                    y: value.location.y - insetOrigin.y
+                )
+                // 2) Clamp to the visible fitted image
+                let clampedFitted = CGPoint(
+                    x: min(max(0, locFitted.x), fitted.width),
+                    y: min(max(0, locFitted.y), fitted.height)
+                )
+                // 3) Convert to author/object space where overlay lives
+                let locAuthor = fittedToAuthorPoint(clampedFitted, fitted: fitted, author: author)
+
+                if cropDragStart == nil {
+                    // First event of this drag
+                    cropDragStart = locAuthor
+                    // If we already have a rect, check for handle resize
+                    if let existing = cropRect {
+                        let handle = cropHandleHitTest(existing, at: locAuthor)
+                        if handle != .none {
+                            cropHandle = handle
+                            cropOriginalRect = existing
+                            return
                         }
                     }
-                    if let originRect = cropOriginalRect, let s = cropDragStart {
-                        if cropHandle == .none && originRect.contains(s) {
-                            // Move
-                            let dx = currentFitted.x - s.x
-                            let dy = currentFitted.y - s.y
-                            var moved = originRect
-                            moved.origin.x += dx
-                            moved.origin.y += dy
-                            cropRect = clampRect(moved, in: fitted) // clamp to fitted space
-                        } else {
-                            // Resize using handle
-                            cropRect = clampRect(resizeRect(originRect, handle: cropHandle, to: currentFitted), in: fitted)
-                        }
-                    }
-                    return
                 }
-                
-                // No existing cropRect – create a new draft selection in fitted space
-                func rectFrom(_ a: CGPoint, _ b: CGPoint) -> CGRect {
-                    let x0 = min(a.x, b.x)
-                    let y0 = min(a.y, b.y)
-                    let w = abs(a.x - b.x)
-                    let h = abs(a.y - b.y)
-                    return CGRect(x: x0, y: y0, width: w, height: h)
+
+                if cropHandle != .none, let original = cropOriginalRect {
+                    // Resizing existing rect
+                    cropRect = normalizeRect(resizeRect(original, handle: cropHandle, to: locAuthor))
+                    cropDraftRect = nil
+                } else if let start = cropDragStart {
+                    // Drafting a new rect during drag
+                    cropDraftRect = normalizeRect(CGRect(
+                        x: min(start.x, locAuthor.x),
+                        y: min(start.y, locAuthor.y),
+                        width: abs(locAuthor.x - start.x),
+                        height: abs(locAuthor.y - start.y)
+                    ))
                 }
-                cropDraftRect = rectFrom(startFitted, currentFitted)
             }
-            .onEnded { value in
-                _ = CGPoint(x: value.location.x - insetOrigin.x, y: value.location.y - insetOrigin.y)
-                
-                if let _ = cropOriginalRect {
-                    // Finish edit
+            .onEnded { _ in
+                defer {
                     cropDragStart = nil
                     cropOriginalRect = nil
                     cropHandle = .none
+                }
+
+                if cropHandle != .none, let updated = cropRect {
+                    // Finished a resize — keep normalized
+                    cropRect = normalizeRect(updated)
+                    cropDraftRect = nil
                     return
                 }
-                
-                // Finish creation - store in fitted coordinate space
+
                 if let draft = cropDraftRect {
-                    let clamped = clampRect(draft, in: fitted)
-                    // Derive image pixel size of this selection based on current image pixel size and the un-zoomed author space.
-                    // Using `author` avoids incorporating the current zoom level (which would skew the math in Fill mode).
-                    let imgSize = selectedImageSize ?? currentImage?.size ?? .zero
-                    let scaleX = (imgSize.width  > 0) ? (imgSize.width  / max(1, author.width))  : 0
-                    let scaleY = (imgSize.height > 0) ? (imgSize.height / max(1, author.height)) : 0
-                    let pxW = clamped.width  * scaleX
-                    let pxH = clamped.height * scaleY
-                    // Accept if at least 1×1 px in image space, or if it’s a tiny but non-zero UI rect (>0.1pt) which cropImage will clamp to 1px
-                    if (pxW >= 1 && pxH >= 1) || (clamped.width > 0.1 && clamped.height > 0.1) {
-                        cropRect = clamped
-                    } else {
-                        cropRect = nil
-                    }
+                    // Commit new rect
+                    cropRect = normalizeRect(draft)
+                    cropDraftRect = nil
                 }
-                cropDraftRect = nil
             }
     }
-
     
     
     // MARK: - Canvas Coordinate System.
