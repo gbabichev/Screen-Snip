@@ -77,6 +77,8 @@ struct ContentView: View {
     @AppStorage("saveDirectoryPath") private var saveDirectoryPath: String = ""
     @AppStorage("downsampleToNonRetina") private var downsampleToNonRetina: Bool = false
     @AppStorage("imageDisplayMode") private var imageDisplayMode: String = "actual" // "actual" or "fit"
+    @AppStorage("saveOnCopy") private var saveOnCopy: Bool = true
+
     
     private enum ImporterKind { case image, folder }
     @State private var activeImporter: ImporterKind? = nil
@@ -777,6 +779,9 @@ struct ContentView: View {
                         .help("When off, images display at actual size. When on, images scale to fit the window.")
                         
                         
+                        Toggle("Save on Copy", isOn: $saveOnCopy)
+                            .toggleStyle(.switch)
+                            .help("Save on copy")
                         
                         Toggle("Downsample retina screenshots for clipboard", isOn: $downsampleToNonRetina)
                             .toggleStyle(.switch)
@@ -1497,17 +1502,57 @@ struct ContentView: View {
         return CGRect(x: xPx.rounded(.down), y: yPx.rounded(.down), width: widthPx.rounded(.down), height: heightPx.rounded(.down))
     }
     
+
     private func copyToPasteboard(_ image: NSImage) {
-        let finalImage = if downsampleToNonRetina && isRetinaImage(image) {
-            downsampleImage(image)
-        } else {
-            image
-        }
-        
+        // 1) ALWAYS flatten first so annotations are included
+        let flattened: NSImage = {
+            if let f = rasterize(base: image, objects: objects) { return f }
+            return image // graceful fallback
+        }()
+
+        // 2) Respect user toggle: only downsample if requested AND the image is retina
+        let shouldDownsample = downsampleToNonRetina && isRetinaImage(flattened)
+        let source: NSImage = shouldDownsample ? downsampleImage(flattened) : flattened
+
+        // 3) Put pixel-accurate PNG bytes on the pasteboard to avoid implicit 1x collapse
         let pb = NSPasteboard.general
         pb.clearContents()
-        pb.writeObjects([finalImage])
-        
+
+        // Prefer the backing bitmap rep's CGImage to avoid collapsing to 1x
+        let bestRep = source.representations
+            .compactMap { $0 as? NSBitmapImageRep }
+            .max(by: { $0.pixelsWide * $0.pixelsHigh < $1.pixelsWide * $1.pixelsHigh })
+
+        if let cg = bestRep?.cgImage ?? source.cgImage(forProposedRect: nil, context: nil, hints: nil) {
+            let rep = NSBitmapImageRep(cgImage: cg)
+            if let data = rep.representation(using: .png, properties: [:]) {
+                pb.setData(data, forType: .png)
+            } else {
+                pb.writeObjects([source])
+            }
+        } else {
+            pb.writeObjects([source])
+        }
+
+        // 4) Optional: Save the rasterized image to disk when enabled in settings (non-destructive)
+        if UserDefaults.standard.bool(forKey: "saveOnCopy") {
+            if let url = selectedSnapURL {
+                if ImageSaver.writeImage(source, to: url, format: preferredSaveFormat.rawValue, quality: saveQuality) {
+                    refreshGalleryAfterSaving(to: url)
+                }
+            } else if let dir = snapsDirectory() {
+                let newName = ImageSaver.generateFilename(for: preferredSaveFormat.rawValue)
+                let dest = dir.appendingPathComponent(newName)
+                if ImageSaver.writeImage(source, to: dest, format: preferredSaveFormat.rawValue, quality: saveQuality) {
+                    selectedSnapURL = dest
+                    refreshGalleryAfterSaving(to: dest)
+                }
+            } else {
+                // Fallback if no directory available
+                saveAsCurrent()
+            }
+        }
+
         withAnimation { showCopiedHUD = true }
         DispatchQueue.main.asyncAfter(deadline: .now() + 1.2) {
             withAnimation { showCopiedHUD = false }
@@ -1517,7 +1562,7 @@ struct ContentView: View {
     /// Flattens the current canvas into the image, refreshes state, then copies the latest to the clipboard.
     private func flattenRefreshAndCopy() {
         // 1) Flatten into currentImage (and save) using existing logic
-        flattenAndSaveInPlace()
+        //flattenAndSaveInPlace()
         // 2) On the next run loop, copy the refreshed image so we don't grab stale state
         DispatchQueue.main.async {
             if let current = self.currentImage {
@@ -2629,102 +2674,116 @@ struct ContentView: View {
     }
     
     private func rasterize(base: NSImage, objects: [Drawable]) -> NSImage? {
-        let imgSize = base.size
-        let rep = NSBitmapImageRep(bitmapDataPlanes: nil,
-                                   pixelsWide: Int(imgSize.width),
-                                   pixelsHigh: Int(imgSize.height),
-                                   bitsPerSample: 8,
-                                   samplesPerPixel: 4,
-                                   hasAlpha: true,
-                                   isPlanar: false,
-                                   colorSpaceName: .deviceRGB,
-                                   bytesPerRow: 0,
-                                   bitsPerPixel: 0)
-        guard let rep else { return nil }
+        // Keep logical canvas in points (matches editor), but render into a bitmap using the base image's backing pixels.
+        let imgSize = base.size // points
+
+        // Determine backing pixel dimensions (prefer CGImage; else largest bitmap rep; else fall back to points)
+        let pixelDims: (w: Int, h: Int) = {
+            if let cg = base.cgImage(forProposedRect: nil, context: nil, hints: nil) {
+                return (cg.width, cg.height)
+            }
+            if let best = base.representations
+                .compactMap({ $0 as? NSBitmapImageRep })
+                .max(by: { $0.pixelsWide * $0.pixelsHigh < $1.pixelsWide * $1.pixelsHigh }) {
+                return (best.pixelsWide, best.pixelsHigh)
+            }
+            return (Int(round(imgSize.width)), Int(round(imgSize.height)))
+        }()
+
+        guard let rep = NSBitmapImageRep(
+            bitmapDataPlanes: nil,
+            pixelsWide: max(1, pixelDims.w),
+            pixelsHigh: max(1, pixelDims.h),
+            bitsPerSample: 8,
+            samplesPerPixel: 4,
+            hasAlpha: true,
+            isPlanar: false,
+            colorSpaceName: .deviceRGB,
+            bytesPerRow: 0,
+            bitsPerPixel: 0
+        ) else { return nil }
+
+        // Critical: set logical size (points). Drawing uses points; pixels are handled by the rep's pixel size.
+        rep.size = imgSize
+
         let composed = NSImage(size: imgSize)
         composed.addRepresentation(rep)
-        
+
         NSGraphicsContext.saveGraphicsState()
-        NSGraphicsContext.current = NSGraphicsContext(bitmapImageRep: rep)
-        base.draw(in: CGRect(origin: .zero, size: imgSize))
-        
-        // Use the objectSpaceSize (UI space) that objects were laid out in; fall back to lastFittedSize or image size if unknown
-        let fitted = objectSpaceSize ?? lastFittedSize ?? imgSize
-        let scaleX = imgSize.width / max(1, fitted.width)
-        let scaleY = imgSize.height / max(1, fitted.height)
-        let scaleW = (scaleX + scaleY) / 2
-        
-        for obj in objects {
-            switch obj {
-            case .line(let o):
-                let s = uiToImagePoint(o.start, fitted: fitted, image: imgSize)
-                let e = uiToImagePoint(o.end,   fitted: fitted, image: imgSize)
-                let widthScaled = o.width * scaleW
-                o.color.setStroke(); o.color.setFill()  // Use object's color
-                let path = NSBezierPath(); path.lineWidth = widthScaled; path.lineCapStyle = .round
-                path.move(to: s); path.line(to: e); path.stroke()
-                if o.arrow {
-                    let dx = e.x - s.x, dy = e.y - s.y
-                    let len = max(1, hypot(dx, dy))
-                    let headLength = min(len * 0.8, max(10, 6 * widthScaled))
-                    let headWidth  = max(8, 5 * widthScaled)
-                    let ux = dx/len, uy = dy/len
-                    let bx = e.x - ux * headLength, by = e.y - uy * headLength
-                    let px = -uy, py = ux
-                    let p1 = CGPoint(x: bx + px * (headWidth/2), y: by + py * (headWidth/2))
-                    let p2 = CGPoint(x: bx - px * (headWidth/2), y: by - py * (headWidth/2))
-                    let tri = NSBezierPath(); tri.move(to: e); tri.line(to: p1); tri.line(to: p2); tri.close(); tri.fill()
+        if let ctx = NSGraphicsContext(bitmapImageRep: rep) {
+            NSGraphicsContext.current = ctx
+            ctx.imageInterpolation = .high
+
+            // Draw the base image to fill the logical canvas
+            base.draw(in: CGRect(origin: .zero, size: imgSize))
+
+            // Render overlay objects. These utilities assume `image` is in points, which matches `imgSize`.
+            let fitted = objectSpaceSize ?? lastFittedSize ?? imgSize
+            let scaleX = imgSize.width / max(1, fitted.width)
+            let scaleY = imgSize.height / max(1, fitted.height)
+            let scaleW = (scaleX + scaleY) / 2
+
+            for obj in objects {
+                switch obj {
+                case .line(let o):
+                    let s = uiToImagePoint(o.start, fitted: fitted, image: imgSize)
+                    let e = uiToImagePoint(o.end,   fitted: fitted, image: imgSize)
+                    let widthScaled = o.width * scaleW
+                    o.color.setStroke(); o.color.setFill()
+                    let path = NSBezierPath(); path.lineWidth = widthScaled; path.lineCapStyle = .round
+                    path.move(to: s); path.line(to: e); path.stroke()
+                    if o.arrow {
+                        let dx = e.x - s.x, dy = e.y - s.y
+                        let len = max(1, hypot(dx, dy))
+                        let headLength = min(len * 0.8, max(10, 6 * widthScaled))
+                        let headWidth  = max(8, 5 * widthScaled)
+                        let ux = dx/len, uy = dy/len
+                        let bx = e.x - ux * headLength, by = e.y - uy * headLength
+                        let px = -uy, py = ux
+                        let p1 = CGPoint(x: bx + px * (headWidth/2), y: by + py * (headWidth/2))
+                        let p2 = CGPoint(x: bx - px * (headWidth/2), y: by - py * (headWidth/2))
+                        let tri = NSBezierPath(); tri.move(to: e); tri.line(to: p1); tri.line(to: p2); tri.close(); tri.fill()
+                    }
+                case .rect(let o):
+                    let r = uiRectToImageRect(o.rect, fitted: fitted, image: imgSize)
+                    o.color.setStroke()
+                    let path = NSBezierPath(rect: r); path.lineWidth = o.width * scaleW; path.stroke()
+                case .oval(let o):
+                    let r = uiRectToImageRect(o.rect, fitted: fitted, image: imgSize)
+                    o.color.setStroke()
+                    let path = NSBezierPath(ovalIn: r)
+                    path.lineWidth = o.width * scaleW
+                    path.stroke()
+                case .text(let o):
+                    let r = uiRectToImageRect(o.rect, fitted: fitted, image: imgSize)
+                    if o.bgEnabled { let bg = NSBezierPath(rect: r); o.bgColor.setFill(); bg.fill() }
+                    let para = NSMutableParagraphStyle(); para.alignment = .left; para.lineBreakMode = .byWordWrapping
+                    let attrs: [NSAttributedString.Key: Any] = [
+                        .font: NSFont.systemFont(ofSize: o.fontSize * scaleW),
+                        .foregroundColor: o.textColor,
+                        .paragraphStyle: para
+                    ]
+                    NSString(string: o.text).draw(in: r.insetBy(dx: 4 * scaleW, dy: 4 * scaleW), withAttributes: attrs)
+                case .badge(let o):
+                    let r = uiRectToImageRect(o.rect, fitted: fitted, image: imgSize)
+                    let circle = NSBezierPath(ovalIn: r); o.fillColor.setFill(); circle.fill()
+                    let para = NSMutableParagraphStyle(); para.alignment = .center
+                    let fontSize = min(r.width, r.height) * 0.6
+                    let attrs: [NSAttributedString.Key: Any] = [
+                        .font: NSFont.systemFont(ofSize: fontSize, weight: .bold),
+                        .foregroundColor: o.textColor,
+                        .paragraphStyle: para
+                    ]
+                    NSString(string: "\(o.number)").draw(in: r, withAttributes: attrs)
+                case .highlight(let o):
+                    let r = uiRectToImageRect(o.rect, fitted: fitted, image: imgSize)
+                    o.color.setFill(); NSBezierPath(rect: r).fill()
+                case .image(let o):
+                    let r = uiRectToImageRect(o.rect, fitted: fitted, image: imgSize)
+                    o.image.draw(in: r)
                 }
-            case .rect(let o):
-                let r = uiRectToImageRect(o.rect, fitted: fitted, image: imgSize)
-                o.color.setStroke()  // Use object's color
-                let path = NSBezierPath(rect: r); path.lineWidth = o.width * scaleW; path.stroke()
-            case .oval(let o):
-                let r = uiRectToImageRect(o.rect, fitted: fitted, image: imgSize)
-                o.color.setStroke()  // Use object's color
-                let path = NSBezierPath(ovalIn: r)
-                path.lineWidth = o.width * scaleW
-                path.stroke()
-            case .text(let o):
-                let r = uiRectToImageRect(o.rect, fitted: fitted, image: imgSize)
-                if o.bgEnabled {
-                    let bgPath = NSBezierPath(rect: r)
-                    o.bgColor.setFill()
-                    bgPath.fill()
-                }
-                let para = NSMutableParagraphStyle()
-                para.alignment = .left
-                para.lineBreakMode = .byWordWrapping
-                let attrs: [NSAttributedString.Key: Any] = [
-                    .font: NSFont.systemFont(ofSize: o.fontSize * scaleW),
-                    .foregroundColor: o.textColor,
-                    .paragraphStyle: para
-                ]
-                NSString(string: o.text).draw(in: r.insetBy(dx: 4 * scaleW, dy: 4 * scaleW), withAttributes: attrs)
-                
-            case .badge(let o):
-                let r = uiRectToImageRect(o.rect, fitted: fitted, image: imgSize)
-                let circlePath = NSBezierPath(ovalIn: r)
-                o.fillColor.setFill()
-                circlePath.fill()
-                let para = NSMutableParagraphStyle(); para.alignment = .center
-                let fontSize = min(r.width, r.height) * 0.6
-                let attrs: [NSAttributedString.Key: Any] = [
-                    .font: NSFont.systemFont(ofSize: fontSize, weight: .bold),
-                    .foregroundColor: o.textColor,
-                    .paragraphStyle: para
-                ]
-                NSString(string: "\(o.number)").draw(in: r, withAttributes: attrs)
-            case .highlight(let o):
-                let r = uiRectToImageRect(o.rect, fitted: fitted, image: imgSize)
-                o.color.setFill()
-                NSBezierPath(rect: r).fill()
-            case .image(let o):
-                let r = uiRectToImageRect(o.rect, fitted: fitted, image: imgSize)
-                o.image.draw(in: r)
             }
         }
-        
         NSGraphicsContext.restoreGraphicsState()
         return composed
     }
