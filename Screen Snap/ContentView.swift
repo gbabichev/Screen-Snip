@@ -287,8 +287,34 @@ struct ContentView: View {
                                             switch obj {
                                             case .line(let o):
                                                 let base = o.drawPath(in: author)
-                                                base.stroke(Color(nsColor: o.color),
-                                                            style: StrokeStyle(lineWidth: o.width, lineCap: .round))
+                                                
+                                                // If arrow, create a shortened path that stops at arrow base
+                                                if o.arrow {
+                                                    let dx = o.end.x - o.start.x
+                                                    let dy = o.end.y - o.start.y
+                                                    let len = max(1, hypot(dx, dy))
+                                                    let ux = dx / len, uy = dy / len
+                                                    
+                                                    let desired = max(16, o.width * 6.0)
+                                                    let capped = min(len * 0.35, 280)
+                                                    let headLength = min(desired, capped)
+                                                    
+                                                    // Calculate where line should end (at arrow base)
+                                                    let lineEnd = CGPoint(x: o.end.x - ux * headLength, y: o.end.y - uy * headLength)
+                                                    
+                                                    // Draw shortened line
+                                                    Path { p in
+                                                        p.move(to: o.start)
+                                                        p.addLine(to: lineEnd)
+                                                    }
+                                                    .stroke(Color(nsColor: o.color),
+                                                            style: StrokeStyle(lineWidth: o.width, lineCap: .butt))
+                                                } else {
+                                                    // Normal line without arrow
+                                                    base.stroke(Color(nsColor: o.color),
+                                                                style: StrokeStyle(lineWidth: o.width, lineCap: .round))
+                                                }
+                                                
                                                 if o.arrow {
                                                     arrowHeadPath(from: o.start, to: o.end, lineWidth: o.width)
                                                         .fill(Color(nsColor: o.color))
@@ -1610,6 +1636,15 @@ struct ContentView: View {
                 if ImageSaver.writeImage(source, to: url, format: preferredSaveFormat.rawValue, quality: saveQuality) {
                     refreshGalleryAfterSaving(to: url)
                     reloadCurrentImage()
+                    
+                    // NEW: Clear all drawn objects after successful save
+                    objects.removeAll()
+                    selectedObjectID = nil
+                    activeHandle = .none
+                    focusedTextID = nil
+                    cropRect = nil
+                    cropDraftRect = nil
+                    cropHandle = .none
                 }
             } else if let dir = snapsDirectory() {
                 let newName = ImageSaver.generateFilename(for: preferredSaveFormat.rawValue)
@@ -1618,10 +1653,29 @@ struct ContentView: View {
                     selectedSnapURL = dest
                     refreshGalleryAfterSaving(to: dest)
                     reloadCurrentImage()
+                    
+                    // NEW: Clear all drawn objects after successful save
+                    objects.removeAll()
+                    selectedObjectID = nil
+                    activeHandle = .none
+                    focusedTextID = nil
+                    cropRect = nil
+                    cropDraftRect = nil
+                    cropHandle = .none
                 }
             } else {
                 // Fallback if no directory available
                 saveAsCurrent()
+                
+                // NEW: Clear objects after saveAsCurrent completes successfully
+                // Note: You might want to modify saveAsCurrent to return a Bool indicating success
+                objects.removeAll()
+                selectedObjectID = nil
+                activeHandle = .none
+                focusedTextID = nil
+                cropRect = nil
+                cropDraftRect = nil
+                cropHandle = .none
             }
         }
 
@@ -1630,7 +1684,6 @@ struct ContentView: View {
             withAnimation { showCopiedHUD = false }
         }
     }
-    
     /// Flattens the current canvas into the image, refreshes state, then copies the latest to the clipboard.
     private func flattenRefreshAndCopy() {
         // 1) Flatten into currentImage (and save) using existing logic
@@ -2685,23 +2738,25 @@ struct ContentView: View {
         let dy = end.y - start.y
         let len = hypot(dx, dy)
         guard len > 0.0001 else { return path }
-        
-        let angle = atan2(dy, dx)
-        // scale arrow size by stroke width for consistency
-        let size = max(6, lineWidth * 3)   // arrow length
-        let wing = size * 0.6              // half width at base
-        
+
+        // Direction unit vector from start -> end
+        let ux = dx / len
+        let uy = dy / len
+
+        // Bigger head: scale with stroke width, but cap by a fraction of the line length
+        let desired = max(16, lineWidth * 6.0)
+        let capped  = min(len * 0.35, 280)
+        let headLength = min(desired, capped)
+        let headWidth  = headLength * 0.90
+
         let tip = end
-        let baseX = end.x - size * cos(angle)
-        let baseY = end.y - size * sin(angle)
-        
-        // perpendicular
-        let px = -sin(angle)
-        let py =  cos(angle)
-        
-        let left  = CGPoint(x: baseX + wing * px, y: baseY + wing * py)
-        let right = CGPoint(x: baseX - wing * px, y: baseY - wing * py)
-        
+        let baseX = tip.x - headLength * ux
+        let baseY = tip.y - headLength * uy
+
+        let px = -uy, py = ux // perpendicular
+        let left  = CGPoint(x: baseX + (headWidth * 0.5) * px, y: baseY + (headWidth * 0.5) * py)
+        let right = CGPoint(x: baseX - (headWidth * 0.5) * px, y: baseY - (headWidth * 0.5) * py)
+
         path.move(to: tip)
         path.addLine(to: left)
         path.addLine(to: right)
@@ -2812,19 +2867,53 @@ struct ContentView: View {
                     let e = uiToImagePoint(o.end,   fitted: fitted, image: imgSize)
                     let widthScaled = o.width * scaleW
                     o.color.setStroke(); o.color.setFill()
-                    let path = NSBezierPath(); path.lineWidth = widthScaled; path.lineCapStyle = .round
-                    path.move(to: s); path.line(to: e); path.stroke()
+                    let path = NSBezierPath()
+                    path.lineWidth = widthScaled
+                    path.lineCapStyle = o.arrow ? .butt : .round
+                    path.move(to: s)
+                    
+                    // If arrow, shorten the line so it doesn't extend under the arrow head
                     if o.arrow {
                         let dx = e.x - s.x, dy = e.y - s.y
                         let len = max(1, hypot(dx, dy))
-                        let headLength = min(len * 0.8, max(10, 6 * widthScaled))
-                        let headWidth  = max(8, 5 * widthScaled)
-                        let ux = dx/len, uy = dy/len
-                        let bx = e.x - ux * headLength, by = e.y - uy * headLength
+                        let ux = dx / len, uy = dy / len
+                        
+                        let desired = max(16, widthScaled * 6.0)
+                        let capped  = min(len * 0.35, 280)
+                        let headLength = min(desired, capped)
+                        
+                        // Stop the line at the base of the arrow head
+                        let lineEnd = CGPoint(x: e.x - ux * headLength, y: e.y - uy * headLength)
+                        path.line(to: lineEnd)
+                    } else {
+                        path.line(to: e)
+                    }
+                    
+                    path.stroke()
+                    
+                    if o.arrow {
+                        let dx = e.x - s.x, dy = e.y - s.y
+                        let len = max(1, hypot(dx, dy))
+                        let ux = dx / len, uy = dy / len
+
+                        let desired = max(16, widthScaled * 6.0)
+                        let capped  = min(len * 0.35, 280)
+                        let headLength = min(desired, capped)
+                        let headWidth  = headLength * 0.90
+
+                        // Arrow head at the exact end point
+                        let bx = e.x - ux * headLength
+                        let by = e.y - uy * headLength
                         let px = -uy, py = ux
-                        let p1 = CGPoint(x: bx + px * (headWidth/2), y: by + py * (headWidth/2))
-                        let p2 = CGPoint(x: bx - px * (headWidth/2), y: by - py * (headWidth/2))
-                        let tri = NSBezierPath(); tri.move(to: e); tri.line(to: p1); tri.line(to: p2); tri.close(); tri.fill()
+                        let p1 = CGPoint(x: bx + (headWidth * 0.5) * px, y: by + (headWidth * 0.5) * py)
+                        let p2 = CGPoint(x: bx - (headWidth * 0.5) * px, y: by - (headWidth * 0.5) * py)
+
+                        let tri = NSBezierPath()
+                        tri.move(to: e)  // Tip at exact end point
+                        tri.line(to: p1)
+                        tri.line(to: p2)
+                        tri.close()
+                        tri.fill()
                     }
                 case .rect(let o):
                     let r = uiRectToImageRect(o.rect, fitted: fitted, image: imgSize)
