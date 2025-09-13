@@ -449,11 +449,9 @@ struct ContentView: View {
                                     .onTapGesture(count: 2) {
                                         // Only allow double-tap zoom when using the pointer tool and not in fit mode
                                         guard selectedTool == .pointer && imageDisplayMode != "fit" else {
-                                            print("Double tap ignored - wrong tool or fit mode")
                                             return
                                         }
                                         
-                                        print("Double tap zoom activated!")
                                         withAnimation(.easeInOut(duration: 0.25)) {
                                             if zoomLevel < 1.5 {
                                                 zoomLevel = 2.0
@@ -648,7 +646,6 @@ struct ContentView: View {
             }
         }
         .onAppear {
-            print("🔥 [DEBUG] ContentView.onAppear called")
             loadExistingSnaps()
             updateMenuState()
             // Listen for Cmd+Z / Shift+Cmd+Z globally while this view is active, and Delete for selected objects
@@ -1333,7 +1330,6 @@ struct ContentView: View {
         
         // Reset fitted size so it recalculates
         lastFittedSize = nil
-        print("RELOAD!")
     }
     
     private func fittedRectToAuthorRect(_ rect: CGRect, fitted: CGSize, author: CGSize) -> CGRect {

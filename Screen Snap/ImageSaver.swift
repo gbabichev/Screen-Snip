@@ -113,8 +113,9 @@ struct ImageSaver {
         let scaleFromRepH = CGFloat(backingHeight) / CGFloat(pointsHeight)
         let scaleFromRep = max(scaleFromRepW, scaleFromRepH)
 
+        #if DEBUG
         print("[ImageSaver] NSImage.size (pt)=\(Int(pointsWidth))x\(Int(pointsHeight)) cg=\(dbg_cgW)x\(dbg_cgH) bestRep=\(dbg_repW)x\(dbg_repH) class=\(dbg_bestRepClass) scaleFromRep=\(String(format: "%.2f", Double(scaleFromRep))) downsample=\(downsampleToNonRetinaForSave)")
-
+        #endif
         // Effective output scale: 1x if explicitly downsampling, otherwise preserve backing scale (e.g., 2x)
         let effectiveScale = CGFloat(downsampleToNonRetinaForSave ? 1.0 : max(1.0, scaleFromRep))
 
@@ -165,8 +166,9 @@ struct ImageSaver {
         // Match DPI metadata to the pixel scale so apps that honor DPI retain the visual size
         let dpi = 72.0 * Double(effectiveScale)
         
+        #if DEBUG
         print("[ImageSaver] targetPixels=\(targetPixelsWide)x\(targetPixelsHigh) effectiveScale=\(String(format: "%.2f", Double(effectiveScale))) dpi=\(dpi) format=\(format)")
-        
+        #endif
         // Determine UTType
         let utType: CFString = {
             switch format {
