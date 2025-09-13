@@ -659,7 +659,7 @@ struct ContentView: View {
                     }
                 }
                 
-                // Enter/Return to commit  when Crop tool is active
+                // Enter/Return to commit when Crop tool is active
                 if selectedTool == .crop, let rect = cropRect, !event.modifierFlags.contains(.command) {
                     if event.keyCode == 36 || event.keyCode == 76 { // Return or Keypad Enter
                         // Perform destructive crop with current overlay
@@ -667,36 +667,29 @@ struct ContentView: View {
                             pushUndoSnapshot()
                             if let base = NSImage(contentsOf: url) {
                                 let flattened = rasterize(base: base, objects: objects) ?? base
-                                
-                                // FIXED: Convert crop rect from fitted space to author space first
-                                let fittedSpaceForMapping: CGSize = {
-                                    if let s = objectSpaceSize { return s }
-                                    if let s = lastFittedSize { return s }
-                                    return flattened.size
-                                }()
-                                
-                                // Get the fitted size used for the crop UI
-                                let currentFittedSize: CGSize = {
+
+                                // Determine the fitted size currently used for the crop UI
+                                let fittedForUI: CGSize = {
                                     if imageDisplayMode == "fit" {
-                                        // In fit mode, we need to calculate the actual fitted size
                                         if let imgSize = selectedImageSize,
                                            let windowSize = NSApp.keyWindow?.contentView?.bounds.size {
                                             return fittedImageSize(original: imgSize, in: windowSize)
                                         }
                                     }
-                                    return fittedSpaceForMapping
+                                    // fallback: previous fitted size or image point size
+                                    if let s = lastFittedSize { return s }
+                                    if let s = objectSpaceSize { return s }
+                                    return flattened.size
                                 }()
-                                
-                                // Convert from fitted space to author space
-                                let rectInAuthorSpace = fittedRectToAuthorRect(rect,
-                                                                              fitted: currentFittedSize,
-                                                                              author: fittedSpaceForMapping)
-                                
-                                // Now map from author space to image space
-                                let imgRectBL = uiRectToImageRect(rectInAuthorSpace,
-                                                                 fitted: fittedSpaceForMapping,
-                                                                 image: flattened.size)
-                                
+
+                                // Compute the *pixel* size of the flattened image
+                                let imagePxSize = pixelSize(of: flattened)
+
+                                // Map from fitted-space (UI) rect directly into pixel-space (bottom-left origin)
+                                let imgRectBL = fittedRectToImageBottomLeftRect(crpRect: rect,
+                                                                                fitted: fittedForUI,
+                                                                                imagePx: imagePxSize)
+
                                 if let cropped = cropImage(flattened, toBottomLeftRect: imgRectBL) {
                                     // Write the cropped image back to the file
                                     if ImageSaver.writeImage(cropped, to: url, format: preferredSaveFormat.rawValue, quality: saveQuality) {
@@ -1338,6 +1331,41 @@ struct ContentView: View {
         let w = (props[kCGImagePropertyPixelWidth]  as? NSNumber)?.doubleValue ?? 0
         let h = (props[kCGImagePropertyPixelHeight] as? NSNumber)?.doubleValue ?? 0
         return (w > 0 && h > 0) ? CGSize(width: w, height: h) : nil
+    }
+
+    /// Returns the pixel dimensions of an NSImage by inspecting its best bitmap representation.
+    private func pixelSize(of image: NSImage) -> CGSize {
+        if let bestRep = image.representations
+            .compactMap({ $0 as? NSBitmapImageRep })
+            .max(by: { $0.pixelsWide * $0.pixelsHigh < $1.pixelsWide * $1.pixelsHigh }) {
+            return CGSize(width: bestRep.pixelsWide, height: bestRep.pixelsHigh)
+        }
+        return CGSize(width: image.size.width, height: image.size.height)
+    }
+
+    /// Map a rect in the *fitted/UI* coordinate space directly into *image pixel* space (bottom-left origin).
+    /// - Parameters:
+    ///   - crpRect: Rect drawn in fitted-space (top-left origin inside SwiftUI, but our math uses sizes so origin is fine).
+    ///   - fitted: The size of the fitted image as shown in the UI.
+    ///   - imagePx: The pixel size of the underlying image (CGImage/bitmap rep).
+    private func fittedRectToImageBottomLeftRect(crpRect: CGRect, fitted: CGSize, imagePx: CGSize) -> CGRect {
+        let sx = imagePx.width / max(1, fitted.width)
+        let sy = imagePx.height / max(1, fitted.height)
+
+        let x = crpRect.origin.x * sx
+        let w = crpRect.size.width * sx
+
+        // Convert to bottom-left: y_bl = H - (y_top + h)
+        let yTop = crpRect.origin.y * sy
+        let h = crpRect.size.height * sy
+        let yBL = imagePx.height - (yTop + h)
+
+        // Clamp to image bounds to avoid tiny rounding issues
+        let clamped = CGRect(x: max(0, x).rounded(.down),
+                             y: max(0, yBL).rounded(.down),
+                             width: min(w, imagePx.width - max(0, x)).rounded(.down),
+                             height: min(h, imagePx.height - max(0, yBL)).rounded(.down))
+        return clamped
     }
     
     
