@@ -48,16 +48,22 @@ class MenuState: ObservableObject {
 struct Screen_SnapApp: App {
     @NSApplicationDelegateAdaptor(AppDelegate.self) var appDelegate
     @StateObject private var menuState = MenuState.shared
+    @AppStorage("hideDockIcon") private var hideDockIcon: Bool = false
 
 
     init() {
         GlobalHotKeyManager.shared.registerSnapHotKey()
+        applyActivationPolicy(hideDockIcon)
+
     }
 
     var body: some Scene {
         // Remove WindowGroup entirely - we'll manage windows manually
         Settings {
             EmptyView()
+        }
+        .onChange(of: hideDockIcon) { _,newValue in
+            applyActivationPolicy(newValue)
         }
         .commands {
 
@@ -255,6 +261,19 @@ struct Screen_SnapApp: App {
                 Divider()
                 
             }
+        }
+    }
+}
+
+
+private func applyActivationPolicy(_ hide: Bool) {
+    // Must run on main thread for NSApp mutations.
+    DispatchQueue.main.async {
+        NSApp.setActivationPolicy(hide ? .accessory : .regular)
+
+        // Optional: when re-showing the Dock icon, bring app forward so users see it.
+        if !hide {
+            NSApp.activate(ignoringOtherApps: true)
         }
     }
 }

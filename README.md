@@ -16,7 +16,7 @@ Inspired by Greenshot on Windows - the goal is to make a tiny app that can do th
 </div>
 
 ## Work in Progress
-- User adjustable dock icon.
+- Rework settings UI
 - Start on Login.
 
 
@@ -65,6 +65,7 @@ Inspired by Greenshot on Windows - the goal is to make a tiny app that can do th
 - <del>Add double tap to zoom on mouse & trackpad.
 - <del>Add cmd0, cmd+, cmd- for zoom controls. 
 - <del>Remove debug prints.
+- <del>User adjustable dock icon.
 
 
 ### Stretch Goals 

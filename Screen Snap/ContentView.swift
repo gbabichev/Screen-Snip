@@ -76,6 +76,7 @@ struct ContentView: View {
         set { preferredSaveFormatRaw = newValue.rawValue }
     }
     
+    @AppStorage("hideDockIcon") private var hideDockIcon: Bool = false
     @AppStorage("saveQuality") private var saveQuality: Double = 0.9
     @AppStorage("saveDirectoryPath") private var saveDirectoryPath: String = ""
     @AppStorage("downsampleToNonRetinaClipboard") private var downsampleToNonRetinaClipboard: Bool = false
@@ -769,6 +770,10 @@ struct ContentView: View {
                         Text("Settings").font(.headline)
                         Divider()
                         
+                        Toggle("Hide Dock icon (requires no Dock/App Switcher)", isOn: $hideDockIcon)
+                            .toggleStyle(.switch)
+                            .help("When on, the app runs as an accessory (no Dock icon, no ")
+                        
                         Toggle("Fit image to window", isOn: Binding(
                             get: { imageDisplayMode == "fit" },
                             set: { imageDisplayMode = $0 ? "fit" : "actual" }
@@ -1305,7 +1310,7 @@ struct ContentView: View {
             return
         }
         
-        let shouldActivate = userInfo["shouldActivate"] as? Bool ?? true
+        //let shouldActivate = userInfo["shouldActivate"] as? Bool ?? true
         
         
         // CRITICAL: Clear ALL existing state first to prevent memory accumulation
