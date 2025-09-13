@@ -62,11 +62,11 @@ struct ImageSaver {
     
     static func writeImage(_ image: NSImage, to url: URL, format: String, quality: Double) -> Bool {
         // Check if user wants to downsample to non-retina
-        let downsampleToNonRetina = UserDefaults.standard.bool(forKey: "downsampleToNonRetina")
+        let downsampleToNonRetinaForSave = UserDefaults.standard.bool(forKey: "downsampleToNonRetinaForSave")
         
         // Get the image's current scale
         let originalScale = image.recommendedLayerContentsScale(0.0)
-        let targetScale = downsampleToNonRetina ? 1.0 : originalScale
+        let targetScale = downsampleToNonRetinaForSave ? 1.0 : originalScale
         
         // For PNG, use the original method since it works
         if format == "png" {
@@ -113,14 +113,14 @@ struct ImageSaver {
         let scaleFromRepH = CGFloat(backingHeight) / CGFloat(pointsHeight)
         let scaleFromRep = max(scaleFromRepW, scaleFromRepH)
 
-        print("[ImageSaver] NSImage.size (pt)=\(Int(pointsWidth))x\(Int(pointsHeight)) cg=\(dbg_cgW)x\(dbg_cgH) bestRep=\(dbg_repW)x\(dbg_repH) class=\(dbg_bestRepClass) scaleFromRep=\(String(format: "%.2f", Double(scaleFromRep))) downsample=\(downsampleToNonRetina)")
+        print("[ImageSaver] NSImage.size (pt)=\(Int(pointsWidth))x\(Int(pointsHeight)) cg=\(dbg_cgW)x\(dbg_cgH) bestRep=\(dbg_repW)x\(dbg_repH) class=\(dbg_bestRepClass) scaleFromRep=\(String(format: "%.2f", Double(scaleFromRep))) downsample=\(downsampleToNonRetinaForSave)")
 
         // Effective output scale: 1x if explicitly downsampling, otherwise preserve backing scale (e.g., 2x)
-        let effectiveScale = CGFloat(downsampleToNonRetina ? 1.0 : max(1.0, scaleFromRep))
+        let effectiveScale = CGFloat(downsampleToNonRetinaForSave ? 1.0 : max(1.0, scaleFromRep))
 
         // Target pixels: keep original backing pixels unless downsampling to 1x
-        let targetPixelsWide = downsampleToNonRetina ? Int(round(pointsWidth * 1.0)) : backingWidth
-        let targetPixelsHigh = downsampleToNonRetina ? Int(round(pointsHeight * 1.0)) : backingHeight
+        let targetPixelsWide = downsampleToNonRetinaForSave ? Int(round(pointsWidth * 1.0)) : backingWidth
+        let targetPixelsHigh = downsampleToNonRetinaForSave ? Int(round(pointsHeight * 1.0)) : backingHeight
 
         guard let finalRep = NSBitmapImageRep(
             bitmapDataPlanes: nil,

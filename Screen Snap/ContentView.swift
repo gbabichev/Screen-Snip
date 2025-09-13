@@ -75,7 +75,8 @@ struct ContentView: View {
     
     @AppStorage("saveQuality") private var saveQuality: Double = 0.9
     @AppStorage("saveDirectoryPath") private var saveDirectoryPath: String = ""
-    @AppStorage("downsampleToNonRetina") private var downsampleToNonRetina: Bool = false
+    @AppStorage("downsampleToNonRetinaClipboard") private var downsampleToNonRetinaClipboard: Bool = false
+    @AppStorage("downsampleToNonRetinaForSave") private var downsampleToNonRetinaForSave: Bool = false
     @AppStorage("imageDisplayMode") private var imageDisplayMode: String = "actual" // "actual" or "fit"
     @AppStorage("saveOnCopy") private var saveOnCopy: Bool = true
 
@@ -778,14 +779,20 @@ struct ContentView: View {
                         .toggleStyle(.switch)
                         .help("When off, images display at actual size. When on, images scale to fit the window.")
                         
+                        Divider()
+                        
+                        Toggle("Downsample retina screenshots for save", isOn: $downsampleToNonRetinaForSave)
+                            .toggleStyle(.switch)
+                            .help("When copying to clipboard, convert 2x screenshots to 1x resolution")
                         
                         Toggle("Save on Copy", isOn: $saveOnCopy)
                             .toggleStyle(.switch)
                             .help("Save on copy")
                         
-                        Toggle("Downsample retina screenshots for clipboard", isOn: $downsampleToNonRetina)
+                        Toggle("Downsample retina screenshots for clipboard", isOn: $downsampleToNonRetinaClipboard)
                             .toggleStyle(.switch)
                             .help("When copying to clipboard, convert 2x screenshots to 1x resolution")
+                            .disabled(downsampleToNonRetinaForSave && saveOnCopy)
                         
                         
                         Picker("Save format", selection: $preferredSaveFormatRaw) {
@@ -1176,13 +1183,16 @@ struct ContentView: View {
         ) { result in
             switch result {
             case .success(let urls):
-                if activeImporter == .folder {
-                    if let url = urls.first {
+                guard let url = urls.first else { return }
+                if url.hasDirectoryPath {
+                    // Folder chosen
+                    DispatchQueue.main.async {
                         saveDirectoryPath = url.path
                         loadExistingSnaps()
                     }
                 } else {
-                    if let url = urls.first {
+                    // Image chosen
+                    DispatchQueue.main.async {
                         undoStack.removeAll()
                         redoStack.removeAll()
                         selectedSnapURL = url
@@ -1200,11 +1210,7 @@ struct ContentView: View {
                     }
                 }
             case .failure(let error):
-                if activeImporter == .folder {
-                    print("Folder selection canceled/failed: \(error)")
-                } else {
-                    print("Image import canceled/failed: \(error)")
-                }
+                print("Selection canceled/failed: \(error)")
             }
         }
     }
@@ -1511,7 +1517,7 @@ struct ContentView: View {
         }()
 
         // 2) Respect user toggle: only downsample if requested AND the image is retina
-        let shouldDownsample = downsampleToNonRetina && isRetinaImage(flattened)
+        let shouldDownsample = downsampleToNonRetinaClipboard && isRetinaImage(flattened)
         let source: NSImage = shouldDownsample ? downsampleImage(flattened) : flattened
 
         // 3) Put pixel-accurate PNG bytes on the pasteboard to avoid implicit 1x collapse
