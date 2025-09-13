@@ -49,7 +49,7 @@ struct ThumbnailView: View {
             }
         }
         .onAppear { loadThumb() }
-        .onChange(of: url) { _ in loadThumb() }
+        .onChange(of: url) { _,_ in loadThumb() }
         .onDisappear { loadingID = UUID() } // cancels in-flight task
     }
 

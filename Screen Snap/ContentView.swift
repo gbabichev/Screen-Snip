@@ -1398,8 +1398,17 @@ struct ContentView: View {
             Task {
                 // Use the same capture method as the hotkey to avoid duplication
                 if let img = await GlobalHotKeyManager.shared.captureScreenshot(rect: rect) {
-                    if let savedURL = self.saveSnapToDisk(img) {
+                    if let savedURL = ImageSaver.saveImage(img) {
                         DispatchQueue.main.async {
+                            // Handle the ContentView-specific cleanup that was in saveSnapToDisk
+                            self.insertSnapURL(savedURL)  // Add to gallery
+                            
+                            // Clear any retained image references
+                            self.selectedImageSize = nil
+                            // Limit undo stack growth
+                            if self.undoStack.count > 5 { self.undoStack.removeFirst(self.undoStack.count - 5) }
+                            if self.redoStack.count > 5 { self.redoStack.removeFirst(self.redoStack.count - 5) }
+                            
                             WindowManager.shared.loadImageIntoWindow(url: savedURL, shouldActivate: true)
                         }
                     }
@@ -2376,7 +2385,7 @@ struct ContentView: View {
                 cropDraftRect = rectFrom(startFitted, currentFitted)
             }
             .onEnded { value in
-                let currentFit = CGPoint(x: value.location.x - insetOrigin.x, y: value.location.y - insetOrigin.y)
+                _ = CGPoint(x: value.location.x - insetOrigin.x, y: value.location.y - insetOrigin.y)
                 
                 if let _ = cropOriginalRect {
                     // Finish edit
@@ -2926,67 +2935,20 @@ struct ContentView: View {
         return nil
     }
     
-    private func saveSnapToDisk(_ image: NSImage) -> URL? {
-        guard let dir = snapsDirectory() else { return nil }
-        let url = dir.appendingPathComponent(defaultSnapFilename())
-        
-        // Convert to data immediately and let image parameter deallocate
-        guard let tiff = image.tiffRepresentation,
-              let rep = NSBitmapImageRep(data: tiff) else {
-            return nil
-        }
-        
-        // Get the correct NSBitmapImageRep.FileType based on preferredSaveFormat
-        let fileType: NSBitmapImageRep.FileType
-        let properties: [NSBitmapImageRep.PropertyKey: Any]
-        
-        switch preferredSaveFormat {
-        case .png:
-            fileType = .png
-            properties = [:]
-        case .jpeg:
-            fileType = .jpeg
-            properties = [.compressionFactor: saveQuality]
-        case .heic:
-            // HEIC is not supported by NSBitmapImageRep, fall back to PNG
-            fileType = .png
-            properties = [:]
-        }
-        
-        guard let data = rep.representation(using: fileType, properties: properties) else {
-            return nil
-        }
-        
-        // Write immediately
-        do {
-            try data.write(to: url, options: .atomicWrite)
-            insertSnapURL(url)  // Add to gallery
-            
-            defer {
-                // Clear any retained image references
-                selectedImageSize = nil
-                // Limit undo stack growth
-                if undoStack.count > 5 { undoStack.removeFirst(undoStack.count - 5) }
-                if redoStack.count > 5 { redoStack.removeFirst(redoStack.count - 5) }
-            }
-            return url
-        } catch {
-            return nil
-        }
-    }
     
     private var currentImage: NSImage? {
         guard let url = selectedSnapURL else { return nil }
         return NSImage(contentsOf: url)  // Load on-demand
     }
     
-    /// Loads existing snaps on disk (PNG files), newest first.
+    /// Loads existing snaps on disk (all supported formats), newest first.
     private func loadExistingSnaps() {
         guard let dir = snapsDirectory() else { return }
         let fm = FileManager.default
         do {
+            let supportedExtensions = Set(["png", "jpg", "jpeg", "heic"])
             let urls = try fm.contentsOfDirectory(at: dir, includingPropertiesForKeys: [.contentModificationDateKey], options: [.skipsHiddenFiles])
-                .filter { $0.pathExtension.lowercased() == "png" }
+                .filter { supportedExtensions.contains($0.pathExtension.lowercased()) }
             let dated: [(URL, Date)] = urls.compactMap {
                 let vals = try? $0.resourceValues(forKeys: [.contentModificationDateKey])
                 return ($0, vals?.contentModificationDate ?? .distantPast)

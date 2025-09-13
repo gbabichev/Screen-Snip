@@ -7,6 +7,8 @@
 import SwiftUI
 import Carbon.HIToolbox
 import ScreenCaptureKit
+import UniformTypeIdentifiers
+
 
 enum ToolKind: String {
     case pointer
@@ -382,7 +384,7 @@ final class GlobalHotKeyManager {
         SelectionWindowManager.shared.present(onComplete: { rect in
             Task {
                 if let img = await self.captureScreenshot(rect: rect) {
-                    if let savedURL = await self.saveImageToDisk(img) {
+                    if let savedURL = ImageSaver.saveImage(img) {
                         DispatchQueue.main.async {
                             // Create a new window with the captured image
                             WindowManager.shared.loadImageIntoWindow(url: savedURL, shouldActivate: true)
@@ -415,15 +417,15 @@ final class GlobalHotKeyManager {
             guard let fullCG = await ScreenCapturer.shared.captureImage(using: filter, display: scDisplay) else { return nil }
             
             let cropPx = cropRectPixels(intersectPts,
-                                       withinScreenFramePts: screenFramePts,
-                                       imageSizePx: CGSize(width: fullCG.width, height: fullCG.height),
-                                       scaleX: pxPerPtX,
-                                       scaleY: pxPerPtY)
+                                        withinScreenFramePts: screenFramePts,
+                                        imageSizePx: CGSize(width: fullCG.width, height: fullCG.height),
+                                        scaleX: pxPerPtX,
+                                        scaleY: pxPerPtY)
             
             let clamped = CGRect(x: max(0, cropPx.origin.x),
-                                y: max(0, cropPx.origin.y),
-                                width: min(cropPx.width, CGFloat(fullCG.width) - max(0, cropPx.origin.x)),
-                                height: min(cropPx.height, CGFloat(fullCG.height) - max(0, cropPx.origin.y)))
+                                 y: max(0, cropPx.origin.y),
+                                 width: min(cropPx.width, CGFloat(fullCG.width) - max(0, cropPx.origin.x)),
+                                 height: min(cropPx.height, CGFloat(fullCG.height) - max(0, cropPx.origin.y)))
             guard clamped.width > 1, clamped.height > 1 else { return nil }
             
             guard let cropped = fullCG.cropping(to: clamped) else { return nil }
@@ -459,37 +461,7 @@ final class GlobalHotKeyManager {
         return best?.screen
     }
     
-    private func saveImageToDisk(_ image: NSImage) async -> URL? {
-        let fm = FileManager.default
-        
-        let saveDirectoryPath = UserDefaults.standard.string(forKey: "saveDirectoryPath") ?? ""
-        let dir: URL
-        if !saveDirectoryPath.isEmpty {
-            dir = URL(fileURLWithPath: saveDirectoryPath, isDirectory: true)
-        } else {
-            guard let pictures = fm.urls(for: .picturesDirectory, in: .userDomainMask).first else { return nil }
-            dir = pictures.appendingPathComponent("Screen Snap", isDirectory: true)
-            if !fm.fileExists(atPath: dir.path) {
-                try? fm.createDirectory(at: dir, withIntermediateDirectories: true)
-            }
-        }
-        
-        let formatter = DateFormatter()
-        formatter.dateFormat = "yyyyMMdd_HHmmss_SSS"
-        let filename = "snap_\(formatter.string(from: Date())).png"
-        let url = dir.appendingPathComponent(filename)
-        
-        guard let tiff = image.tiffRepresentation,
-              let rep = NSBitmapImageRep(data: tiff),
-              let data = rep.representation(using: .png, properties: [:]) else { return nil }
-        
-        do {
-            try data.write(to: url, options: .atomic)
-            return url
-        } catch {
-            return nil
-        }
-    }
+    
 }
 
 private extension String {
