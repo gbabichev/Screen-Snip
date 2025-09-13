@@ -1017,6 +1017,8 @@ struct ContentView: View {
                             }
                         }
                         
+                        Divider()
+                        
                         if selectedTool == .highlighter {
                             Section("Highlighter Color") {
                                 PenColorButton(current: highlighterColorBinding, color: NSColor.systemYellow.withAlphaComponent(0.35), name: "Yellow")
@@ -1027,6 +1029,17 @@ struct ContentView: View {
                         }
                         else {
                             colorButtons(current: lineColorBinding)
+                        }
+                        
+                        Divider()
+                        
+                        Menu("Line Width") {
+                            ForEach([1,2,3,4,6,8,12,16], id: \.self) { w in
+                                Button(action: { strokeWidth = CGFloat(w) }) {
+                                    if Int(strokeWidth) == w { Image(systemName: "checkmark") }
+                                    Text("\(w) pt")
+                                }
+                            }
                         }
                         
                     } label: {
