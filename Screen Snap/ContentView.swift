@@ -60,6 +60,8 @@ private enum SaveFormat: String, CaseIterable, Identifiable {
 
 struct ContentView: View {
     
+    @State private var thumbnailRefreshTrigger = UUID()
+
     @State private var selectedImageSize: CGSize? = nil
     @State private var imageReloadTrigger = UUID()
     @State private var missingSnapURLs: Set<URL> = []
@@ -474,10 +476,6 @@ struct ContentView: View {
                     }
                 }
                 
-                
-                
-
-                
             }
             
             if showCopiedHUD {
@@ -497,6 +495,7 @@ struct ContentView: View {
                         
                         Button(action: {
                             loadExistingSnaps()
+                            thumbnailRefreshTrigger = UUID()
                         }) {
                             Image(systemName: "arrow.clockwise")
                                 .imageScale(.small)
@@ -537,8 +536,10 @@ struct ContentView: View {
                                         selected: selectedSnapURL == url,
                                         onDelete: { deleteSnap(url) },
                                         width: 140,
-                                        height: 90
+                                        height: 90,
+                                        refreshTrigger: thumbnailRefreshTrigger
                                     )
+
                                     Text(url.lastPathComponent)
                                         .lineLimit(1)
                                         .font(.caption2)
@@ -1217,6 +1218,20 @@ struct ContentView: View {
     
     // MARK: - Helpers
     
+    private func reloadCurrentImage() {
+        guard let url = selectedSnapURL else { return }
+        
+        // Force AsyncImage to reload by changing the trigger
+        imageReloadTrigger = UUID()
+        
+        // Update the image size in case it changed during flattening
+        selectedImageSize = probeImageSize(url)
+        
+        // Reset fitted size so it recalculates
+        lastFittedSize = nil
+        print("RELOAD!")
+    }
+    
     private func fittedRectToAuthorRect(_ rect: CGRect, fitted: CGSize, author: CGSize) -> CGRect {
         let sx = author.width / max(1, fitted.width)
         let sy = author.height / max(1, fitted.height)
@@ -1545,6 +1560,7 @@ struct ContentView: View {
             if let url = selectedSnapURL {
                 if ImageSaver.writeImage(source, to: url, format: preferredSaveFormat.rawValue, quality: saveQuality) {
                     refreshGalleryAfterSaving(to: url)
+                    reloadCurrentImage()
                 }
             } else if let dir = snapsDirectory() {
                 let newName = ImageSaver.generateFilename(for: preferredSaveFormat.rawValue)
@@ -1552,6 +1568,7 @@ struct ContentView: View {
                 if ImageSaver.writeImage(source, to: dest, format: preferredSaveFormat.rawValue, quality: saveQuality) {
                     selectedSnapURL = dest
                     refreshGalleryAfterSaving(to: dest)
+                    reloadCurrentImage()
                 }
             } else {
                 // Fallback if no directory available
@@ -1609,6 +1626,7 @@ struct ContentView: View {
             if ImageSaver.writeImage(img, to: url, format: preferredSaveFormat.rawValue, quality: saveQuality) {
                 selectedSnapURL = url
                 refreshGalleryAfterSaving(to: url)
+                reloadCurrentImage()
             }
         }
     }
@@ -1618,6 +1636,10 @@ struct ContentView: View {
         if let dir = snapsDirectory(), url.path.hasPrefix(dir.path) {
             insertSnapURL(url)
         }
+        
+        // Refresh thumbnails.
+        thumbnailRefreshTrigger = UUID()
+        
     }
     
     
@@ -2646,6 +2668,7 @@ struct ContentView: View {
                 // Write the flattened image back to the same file
                 if ImageSaver.writeImage(flattened, to: url, format: preferredSaveFormat.rawValue, quality: saveQuality) {
                     refreshGalleryAfterSaving(to: url)
+                    reloadCurrentImage()
                 }
             } else {
                 saveAsCurrent()
@@ -2674,6 +2697,7 @@ struct ContentView: View {
                 if ImageSaver.writeImage(flattened, to: url, format: preferredSaveFormat.rawValue, quality: saveQuality) {
                     selectedSnapURL = url
                     refreshGalleryAfterSaving(to: url)
+                    reloadCurrentImage()
                 }
             }
         }

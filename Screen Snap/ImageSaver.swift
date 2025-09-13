@@ -66,7 +66,7 @@ struct ImageSaver {
         
         // Get the image's current scale
         let originalScale = image.recommendedLayerContentsScale(0.0)
-        let targetScale = downsampleToNonRetinaForSave ? 1.0 : originalScale
+        _ = downsampleToNonRetinaForSave ? 1.0 : originalScale
         
         // For PNG, use the original method since it works
         if format == "png" {

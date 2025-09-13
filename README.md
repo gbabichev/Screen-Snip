@@ -16,7 +16,7 @@ Inspired by Greenshot on Windows - the goal is to make a tiny app that can do th
 </div>
 
 ## Work in Progress
-- Refresh thumbnail on click / copy to clipboard. 
+- <del>Refresh thumbnail on click / copy to clipboard. 
 - Update Snap Gallery so I can see dates.
 - Add File and Edit Menu Bar entries. 
 - Remove debug prints.
@@ -42,8 +42,8 @@ Inspired by Greenshot on Windows - the goal is to make a tiny app that can do th
   - <del>User defined save folder. 
   - <del>User defined output type (PNG / JPG / HEIC) & quality slider. 
 - <del>Refresh snaps button. 
-- <del> Limit snap previews to ~10.
-- <del> Add a Snap Browser
+- <del>Limit snap previews to ~10.
+- <del>Add a Snap Browser
 - <del>Multi-Monitor snaps. 
 - <del>Global system hotkey for screenshots.</del> 
 - <del>Handle 1x, 2x (Retina) snaps.
@@ -54,7 +54,7 @@ Inspired by Greenshot on Windows - the goal is to make a tiny app that can do th
 - <del>Add pinch to zoom on trackpad.
 - <del>User friendly menus. 
 - <del>Hotkeys for tools.
-- <del> Working Menu Bar commands with icons.
+- <del>Working Menu Bar commands with icons.
 - <del>Add circle shape. 
 - <del>Adjust tools so i can also move objects around in the same tool. 
 - <del>Remove the double ContentView for the two modes.
