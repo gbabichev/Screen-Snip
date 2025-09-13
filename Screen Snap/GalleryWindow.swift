@@ -118,6 +118,101 @@ struct GalleryView: View {
     
     @AppStorage("saveDirectoryPath") private var saveDirectoryPath: String = ""
     
+    // Group URLs by date
+    private var groupedUrls: [(String, [URL])] {
+        let grouped = Dictionary(grouping: urlsLocal) { url in
+            extractDateString(from: url)
+        }
+        
+        // Sort by date descending (newest first)
+        return grouped.sorted { first, second in
+            // Convert date strings back to comparable format
+            let firstDate = dateFromString(first.key)
+            let secondDate = dateFromString(second.key)
+            return firstDate > secondDate
+        }.map { (key, value) in
+            // Sort URLs within each group by time descending
+            let sortedUrls = value.sorted { url1, url2 in
+                let time1 = extractTimeString(from: url1)
+                let time2 = extractTimeString(from: url2)
+                return time1 > time2
+            }
+            return (key, sortedUrls)
+        }
+    }
+    
+    private func extractDateString(from url: URL) -> String {
+        let filename = url.deletingPathExtension().lastPathComponent
+        
+        // Try to extract date from Gsnap_YYYYMMDD_HHMMSS_xxx format
+        if filename.hasPrefix("Gsnap_"),
+           let dateRange = filename.range(of: "Gsnap_"),
+           filename.count >= "Gsnap_YYYYMMDD".count {
+            let afterPrefix = filename[dateRange.upperBound...]
+            let dateString = String(afterPrefix.prefix(8)) // YYYYMMDD
+            
+            if dateString.count == 8 {
+                return formatDateString(dateString)
+            }
+        }
+        
+        // Fallback: use file modification date
+        do {
+            let attrs = try url.resourceValues(forKeys: [.contentModificationDateKey])
+            if let date = attrs.contentModificationDate {
+                let formatter = DateFormatter()
+                formatter.dateFormat = "EEEE, MMMM d"
+                return formatter.string(from: date)
+            }
+        } catch {
+            // Ignore errors
+        }
+        
+        return "Unknown Date"
+    }
+    
+    private func extractTimeString(from url: URL) -> String {
+        let filename = url.deletingPathExtension().lastPathComponent
+        
+        // Try to extract time from Gsnap_YYYYMMDD_HHMMSS_xxx format
+        if filename.hasPrefix("Gsnap_") {
+            let components = filename.components(separatedBy: "_")
+            if components.count >= 3 {
+                return components[2] // HHMMSS
+            }
+        }
+        
+        return "000000" // Fallback for sorting
+    }
+    
+    private func formatDateString(_ dateString: String) -> String {
+        // Convert YYYYMMDD to readable format
+        if dateString.count == 8 {
+            let year = String(dateString.prefix(4))
+            let monthString = String(dateString.dropFirst(4).prefix(2))
+            let dayString = String(dateString.suffix(2))
+            
+            if let _ = Int(monthString), let _ = Int(dayString) {
+                let formatter = DateFormatter()
+                formatter.dateFormat = "yyyy-MM-dd"
+                
+                if let date = formatter.date(from: "\(year)-\(monthString)-\(dayString)") {
+                    let displayFormatter = DateFormatter()
+                    displayFormatter.dateFormat = "EEEE, MMMM d"
+                    return displayFormatter.string(from: date)
+                }
+            }
+        }
+        return dateString // Fallback
+    }
+    
+    private func dateFromString(_ dateString: String) -> Date {
+        // Convert formatted date string back to Date for sorting
+        let formatter = DateFormatter()
+        formatter.dateFormat = "EEEE, MMMM d"
+        return formatter.date(from: dateString) ?? .distantPast
+    }
+    
     private func snapsDirectoryFromSettings() -> URL? {
         if !saveDirectoryPath.isEmpty {
             return URL(fileURLWithPath: saveDirectoryPath, isDirectory: true)
@@ -156,36 +251,64 @@ struct GalleryView: View {
         _urlsLocal = State(initialValue: urls)
     }
     
-    // Basic grid: adapts to window size
+    // Grid for each section
     private var columns: [GridItem] {
-        [GridItem(.adaptive(minimum: 192), spacing: 8)] // Slightly larger to account for ThumbnailView's padding
+        [GridItem(.adaptive(minimum: 192), spacing: 8)]
     }
     
     var body: some View {
         ScrollView {
-            LazyVGrid(columns: columns, spacing: 8) {
-                ForEach(urlsLocal, id: \.self) { url in
-                    ThumbnailView(
-                        url: url,
-                        selected: selectedUrl == url,
-                        onDelete: { deleteFile(at: url) },
-                        width: 180,
-                        height: 120,
-                        refreshTrigger: refreshTrigger
-                    )
-                    .onTapGesture {
-                        selectedUrl = url
-                        onSelect(url)
+            LazyVStack(alignment: .leading, spacing: 20) {
+                ForEach(groupedUrls, id: \.0) { dateString, urls in
+                    VStack(alignment: .leading, spacing: 12) {
+                        // Date header
+                        HStack {
+                            Text(dateString)
+                                .font(.headline)
+                                .foregroundStyle(.primary)
+                            
+                            Spacer()
+                            
+                            Text("\(urls.count) image\(urls.count == 1 ? "" : "s")")
+                                .font(.caption)
+                                .foregroundStyle(.secondary)
+                        }
+                        .padding(.horizontal, 16)
+                        
+                        // Images for this date
+                        LazyVGrid(columns: columns, spacing: 8) {
+                            ForEach(urls, id: \.self) { url in
+                                ThumbnailView(
+                                    url: url,
+                                    selected: selectedUrl == url,
+                                    onDelete: { deleteFile(at: url) },
+                                    width: 180,
+                                    height: 120,
+                                    refreshTrigger: refreshTrigger
+                                )
+                                .onTapGesture {
+                                    selectedUrl = url
+                                    onSelect(url)
+                                }
+                            }
+                        }
+                        .padding(.horizontal, 16)
+                        
+                        // Divider between dates (except for last)
+                        if dateString != groupedUrls.last?.0 {
+                            Divider()
+                                .padding(.horizontal, 16)
+                        }
                     }
                 }
             }
-            .padding(16)
+            .padding(.vertical, 16)
         }
         .toolbar {
             ToolbarItemGroup(placement: .navigation) {
                 Button {
                     urlsLocal = onReload()
-                    refreshTrigger = UUID() // Force thumbnail refresh
+                    refreshTrigger = UUID()
                 } label: {
                     Label("Reload", systemImage: "arrow.clockwise")
                 }

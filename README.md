@@ -16,8 +16,6 @@ Inspired by Greenshot on Windows - the goal is to make a tiny app that can do th
 </div>
 
 ## Work in Progress
-- <del>Refresh thumbnail on click / copy to clipboard. 
-- Update Snap Gallery so I can see dates.
 - Add File and Edit Menu Bar entries. 
 - Remove debug prints.
 - Add double tap to zoom on mouse & trackpad.
@@ -63,6 +61,8 @@ Inspired by Greenshot on Windows - the goal is to make a tiny app that can do th
 - <del>Pen colors, shape colors, etc should be saved across app launches.
 - <del>Update Pen & Oval tool menu bars being weird. 
 - <del>Fix RAM usage.
+- <del>Refresh thumbnail on click / copy to clipboard. 
+- <del>Update Snap Gallery so I can see dates.
 
 
 ### Stretch Goals 
