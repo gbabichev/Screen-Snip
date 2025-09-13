@@ -16,6 +16,7 @@ Inspired by Greenshot on Windows - the goal is to make a tiny app that can do th
 </div>
 
 ## Work in Progress
+- Fix arrow design.
 - Remove debug prints.
 - Add double tap to zoom on mouse & trackpad.
 - User adjustable dock icon.

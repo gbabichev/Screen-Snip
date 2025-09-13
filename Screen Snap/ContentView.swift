@@ -791,11 +791,11 @@ struct ContentView: View {
         }
         .toolbar {
             ToolbarItemGroup(placement: .navigation) {
-                //                Button {
-                //                    activeImporter = .image
-                //                } label: {
-                //                    Label("Open File", systemImage: "doc")
-                //                }
+                Button {
+                    activeImporter = .image
+                } label: {
+                    Label("Open File", systemImage: "folder")
+                }
                 
                 Button { showSettingsPopover = true } label: {
                     Label("Settings", systemImage: "gearshape")
@@ -1005,12 +1005,12 @@ struct ContentView: View {
                         
                     } label: {
                         if selectedTool == .highlighter {
-                            Label("Shapes", systemImage: "pencil")
+                            Label("Shapes", systemImage: "highlighter")
                                 .frame(width: 200)
                                 .fixedSize()
                         }
                         else if selectedTool == .line && lineHasArrow == true {
-                            Label("Shapes", systemImage: "pencil")
+                            Label("Shapes", systemImage: "arrow.right")
                                 .frame(width: 200)
                                 .fixedSize()
                         }
@@ -1039,7 +1039,16 @@ struct ContentView: View {
                         }
                     }
                     .id("\(selectedTool)-\(lineHasArrow)-\(lineColor)")
-                    .glassEffect(selectedTool == .line || selectedTool == .highlighter ? .regular.tint(Color(nsColor: lineColor).opacity(0.7)) : .regular)
+                    .glassEffect(
+                        (selectedTool == .line || selectedTool == .highlighter)
+                            ? .regular.tint(
+                                Color(nsColor: selectedTool == .line
+                                      ? lineColor
+                                      : highlighterColor
+                                ).opacity(0.7)
+                            )
+                            : .regular
+                    )
 
                 }
                 
