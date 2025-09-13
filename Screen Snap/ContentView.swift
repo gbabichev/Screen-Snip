@@ -3076,15 +3076,35 @@ struct ContentView: View {
                     NSString(string: o.text).draw(in: r.insetBy(dx: 4 * scaleW, dy: 4 * scaleW), withAttributes: attrs)
                 case .badge(let o):
                     let r = uiRectToImageRect(o.rect, fitted: fitted, image: imgSize)
-                    let circle = NSBezierPath(ovalIn: r); o.fillColor.setFill(); circle.fill()
-                    let para = NSMutableParagraphStyle(); para.alignment = .center
+                    
+                    // Draw the circle background
+                    let circle = NSBezierPath(ovalIn: r)
+                    o.fillColor.setFill()
+                    circle.fill()
+                    
+                    // Calculate font size
                     let fontSize = min(r.width, r.height) * 0.6
+                    let font = NSFont.systemFont(ofSize: fontSize, weight: .bold)
+                    
+                    // Create attributed string
+                    let numberString = "\(o.number)"
                     let attrs: [NSAttributedString.Key: Any] = [
-                        .font: NSFont.systemFont(ofSize: fontSize, weight: .bold),
-                        .foregroundColor: o.textColor,
-                        .paragraphStyle: para
+                        .font: font,
+                        .foregroundColor: o.textColor
                     ]
-                    NSString(string: "\(o.number)").draw(in: r, withAttributes: attrs)
+                    let attributedString = NSAttributedString(string: numberString, attributes: attrs)
+                    
+                    // Calculate text size and center it manually
+                    let textSize = attributedString.size()
+                    let textRect = CGRect(
+                        x: r.midX - textSize.width / 2,
+                        y: r.midY - textSize.height / 2,
+                        width: textSize.width,
+                        height: textSize.height
+                    )
+                    
+                    // Draw the text at the calculated position
+                    attributedString.draw(in: textRect)
                 case .highlight(let o):
                     let r = uiRectToImageRect(o.rect, fitted: fitted, image: imgSize)
                     o.color.setFill(); NSBezierPath(rect: r).fill()
