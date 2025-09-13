@@ -566,6 +566,7 @@ struct ContentView: View {
                                     // File exists - load it into the editor
                                     selectedSnapURL = url
                                     selectedImageSize = probeImageSize(url)
+                                    updateMenuState()
                                     // Clear all editing state when switching images
                                     objects.removeAll()
                                     objectSpaceSize = nil
@@ -596,6 +597,7 @@ struct ContentView: View {
         .onAppear {
             print("🔥 [DEBUG] ContentView.onAppear called")
             loadExistingSnaps()
+            updateMenuState()
             // Listen for Cmd+Z / Shift+Cmd+Z globally while this view is active, and Delete for selected objects
             keyMonitor = NSEvent.addLocalMonitorForEvents(matching: .keyDown) { event in
                 // Cmd+Z / Shift+Cmd+Z for Undo/Redo
@@ -749,6 +751,7 @@ struct ContentView: View {
             // Set the selected snap (this should now work since we refreshed)
             selectedSnapURL = url
             selectedImageSize = probeImageSize(url)
+            updateMenuState()
             
             print("🔥 [DEBUG] State completely cleared and snap loaded: \(url.lastPathComponent)")
         }
@@ -756,6 +759,35 @@ struct ContentView: View {
             guard let raw = note.userInfo?["tool"] as? String else { return }
             print(raw)
             handleSelectTool(raw)
+        }
+        .onReceive(NotificationCenter.default.publisher(for: .openImageFile)) { _ in
+            activeImporter = .image
+        }
+        .onReceive(NotificationCenter.default.publisher(for: .copyToClipboard)) { _ in
+            // Only copy if we have an image selected
+            guard selectedSnapURL != nil else { return }
+            flattenRefreshAndCopy()
+            selectedTool = .pointer
+            selectedObjectID = nil
+            activeHandle = .none
+            cropDraftRect = nil
+            cropRect = nil
+            cropHandle = .none
+            focusedTextID = nil
+        }
+        .onReceive(NotificationCenter.default.publisher(for: .performUndo)) { _ in
+            performUndo()
+        }
+        .onReceive(NotificationCenter.default.publisher(for: .performRedo)) { _ in
+            performRedo()
+        }
+        .onReceive(NotificationCenter.default.publisher(for: .saveImage)) { _ in
+            guard selectedSnapURL != nil else { return }
+            flattenAndSaveInPlace()
+        }
+        .onReceive(NotificationCenter.default.publisher(for: .saveAsImage)) { _ in
+            guard selectedSnapURL != nil else { return }
+            flattenAndSaveAs()
         }
         .toolbar {
             ToolbarItemGroup(placement: .navigation) {
@@ -1197,6 +1229,7 @@ struct ContentView: View {
                         undoStack.removeAll()
                         redoStack.removeAll()
                         selectedSnapURL = url
+                        selectedImageSize = probeImageSize(url)
                         lastFittedSize = nil
                         objects.removeAll()
                         objectSpaceSize = nil
@@ -1205,6 +1238,7 @@ struct ContentView: View {
                         cropRect = nil
                         cropDraftRect = nil
                         cropHandle = .none
+                        updateMenuState()
                         if let dir = snapsDirectory(), url.path.hasPrefix(dir.path) {
                             insertSnapURL(url)
                         }
@@ -1217,6 +1251,12 @@ struct ContentView: View {
     }
     
     // MARK: - Helpers
+    
+    private func updateMenuState() {
+        MenuState.shared.canUndo = !undoStack.isEmpty
+        MenuState.shared.canRedo = !redoStack.isEmpty
+        MenuState.shared.hasSelectedImage = selectedSnapURL != nil
+    }
     
     private func reloadCurrentImage() {
         guard let url = selectedSnapURL else { return }
@@ -1599,6 +1639,9 @@ struct ContentView: View {
         // Limit for 24/7 operation
         while undoStack.count > 3 { undoStack.removeFirst() }
         redoStack.removeAll()
+        
+        updateMenuState()
+        
     }
     
     // MARK: - Save / Save As
@@ -2837,6 +2880,9 @@ struct ContentView: View {
         redoStack.append(current)
         selectedSnapURL = prev.imageURL  // Just change the URL
         objects = prev.objects
+        
+        updateMenuState()
+
     }
     
     private func performRedo() {
@@ -2845,6 +2891,9 @@ struct ContentView: View {
         undoStack.append(current)
         selectedSnapURL = next.imageURL  // Just change the URL
         objects = next.objects
+        
+        updateMenuState()
+
     }
     
     private func clampPoint(_ p: CGPoint, in fitted: CGSize) -> CGPoint {

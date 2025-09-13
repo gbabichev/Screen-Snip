@@ -8,7 +8,7 @@ import SwiftUI
 import Carbon.HIToolbox
 import ScreenCaptureKit
 import UniformTypeIdentifiers
-
+import Combine
 
 enum ToolKind: String {
     case pointer
@@ -24,11 +24,28 @@ enum ToolKind: String {
 
 extension Notification.Name {
     static let selectTool = Notification.Name("com.georgebabichev.screensnap.selectTool")
+    static let openImageFile = Notification.Name("com.georgebabichev.screensnap.openImageFile")
+    static let copyToClipboard = Notification.Name("com.georgebabichev.screensnap.copyToClipboard")
+    static let performUndo = Notification.Name("com.georgebabichev.screensnap.performUndo")
+    static let performRedo = Notification.Name("com.georgebabichev.screensnap.performRedo")
+    static let saveImage = Notification.Name("com.georgebabichev.screensnap.saveImage")
+    static let saveAsImage = Notification.Name("com.georgebabichev.screensnap.saveAsImage")
+}
+
+class MenuState: ObservableObject {
+    @Published var canUndo = false
+    @Published var canRedo = false
+    @Published var hasSelectedImage = false
+    
+    static let shared = MenuState()
+    private init() {}
 }
 
 @main
 struct Screen_SnapApp: App {
     @NSApplicationDelegateAdaptor(AppDelegate.self) var appDelegate
+    @StateObject private var menuState = MenuState.shared
+
 
     init() {
         GlobalHotKeyManager.shared.registerSnapHotKey()
@@ -40,6 +57,68 @@ struct Screen_SnapApp: App {
             EmptyView()
         }
         .commands {
+
+            CommandGroup(after: .newItem) {
+                Button {
+                    WindowManager.shared.ensureMainWindow()
+                    NotificationCenter.default.post(
+                        name: .openImageFile,
+                        object: nil
+                    )
+                } label: {
+                    Label("Open", systemImage: "folder")
+                }
+                .keyboardShortcut("o", modifiers: .command)
+                
+                Divider()
+                
+                Button {
+                    NotificationCenter.default.post(name: .saveImage, object: nil)
+                } label: {
+                    Label("Save", systemImage: "square.and.arrow.down")
+                }
+                .keyboardShortcut("s", modifiers: .command)
+                .disabled(!menuState.hasSelectedImage)
+                
+                Button {
+                    NotificationCenter.default.post(name: .saveAsImage, object: nil)
+                } label: {
+                    Label("Save As…", systemImage: "square.and.arrow.down.on.square")
+                }
+                .keyboardShortcut("s", modifiers: [.command, .shift])
+                .disabled(!menuState.hasSelectedImage)
+            }
+            
+            CommandGroup(replacing: .undoRedo) {
+                Button {
+                    NotificationCenter.default.post(name: .performUndo, object: nil)
+                } label: {
+                    Label("Undo", systemImage: "arrow.uturn.backward")
+                }
+                .keyboardShortcut("z", modifiers: .command)
+                .disabled(!menuState.canUndo)
+                
+                Button {
+                    NotificationCenter.default.post(name: .performRedo, object: nil)
+                } label: {
+                    Label("Redo", systemImage: "arrow.uturn.forward")
+                }
+                .keyboardShortcut("z", modifiers: [.command, .shift])
+                .disabled(!menuState.canRedo)
+            }
+            
+            CommandGroup(replacing: .pasteboard) {
+                
+                Button {
+                    NotificationCenter.default.post(name: .copyToClipboard, object: nil)
+                } label: {
+                    Label("Copy", systemImage: "doc.on.doc")
+                }
+                .keyboardShortcut("c", modifiers: .command)
+                .disabled(!menuState.hasSelectedImage)
+
+            }
+            
             CommandMenu("Tools") {
                 Button {
                     NotificationCenter.default.post(
@@ -51,6 +130,8 @@ struct Screen_SnapApp: App {
                     Label("Pointer", systemImage: "cursorarrow")
                 }
                 .keyboardShortcut("1", modifiers: .command)
+                .disabled(!menuState.hasSelectedImage)
+
                 Button {
                     NotificationCenter.default.post(
                         name: .selectTool,
@@ -61,6 +142,8 @@ struct Screen_SnapApp: App {
                     Label("Pen", systemImage: "pencil.line")
                 }
                 .keyboardShortcut("2", modifiers: .command)
+                .disabled(!menuState.hasSelectedImage)
+
                 Button {
                     NotificationCenter.default.post(
                         name: .selectTool,
@@ -71,6 +154,8 @@ struct Screen_SnapApp: App {
                     Label("Arrow", systemImage: "arrow.right")
                 }
                 .keyboardShortcut("3", modifiers: .command)
+                .disabled(!menuState.hasSelectedImage)
+
                 Button {
                     NotificationCenter.default.post(
                         name: .selectTool,
@@ -81,6 +166,8 @@ struct Screen_SnapApp: App {
                     Label("Highlighter", systemImage: "highlighter")
                 }
                 .keyboardShortcut("4", modifiers: .command)
+                .disabled(!menuState.hasSelectedImage)
+
                 Button {
                     NotificationCenter.default.post(
                         name: .selectTool,
@@ -91,6 +178,7 @@ struct Screen_SnapApp: App {
                     Label("Rectangle", systemImage: "square.dashed")
                 }
                 .keyboardShortcut("5", modifiers: .command)
+                .disabled(!menuState.hasSelectedImage)
                 
                 Button {
                     NotificationCenter.default.post(
@@ -102,9 +190,8 @@ struct Screen_SnapApp: App {
                     Label("Oval", systemImage: "circle.dashed")
                 }
                 .keyboardShortcut("6", modifiers: .command)
-                
-                
-                
+                .disabled(!menuState.hasSelectedImage)
+
                 Button {
                     NotificationCenter.default.post(
                         name: .selectTool,
@@ -114,7 +201,9 @@ struct Screen_SnapApp: App {
                 } label: {
                     Label("Badge", systemImage: "1.circle")
                 }
-                //.keyboardShortcut("", modifiers: .command)
+                .keyboardShortcut("7", modifiers: .command)
+                .disabled(!menuState.hasSelectedImage)
+
                 Button {
                     NotificationCenter.default.post(
                         name: .selectTool,
@@ -124,7 +213,9 @@ struct Screen_SnapApp: App {
                 } label: {
                     Label("Text", systemImage: "textformat")
                 }
-                .keyboardShortcut("7", modifiers: .command)
+                .keyboardShortcut("8", modifiers: .command)
+                .disabled(!menuState.hasSelectedImage)
+
                 Button {
                     NotificationCenter.default.post(
                         name: .selectTool,
@@ -134,7 +225,9 @@ struct Screen_SnapApp: App {
                 } label: {
                     Label("Crop", systemImage: "crop")
                 }
-                .keyboardShortcut("8", modifiers: .command)
+                .keyboardShortcut("9", modifiers: .command)
+                .disabled(!menuState.hasSelectedImage)
+
             }
         }
     }
