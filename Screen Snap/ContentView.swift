@@ -445,6 +445,32 @@ struct ContentView: View {
                                     // REMOVE the .overlay(alignment: .topLeading) block entirely
                                     .contentShape(Rectangle())
                                     .allowsHitTesting(true)
+                                    .onTapGesture(count: 2) {
+                                        // Only allow double-tap zoom when using the pointer tool and not in fit mode
+                                        guard selectedTool == .pointer && imageDisplayMode != "fit" else {
+                                            print("Double tap ignored - wrong tool or fit mode")
+                                            return
+                                        }
+                                        
+                                        print("Double tap zoom activated!")
+                                        withAnimation(.easeInOut(duration: 0.25)) {
+                                            if zoomLevel < 1.5 {
+                                                zoomLevel = 2.0
+                                            } else {
+                                                zoomLevel = 1.0
+                                            }
+                                        }
+                                    }
+                                    .simultaneousGesture(selectedTool == .pointer    ? pointerGesture(insetOrigin: origin, fitted: fitted, author: author) : nil)
+                                    .simultaneousGesture(selectedTool == .line       ? lineGesture(insetOrigin: origin, fitted: fitted, author: author)    : nil)
+                                    .simultaneousGesture(selectedTool == .rect       ? rectGesture(insetOrigin: origin, fitted: fitted, author: author)    : nil)
+                                    .simultaneousGesture(selectedTool == .oval       ? ovalGesture(insetOrigin: origin, fitted: fitted, author: author)    : nil)
+                                    .simultaneousGesture(selectedTool == .text       ? textGesture(insetOrigin: origin, fitted: fitted, author: author)    : nil)
+                                    .simultaneousGesture(selectedTool == .crop       ? cropGesture(insetOrigin: origin, fitted: fitted, author: author)    : nil)
+                                    .simultaneousGesture(selectedTool == .badge      ? badgeGesture(insetOrigin: origin, fitted: fitted, author: author)   : nil)
+                                    .simultaneousGesture(selectedTool == .highlighter ? highlightGesture(insetOrigin: origin, fitted: fitted, author: author): nil)
+
+
                                     .simultaneousGesture(selectedTool == .pointer    ? pointerGesture(insetOrigin: origin, fitted: fitted, author: author) : nil)
                                     .simultaneousGesture(selectedTool == .line       ? lineGesture(insetOrigin: origin, fitted: fitted, author: author)    : nil)
                                     .simultaneousGesture(selectedTool == .rect       ? rectGesture(insetOrigin: origin, fitted: fitted, author: author)    : nil)
@@ -1322,6 +1348,21 @@ struct ContentView: View {
             width: rect.width * sx,
             height: rect.height * sy
         )
+    }
+
+    /// Double-click / double-tap to toggle zoom using existing zoom slider values.
+    /// - Note: Only active when imageDisplayMode is not "fit".
+    private func handleDoubleTapZoom() {
+        guard imageDisplayMode != "fit" else { return }
+        withAnimation(.easeInOut(duration: 0.15)) {
+            if zoomLevel < 1.5 {
+                // Jump to a comfortable zoom-in step that matches the slider's range.
+                zoomLevel = 2.0
+            } else {
+                // Return to 1x for a quick reset
+                zoomLevel = 1.0
+            }
+        }
     }
     
     /// Probe image dimensions without instantiating NSImage (low RAM)
@@ -2376,42 +2417,7 @@ struct ContentView: View {
                 let dx = pEnd.x - pStart.x
                 let dy = pEnd.y - pStart.y
                 let moved = hypot(dx, dy) > 5
-                
-                // Check for double-click
-                print("🔥 Pointer gesture ended, moved: \(moved)")
-                if let event = NSApp.currentEvent {
-                    print("🔥 Click count: \(event.clickCount)")
-                } else {
-                    print("🔥 No current event")
-                }
-                
-                let isDoubleClick = if let event = NSApp.currentEvent {
-                    event.clickCount >= 2
-                } else {
-                    false
-                }
-                
-                print("🔥 Is double click: \(isDoubleClick)")
-                
-                if !moved && isDoubleClick {
-                    print("🔥 Processing double-click logic")
-                    print("🔥 Current focusedTextID before change: \(String(describing: focusedTextID))")
-                    // Check ALL text objects, not just selected ones
-                    for (index, obj) in objects.enumerated() {
-                        if case .text(let textObj) = obj {
-                            let hit = textObj.hitTest(pEnd)
-                            print("🔥 Text object \(index) hit test: \(hit), rect: \(textObj.rect)")
-                            if hit {
-                                print("🔥 Setting focus to text object \(index)")
-                                selectedObjectID = textObj.id
-                                focusedTextID = textObj.id
-                                print("🔥 focusedTextID after setting: \(String(describing: focusedTextID))")
-                                break
-                            }
-                        }
-                    }
-                }
-                
+
                 dragStartPoint = nil
                 pushedDragUndo = false
             }
