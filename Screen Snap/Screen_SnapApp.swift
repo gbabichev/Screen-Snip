@@ -30,6 +30,9 @@ extension Notification.Name {
     static let performRedo = Notification.Name("com.georgebabichev.screensnap.performRedo")
     static let saveImage = Notification.Name("com.georgebabichev.screensnap.saveImage")
     static let saveAsImage = Notification.Name("com.georgebabichev.screensnap.saveAsImage")
+    static let zoomIn = Notification.Name("com.georgebabichev.screensnap.zoomIn")
+    static let zoomOut = Notification.Name("com.georgebabichev.screensnap.zoomOut")
+    static let resetZoom = Notification.Name("com.georgebabichev.screensnap.resetZoom")
 }
 
 class MenuState: ObservableObject {
@@ -228,6 +231,29 @@ struct Screen_SnapApp: App {
                 .keyboardShortcut("9", modifiers: .command)
                 .disabled(!menuState.hasSelectedImage)
 
+            }
+            
+            CommandGroup(after: .sidebar) {
+                Button {
+                    NotificationCenter.default.post(name: .zoomIn, object: nil)
+                } label: { Text("Zoom In") }
+                .keyboardShortcut("+", modifiers: .command)
+                .disabled(!menuState.hasSelectedImage)
+
+                Button {
+                    NotificationCenter.default.post(name: .zoomOut, object: nil)
+                } label: { Text("Zoom Out") }
+                .keyboardShortcut("-", modifiers: .command)
+                .disabled(!menuState.hasSelectedImage)
+
+                Button {
+                    NotificationCenter.default.post(name: .resetZoom, object: nil)
+                } label: { Text("Actual Size") }
+                .keyboardShortcut("0", modifiers: .command)
+                .disabled(!menuState.hasSelectedImage)
+                
+                Divider()
+                
             }
         }
     }

@@ -7,6 +7,7 @@ import AppKit
 import VideoToolbox
 import UniformTypeIdentifiers
 import ImageIO
+import Combine
 
 // MARK: - NSColor Hex Conversion Helper (no RawRepresentable conformance)
 extension NSColor {
@@ -752,87 +753,8 @@ struct ContentView: View {
         .onDisappear {
             if let keyMonitor { NSEvent.removeMonitor(keyMonitor); self.keyMonitor = nil }
         }
-        // Replace the notification handler in ContentView with this enhanced version:
-
-        .onReceive(NotificationCenter.default.publisher(for: Notification.Name("com.georgebabichev.screensnap.beginSnapFromIntent"))) { note in
-            print("🔥 [DEBUG] ContentView received beginSnapFromIntent notification")
-            
-            // Extract URL and activation flag from userInfo
-            guard let userInfo = note.userInfo,
-                  let url = userInfo["url"] as? URL else {
-                print("🔥 [DEBUG] ERROR: beginSnapFromIntent notification has no URL")
-                return
-            }
-            
-            let shouldActivate = userInfo["shouldActivate"] as? Bool ?? true
-            
-            print("🔥 [DEBUG] beginSnapFromIntent URL: \(url), shouldActivate: \(shouldActivate)")
-            
-            // CRITICAL: Clear ALL existing state first to prevent memory accumulation
-            objects.removeAll()
-            objectSpaceSize = nil
-            selectedObjectID = nil
-            activeHandle = .none
-            cropRect = nil
-            cropDraftRect = nil
-            cropHandle = .none
-            focusedTextID = nil
-            
-            // CRITICAL: Clear undo/redo stacks to prevent memory growth
-            undoStack.removeAll()
-            redoStack.removeAll()
-            
-            // CRITICAL: Reset all draft states
-            draft = nil
-            draftRect = nil
-            selectedTool = .pointer
-            
-            // CRITICAL: Clear any missing snap tracking
-            missingSnapURLs.removeAll()
-            
-            // Refresh the gallery to ensure the new snap is in our list
-            loadExistingSnaps()
-            
-            // Set the selected snap (this should now work since we refreshed)
-            selectedSnapURL = url
-            selectedImageSize = probeImageSize(url)
-            updateMenuState()
-            
-            print("🔥 [DEBUG] State completely cleared and snap loaded: \(url.lastPathComponent)")
-        }
-        .onReceive(NotificationCenter.default.publisher(for: .selectTool)) { note in
-            guard let raw = note.userInfo?["tool"] as? String else { return }
-            print(raw)
-            handleSelectTool(raw)
-        }
-        .onReceive(NotificationCenter.default.publisher(for: .openImageFile)) { _ in
-            activeImporter = .image
-        }
-        .onReceive(NotificationCenter.default.publisher(for: .copyToClipboard)) { _ in
-            // Only copy if we have an image selected
-            guard selectedSnapURL != nil else { return }
-            flattenRefreshAndCopy()
-            selectedTool = .pointer
-            selectedObjectID = nil
-            activeHandle = .none
-            cropDraftRect = nil
-            cropRect = nil
-            cropHandle = .none
-            focusedTextID = nil
-        }
-        .onReceive(NotificationCenter.default.publisher(for: .performUndo)) { _ in
-            performUndo()
-        }
-        .onReceive(NotificationCenter.default.publisher(for: .performRedo)) { _ in
-            performRedo()
-        }
-        .onReceive(NotificationCenter.default.publisher(for: .saveImage)) { _ in
-            guard selectedSnapURL != nil else { return }
-            flattenAndSaveInPlace()
-        }
-        .onReceive(NotificationCenter.default.publisher(for: .saveAsImage)) { _ in
-            guard selectedSnapURL != nil else { return }
-            flattenAndSaveAs()
+        .onReceive(notificationStream) { note in
+            handleAppNotification(note)
         }
         .toolbar {
             ToolbarItemGroup(placement: .navigation) {
@@ -1318,6 +1240,81 @@ struct ContentView: View {
     }
     
     // MARK: - Helpers
+    
+    // MARK: - Notification Handlers
+    
+    // Merge all notifications into a single stream the view can subscribe to.
+    private var notificationStream: AnyPublisher<Notification, Never> {
+        let nc = NotificationCenter.default
+        return Publishers.MergeMany([
+            nc.publisher(for: Notification.Name("com.georgebabichev.screensnap.beginSnapFromIntent")),
+            nc.publisher(for: .selectTool),
+            nc.publisher(for: .openImageFile),
+            nc.publisher(for: .copyToClipboard),
+            nc.publisher(for: .performUndo),
+            nc.publisher(for: .performRedo),
+            nc.publisher(for: .saveImage),
+            nc.publisher(for: .saveAsImage),
+            nc.publisher(for: .zoomIn),
+            nc.publisher(for: .zoomOut),
+            nc.publisher(for: .resetZoom),
+        ])
+        .eraseToAnyPublisher()
+    }
+
+    // Central handler so the `.onReceive` body stays tiny.
+    private func handleAppNotification(_ note: Notification) {
+        switch note.name {
+        case Notification.Name("com.georgebabichev.screensnap.beginSnapFromIntent"):
+            onBeginSnapFromIntent(note)
+
+        case .selectTool:
+            onSelectToolNotification(note)
+
+        case .openImageFile:
+            onOpenImageFile()
+
+        case .copyToClipboard:
+            onCopyToClipboard()
+
+        case .performUndo:
+            onPerformUndo()
+
+        case .performRedo:
+            onPerformRedo()
+
+        case .saveImage:
+            onSaveImage()
+
+        case .saveAsImage:
+            onSaveAsImage()
+
+        case .zoomIn, .zoomOut, .resetZoom:
+            onZoomNotification(note)
+
+        default:
+            break
+        }
+    }
+    
+    
+    private func onBeginSnapFromIntent(_ note: Notification) { /* your existing logic */ }
+    private func onSelectToolNotification(_ note: Notification) { /* your existing logic */ }
+    private func onOpenImageFile() { /* your existing logic */ }
+    private func onCopyToClipboard() { /* your existing logic */ }
+    private func onPerformUndo() { performUndo() }
+    private func onPerformRedo() { performRedo() }
+    private func onSaveImage() { /* your existing logic */ }
+    private func onSaveAsImage() { /* your existing logic */ }
+    private func onZoomNotification(_ notification: Notification) {
+        switch notification.name {
+        case .zoomIn:    zoomLevel = min(zoomLevel * 1.25, 3.0)
+        case .zoomOut:   zoomLevel = max(zoomLevel / 1.25, 1.0)
+        case .resetZoom: zoomLevel = 1.0
+        default: break
+        }
+    }
+    
     
     private func updateMenuState() {
         MenuState.shared.canUndo = !undoStack.isEmpty
@@ -2416,7 +2413,7 @@ struct ContentView: View {
                 
                 let dx = pEnd.x - pStart.x
                 let dy = pEnd.y - pStart.y
-                let moved = hypot(dx, dy) > 5
+                let _ = hypot(dx, dy) > 5
 
                 dragStartPoint = nil
                 pushedDragUndo = false
