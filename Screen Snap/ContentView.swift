@@ -206,6 +206,8 @@ struct ContentView: View {
     @State private var objectSpaceSize: CGSize? = nil  // tracks the UI coordinate space size the objects are authored in
     
     @State private var lastDraftTick: CFTimeInterval = 0
+
+    @State private var lastTextEditDoubleClickAt: CFTimeInterval = 0
     
     // Throttle rapid draft updates to ~90 Hz (for drag gestures)
     private func allowDraftTick(interval: Double = 1.0/90.0) -> Bool {
@@ -343,6 +345,11 @@ struct ContentView: View {
                                                         .frame(width: o.rect.width, height: o.rect.height, alignment: .topLeading)
                                                         .padding(4)
                                                         .background(o.bgEnabled ? Color(nsColor: o.bgColor) : Color.clear)
+                                                        .onTapGesture(count: 2) {
+                                                            focusedTextID = o.id
+                                                            isTextEditorFocused = true
+                                                            lastTextEditDoubleClickAt = CACurrentMediaTime()
+                                                        }
                                                         .position(x: o.rect.midX, y: o.rect.midY)
                                                 }
                                             case .badge(let o):
@@ -447,13 +454,13 @@ struct ContentView: View {
                                     .scaleEffect(x: sx, y: sy, anchor: .center)
                                     .frame(width: fitted.width, height: fitted.height, alignment: .center)
                                     .transaction { $0.disablesAnimations = true }
-                                    .compositingGroup()
-                                    .drawingGroup()
-                                    // REMOVE the .overlay(alignment: .topLeading) block entirely
+                                    // Avoid rasterizing (compositingGroup/drawingGroup) here: it breaks NSViewRepresentable (AppKitTextEditorAdaptor) during inline editing and triggers "Unable to render flattened version..."
                                     .contentShape(Rectangle())
                                     .allowsHitTesting(true)
                                     .onTapGesture(count: 2) {
                                         // Only allow double-tap zoom when using the pointer tool and not in fit mode
+                                        let now = CACurrentMediaTime()
+                                        if now - lastTextEditDoubleClickAt < 0.30 { return }
                                         guard selectedTool == .pointer && imageDisplayMode != "fit" else {
                                             return
                                         }

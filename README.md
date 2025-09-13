@@ -66,6 +66,7 @@ Inspired by Greenshot on Windows - the goal is to make a tiny app that can do th
 - <del>Add cmd0, cmd+, cmd- for zoom controls. 
 - <del>Remove debug prints.
 - <del>User adjustable dock icon.
+- <del>Fix crop, text, badge after reworking the canvas. 
 
 
 ### Stretch Goals 
