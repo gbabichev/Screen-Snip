@@ -1295,14 +1295,76 @@ struct ContentView: View {
     }
     
     
-    private func onBeginSnapFromIntent(_ note: Notification) { /* your existing logic */ }
-    private func onSelectToolNotification(_ note: Notification) { /* your existing logic */ }
-    private func onOpenImageFile() { /* your existing logic */ }
-    private func onCopyToClipboard() { /* your existing logic */ }
+    private func onBeginSnapFromIntent(_ note: Notification) {
+        print("🔥 [DEBUG] ContentView received beginSnapFromIntent notification")
+        
+        // Extract URL and activation flag from userInfo
+        guard let userInfo = note.userInfo,
+                let url = userInfo["url"] as? URL else {
+            print("🔥 [DEBUG] ERROR: beginSnapFromIntent notification has no URL")
+            return
+        }
+        
+        let shouldActivate = userInfo["shouldActivate"] as? Bool ?? true
+        
+        
+        // CRITICAL: Clear ALL existing state first to prevent memory accumulation
+        objects.removeAll()
+        objectSpaceSize = nil
+        selectedObjectID = nil
+        activeHandle = .none
+        cropRect = nil
+        cropDraftRect = nil
+        cropHandle = .none
+        focusedTextID = nil
+        
+        // CRITICAL: Clear undo/redo stacks to prevent memory growth
+        undoStack.removeAll()
+        redoStack.removeAll()
+        
+        // CRITICAL: Reset all draft states
+        draft = nil
+        draftRect = nil
+        selectedTool = .pointer
+        
+        // CRITICAL: Clear any missing snap tracking
+        missingSnapURLs.removeAll()
+        
+        // Refresh the gallery to ensure the new snap is in our list
+        loadExistingSnaps()
+        
+        // Set the selected snap (this should now work since we refreshed)
+        selectedSnapURL = url
+        selectedImageSize = probeImageSize(url)
+        updateMenuState()
+    }
+    private func onSelectToolNotification(_ note: Notification) {
+        guard let raw = note.userInfo?["tool"] as? String else { return }
+        print(raw)
+        handleSelectTool(raw)
+    }
+    private func onOpenImageFile() { activeImporter = .image}
+    private func onCopyToClipboard() {
+        guard selectedSnapURL != nil else { return }
+        flattenRefreshAndCopy()
+        selectedTool = .pointer
+        selectedObjectID = nil
+        activeHandle = .none
+        cropDraftRect = nil
+        cropRect = nil
+        cropHandle = .none
+        focusedTextID = nil
+    }
     private func onPerformUndo() { performUndo() }
     private func onPerformRedo() { performRedo() }
-    private func onSaveImage() { /* your existing logic */ }
-    private func onSaveAsImage() { /* your existing logic */ }
+    private func onSaveImage() {
+        guard selectedSnapURL != nil else { return }
+        flattenAndSaveInPlace()
+    }
+    private func onSaveAsImage() {
+        guard selectedSnapURL != nil else { return }
+        flattenAndSaveAs()
+    }
     private func onZoomNotification(_ notification: Notification) {
         switch notification.name {
         case .zoomIn:    zoomLevel = min(zoomLevel * 1.25, 3.0)
