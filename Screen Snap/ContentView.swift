@@ -3073,14 +3073,28 @@ struct ContentView: View {
                     path.stroke()
                 case .text(let o):
                     let r = uiRectToImageRect(o.rect, fitted: fitted, image: imgSize)
-                    if o.bgEnabled { let bg = NSBezierPath(rect: r); o.bgColor.setFill(); bg.fill() }
-                    let para = NSMutableParagraphStyle(); para.alignment = .left; para.lineBreakMode = .byWordWrapping
+                    let paddingScaled = 4 * scaleW
+                    
+                    // Draw background with proper padding to match SwiftUI rendering
+                    if o.bgEnabled {
+                        let bgRect = r.insetBy(dx: -paddingScaled, dy: -paddingScaled)
+                        let bg = NSBezierPath(rect: bgRect)
+                        o.bgColor.setFill()
+                        bg.fill()
+                    }
+                    
+                    // Draw text in the original rect area (matching SwiftUI's padding behavior)
+                    let para = NSMutableParagraphStyle()
+                    para.alignment = .left
+                    para.lineBreakMode = .byWordWrapping
                     let attrs: [NSAttributedString.Key: Any] = [
                         .font: NSFont.systemFont(ofSize: o.fontSize * scaleW),
                         .foregroundColor: o.textColor,
                         .paragraphStyle: para
                     ]
-                    NSString(string: o.text).draw(in: r.insetBy(dx: 4 * scaleW, dy: 4 * scaleW), withAttributes: attrs)
+                    
+                    // Use the original rect for text, matching the SwiftUI view's behavior
+                    NSString(string: o.text).draw(in: r, withAttributes: attrs)
                 case .badge(let o):
                     let r = uiRectToImageRect(o.rect, fitted: fitted, image: imgSize)
                     
