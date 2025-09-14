@@ -17,17 +17,17 @@ enum ToolKind: String {
 }
 
 extension Notification.Name {
-    static let selectTool = Notification.Name("com.georgebabichev.screensnap.selectTool")
-    static let openImageFile = Notification.Name("com.georgebabichev.screensnap.openImageFile")
-    static let copyToClipboard = Notification.Name("com.georgebabichev.screensnap.copyToClipboard")
-    static let performUndo = Notification.Name("com.georgebabichev.screensnap.performUndo")
-    static let performRedo = Notification.Name("com.georgebabichev.screensnap.performRedo")
-    static let saveImage = Notification.Name("com.georgebabichev.screensnap.saveImage")
-    static let saveAsImage = Notification.Name("com.georgebabichev.screensnap.saveAsImage")
-    static let zoomIn = Notification.Name("com.georgebabichev.screensnap.zoomIn")
-    static let zoomOut = Notification.Name("com.georgebabichev.screensnap.zoomOut")
-    static let resetZoom = Notification.Name("com.georgebabichev.screensnap.resetZoom")
-    static let openNewWindow = Notification.Name("com.georgebabichev.screensnap.openNewWindow") // Add this line
+    static let selectTool = Notification.Name("com.georgebabichev.screenSnip.selectTool")
+    static let openImageFile = Notification.Name("com.georgebabichev.screenSnip.openImageFile")
+    static let copyToClipboard = Notification.Name("com.georgebabichev.screenSnip.copyToClipboard")
+    static let performUndo = Notification.Name("com.georgebabichev.screenSnip.performUndo")
+    static let performRedo = Notification.Name("com.georgebabichev.screenSnip.performRedo")
+    static let saveImage = Notification.Name("com.georgebabichev.screenSnip.saveImage")
+    static let saveAsImage = Notification.Name("com.georgebabichev.screenSnip.saveAsImage")
+    static let zoomIn = Notification.Name("com.georgebabichev.screenSnip.zoomIn")
+    static let zoomOut = Notification.Name("com.georgebabichev.screenSnip.zoomOut")
+    static let resetZoom = Notification.Name("com.georgebabichev.screenSnip.resetZoom")
+    static let openNewWindow = Notification.Name("com.georgebabichev.screenSnip.openNewWindow") // Add this line
 
 }
 
@@ -41,7 +41,7 @@ class MenuState: ObservableObject {
 }
 
 @main
-struct Screen_SnapApp: App {
+struct Screen_SnipApp: App {
     @NSApplicationDelegateAdaptor(AppDelegate.self) var appDelegate
     @StateObject private var menuState = MenuState.shared
     @AppStorage("hideDockIcon") private var hideDockIcon: Bool = false
@@ -266,7 +266,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     
     func applicationDidFinishLaunching(_ notification: Notification) {
         // Register hotkey after app is fully launched
-        GlobalHotKeyManager.shared.registerSnapHotKey()
+        GlobalHotKeyManager.shared.registerSnipHotKey()
         
         // Opens a window on launch.
         WindowManager.shared.ensureMainWindow()
@@ -279,7 +279,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     }
 
     func applicationDidBecomeActive(_ notification: Notification) {
-        GlobalHotKeyManager.shared.registerSnapHotKey()
+        GlobalHotKeyManager.shared.registerSnipHotKey()
     }
 
     func applicationWillTerminate(_ notification: Notification) {
@@ -315,7 +315,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             DispatchQueue.main.async {
                 let alert = NSAlert()
                 alert.messageText = "Unsupported File Type"
-                alert.informativeText = "Screen Snap can only open image files (PNG, JPEG, HEIC, GIF, TIFF, WebP)."
+                alert.informativeText = "Screen Snip can only open image files (PNG, JPEG, HEIC, GIF, TIFF, WebP)."
                 alert.alertStyle = .warning
                 alert.addButton(withTitle: "OK")
                 alert.runModal()
@@ -333,7 +333,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             ]
             
             NotificationCenter.default.post(
-                name: Notification.Name("com.georgebabichev.screensnap.beginSnapFromIntent"),
+                name: Notification.Name("com.georgebabichev.screenSnip.beginSnipFromIntent"),
                 object: nil,
                 userInfo: userInfo
             )
@@ -447,7 +447,7 @@ final class WindowManager {
         
         // Send notification immediately - now there's a ContentView to receive it
         NotificationCenter.default.post(
-            name: Notification.Name("com.georgebabichev.screensnap.beginSnapFromIntent"),
+            name: Notification.Name("com.georgebabichev.screenSnip.beginSnipFromIntent"),
             object: nil,
             userInfo: userInfo
         )
@@ -470,7 +470,7 @@ final class GlobalHotKeyManager {
     
     private init() {}
     
-    func registerSnapHotKey() {
+    func registerSnipHotKey() {
         unregister()
         
         // Request accessibility permissions if needed
@@ -549,7 +549,7 @@ final class GlobalHotKeyManager {
         print("System-wide hotkey detected: Cmd+Shift+2")
         
         DispatchQueue.main.async { [weak self] in
-            self?.handleSnapHotkey()
+            self?.handleSnipHotkey()
         }
         
         return true // Consume the event
@@ -557,7 +557,7 @@ final class GlobalHotKeyManager {
     
     private var isCurrentlyCapturing = false
     
-    private func handleSnapHotkey() {
+    private func handleSnipHotkey() {
         guard !isCurrentlyCapturing else { return }
         isCurrentlyCapturing = true
         

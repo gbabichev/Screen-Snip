@@ -70,7 +70,7 @@ struct ContentView: View {
     
     @State private var selectedImageSize: CGSize? = nil
     @State private var imageReloadTrigger = UUID()
-    @State private var missingSnapURLs: Set<URL> = []
+    @State private var missingSnipURLs: Set<URL> = []
     @State private var zoomLevel: Double = 1.0
     @State private var pinchBaseZoom: Double? = nil
     
@@ -143,22 +143,22 @@ struct ContentView: View {
         )
     }
     @State private var lineHasArrow: Bool = false
-    // Snaps persisted on disk (newest first). Each element is a file URL to a PNG.
-    @State private var snapURLs: [URL] = []
-    @State private var selectedSnapURL: URL? = nil
+    // Snips persisted on disk (newest first). Each element is a file URL to a PNG.
+    @State private var SnipURLs: [URL] = []
+    @State private var selectedSnipURL: URL? = nil
     @State private var objects: [Drawable] = []
     @State private var selectedObjectID: UUID? = nil
     @State private var activeHandle: Handle = .none
     @State private var dragStartPoint: CGPoint? = nil
     
     // Undo/Redo stacks of full images and overlays (save-in-place, memory-bounded by user behavior)
-    private struct Snapshot {
+    private struct Snipshot {
         let imageURL: URL?
         let objects: [Drawable]
     }
     
-    @State private var undoStack: [Snapshot] = []
-    @State private var redoStack: [Snapshot] = []
+    @State private var undoStack: [Snipshot] = []
+    @State private var redoStack: [Snipshot] = []
     @State private var pushedDragUndo = false
     @State private var keyMonitor: Any? = nil
     
@@ -221,7 +221,7 @@ struct ContentView: View {
     }
     
     private func getActualDisplaySize(_ pixelSize: CGSize) -> CGSize {
-        guard let url = selectedSnapURL else { return pixelSize }
+        guard let url = selectedSnipURL else { return pixelSize }
         
         // Load NSImage to get proper point size (retina-aware)
         if let nsImage = NSImage(contentsOf: url) {
@@ -243,7 +243,7 @@ struct ContentView: View {
                 
                 
                 Group {
-                    if let url = selectedSnapURL, let imgSize = selectedImageSize {
+                    if let url = selectedSnipURL, let imgSize = selectedImageSize {
                         GeometryReader { geo in
                             let baseFitted = imageDisplayMode == "fit"
                             ? fittedImageSize(original: getActualDisplaySize(imgSize), in: geo.size)  // Use point size for fitting
@@ -521,13 +521,13 @@ struct ContentView: View {
                     } else {
                         // your empty/missing states unchanged
                         VStack(spacing: 12) {
-                            if !missingSnapURLs.isEmpty {
+                            if !missingSnipURLs.isEmpty {
                                 VStack(spacing: 8) {
                                     Image(systemName: "exclamationmark.triangle").imageScale(.large).foregroundStyle(.orange)
                                     Text("Some images were deleted from disk").fontWeight(.medium)
                                     Text("Press ⇧⌘2 to capture a new screenshot").font(.caption).foregroundStyle(.secondary)
                                 }
-                            } else if !snapURLs.isEmpty {
+                            } else if !SnipURLs.isEmpty {
                                 Image(systemName: "camera").imageScale(.large).foregroundStyle(.tint)
                                 Text("Press ⇧⌘2 or click 'Capture Region' to begin.")
                                     .multilineTextAlignment(.center)
@@ -552,41 +552,41 @@ struct ContentView: View {
             }
         }
         .safeAreaInset(edge: .bottom) {
-            if !snapURLs.isEmpty {
+            if !SnipURLs.isEmpty {
                 VStack(alignment: .leading, spacing: 6) {
                     
                     HStack(spacing: 6) {
-                        Text("Snaps")
+                        Text("Snips")
                             .font(.caption)
                             .foregroundStyle(.secondary)
                         
                         Button(action: {
-                            loadExistingSnaps()
+                            loadExistingSnips()
                             thumbnailRefreshTrigger = UUID()
                         }) {
                             Image(systemName: "arrow.clockwise")
                                 .imageScale(.small)
                         }
                         .buttonStyle(.plain)
-                        .help("Refresh snaps")
+                        .help("Refresh Snips")
                         
                         Button(action: {
-                            openSnapsInFinder()
+                            openSnipsInFinder()
                         }) {
                             Image(systemName: "folder")
                                 .imageScale(.small)
                         }
                         .buttonStyle(.plain)
-                        .help("Open Snaps in Finder")
+                        .help("Open Snips in Finder")
                         
                         Button(action: {
-                            openSnapsInGallery()
+                            openSnipsInGallery()
                         }) {
                             Image(systemName: "square.grid.2x2")
                                 .imageScale(.small)
                         }
                         .buttonStyle(.plain)
-                        .help("Open Snaps Gallery")
+                        .help("Open Snips Gallery")
                         
                         
                     }
@@ -596,12 +596,12 @@ struct ContentView: View {
                     
                     ScrollView(.horizontal, showsIndicators: true) {
                         HStack(spacing: 8) {
-                            ForEach(snapURLs, id: \.self) { url in
+                            ForEach(SnipURLs, id: \.self) { url in
                                 VStack(spacing: 4) {
                                     ThumbnailView(
                                         url: url,
-                                        selected: selectedSnapURL == url,
-                                        onDelete: { deleteSnap(url) },
+                                        selected: selectedSnipURL == url,
+                                        onDelete: { deleteSnip(url) },
                                         width: 140,
                                         height: 90,
                                         refreshTrigger: thumbnailRefreshTrigger
@@ -618,20 +618,20 @@ struct ContentView: View {
                                     // Check if file exists before trying to load
                                     let fm = FileManager.default
                                     if !fm.fileExists(atPath: url.path) {
-                                        // File is missing - add to missing set and remove from snapURLs
-                                        missingSnapURLs.insert(url)
-                                        if let index = snapURLs.firstIndex(of: url) {
-                                            snapURLs.remove(at: index)
+                                        // File is missing - add to missing set and remove from SnipURLs
+                                        missingSnipURLs.insert(url)
+                                        if let index = SnipURLs.firstIndex(of: url) {
+                                            SnipURLs.remove(at: index)
                                         }
-                                        // If this was the selected snap, clear selection and show error
-                                        if selectedSnapURL == url {
-                                            selectedSnapURL = nil
+                                        // If this was the selected Snip, clear selection and show error
+                                        if selectedSnipURL == url {
+                                            selectedSnipURL = nil
                                         }
                                         return
                                     }
                                     
                                     // File exists - load it into the editor
-                                    selectedSnapURL = url
+                                    selectedSnipURL = url
                                     selectedImageSize = probeImageSize(url)
                                     updateMenuState()
                                     // Clear all editing state when switching images
@@ -662,7 +662,7 @@ struct ContentView: View {
             }
         }
         .onAppear {
-            loadExistingSnaps()
+            loadExistingSnips()
             updateMenuState()
             // Listen for Cmd+Z / Shift+Cmd+Z globally while this view is active, and Delete for selected objects
             keyMonitor = NSEvent.addLocalMonitorForEvents(matching: .keyDown) { event in
@@ -703,8 +703,8 @@ struct ContentView: View {
                 if selectedTool == .crop, let rect = cropRect, !event.modifierFlags.contains(.command) {
                     if event.keyCode == 36 || event.keyCode == 76 { // Return or Keypad Enter
                         // Perform destructive crop with current overlay
-                        if let url = selectedSnapURL {
-                            pushUndoSnapshot()
+                        if let url = selectedSnipURL {
+                            pushUndoSnipshot()
                             if let base = NSImage(contentsOf: url) {
                                 let flattened = rasterize(base: base, objects: objects) ?? base
                                 
@@ -801,7 +801,7 @@ struct ContentView: View {
                         VStack(alignment: .leading, spacing: 6) {
                             Text("Save destination").bold()
                             HStack(spacing: 8) {
-                                let pathText = saveDirectoryPath.isEmpty ? "Default (Pictures/Screen Snap)" : saveDirectoryPath
+                                let pathText = saveDirectoryPath.isEmpty ? "Default (Pictures/Screen Snip)" : saveDirectoryPath
                                 Image(systemName: "folder")
                                 Text(pathText)
                                     .lineLimit(1)
@@ -810,7 +810,7 @@ struct ContentView: View {
                                 Spacer()
                                 Button("Change…") { activeImporter = .folder }
                                 if !saveDirectoryPath.isEmpty {
-                                    Button("Reset") { saveDirectoryPath = ""; loadExistingSnaps() }
+                                    Button("Reset") { saveDirectoryPath = ""; loadExistingSnips() }
                                 }
                             }
                         }
@@ -836,7 +836,7 @@ struct ContentView: View {
                              
                         Divider()
                         
-                        SettingsRow("Downsample Retina Screenshots", subtitle: "High DPI (4k,5k) Snaps will be saved as 1x.") {
+                        SettingsRow("Downsample Retina Screenshots", subtitle: "High DPI (4k,5k) Snips will be saved as 1x.") {
                             Toggle("", isOn: $downsampleToNonRetinaForSave)
                                 .toggleStyle(.switch)
                         }
@@ -874,7 +874,7 @@ struct ContentView: View {
             }
             
             // Items visible only when we have a capture
-            if selectedSnapURL != nil {
+            if selectedSnipURL != nil {
                 
                 if imageDisplayMode != "fit"{
                     ToolbarItemGroup(placement: .navigation){
@@ -906,13 +906,13 @@ struct ContentView: View {
                         Button(action: performUndo) {
                             Label("Undo", systemImage: "arrow.uturn.backward")
                         }
-                        .disabled(undoStack.isEmpty || selectedSnapURL == nil)
+                        .disabled(undoStack.isEmpty || selectedSnipURL == nil)
                         
                         // Redo
                         Button(action: performRedo) {
                             Label("Redo", systemImage: "arrow.uturn.forward")
                         }
-                        .disabled(redoStack.isEmpty || selectedSnapURL == nil)
+                        .disabled(redoStack.isEmpty || selectedSnipURL == nil)
                         
                         // Flatten and Save (in place)
                         Button(action: flattenAndSaveInPlace) {
@@ -1234,14 +1234,14 @@ struct ContentView: View {
                     // Folder chosen
                     DispatchQueue.main.async {
                         saveDirectoryPath = url.path
-                        loadExistingSnaps()
+                        loadExistingSnips()
                     }
                 } else {
                     // Image chosen
                     DispatchQueue.main.async {
                         undoStack.removeAll()
                         redoStack.removeAll()
-                        selectedSnapURL = url
+                        selectedSnipURL = url
                         selectedImageSize = probeImageSize(url)
                         lastFittedSize = nil
                         objects.removeAll()
@@ -1252,8 +1252,8 @@ struct ContentView: View {
                         cropDraftRect = nil
                         cropHandle = .none
                         updateMenuState()
-                        if let dir = snapsDirectory(), url.path.hasPrefix(dir.path) {
-                            insertSnapURL(url)
+                        if let dir = SnipsDirectory(), url.path.hasPrefix(dir.path) {
+                            insertSnipURL(url)
                         }
                     }
                 }
@@ -1271,7 +1271,7 @@ struct ContentView: View {
     private var notificationStream: AnyPublisher<Notification, Never> {
         let nc = NotificationCenter.default
         return Publishers.MergeMany([
-            nc.publisher(for: Notification.Name("com.georgebabichev.screensnap.beginSnapFromIntent")),
+            nc.publisher(for: Notification.Name("com.georgebabichev.screenSnip.beginSnipFromIntent")),
             nc.publisher(for: .selectTool),
             nc.publisher(for: .openImageFile),
             nc.publisher(for: .copyToClipboard),
@@ -1289,8 +1289,8 @@ struct ContentView: View {
     // Central handler so the `.onReceive` body stays tiny.
     private func handleAppNotification(_ note: Notification) {
         switch note.name {
-        case Notification.Name("com.georgebabichev.screensnap.beginSnapFromIntent"):
-            onBeginSnapFromIntent(note)
+        case Notification.Name("com.georgebabichev.screenSnip.beginSnipFromIntent"):
+            onBeginSnipFromIntent(note)
             
         case .selectTool:
             onSelectToolNotification(note)
@@ -1322,13 +1322,13 @@ struct ContentView: View {
     }
     
     
-    private func onBeginSnapFromIntent(_ note: Notification) {
-        print("🔥 [DEBUG] ContentView received beginSnapFromIntent notification")
+    private func onBeginSnipFromIntent(_ note: Notification) {
+        print("🔥 [DEBUG] ContentView received beginSnipFromIntent notification")
         
         // Extract URL and activation flag from userInfo
         guard let userInfo = note.userInfo,
               let url = userInfo["url"] as? URL else {
-            print("🔥 [DEBUG] ERROR: beginSnapFromIntent notification has no URL")
+            print("🔥 [DEBUG] ERROR: beginSnipFromIntent notification has no URL")
             return
         }
         
@@ -1354,14 +1354,14 @@ struct ContentView: View {
         draftRect = nil
         selectedTool = .pointer
         
-        // CRITICAL: Clear any missing snap tracking
-        missingSnapURLs.removeAll()
+        // CRITICAL: Clear any missing Snip tracking
+        missingSnipURLs.removeAll()
         
-        // Refresh the gallery to ensure the new snap is in our list
-        loadExistingSnaps()
+        // Refresh the gallery to ensure the new Snip is in our list
+        loadExistingSnips()
         
-        // Set the selected snap (this should now work since we refreshed)
-        selectedSnapURL = url
+        // Set the selected Snip (this should now work since we refreshed)
+        selectedSnipURL = url
         selectedImageSize = probeImageSize(url)
         updateMenuState()
     }
@@ -1372,7 +1372,7 @@ struct ContentView: View {
     }
     private func onOpenImageFile() { activeImporter = .image}
     private func onCopyToClipboard() {
-        guard selectedSnapURL != nil else { return }
+        guard selectedSnipURL != nil else { return }
         flattenRefreshAndCopy()
         selectedTool = .pointer
         selectedObjectID = nil
@@ -1385,11 +1385,11 @@ struct ContentView: View {
     private func onPerformUndo() { performUndo() }
     private func onPerformRedo() { performRedo() }
     private func onSaveImage() {
-        guard selectedSnapURL != nil else { return }
+        guard selectedSnipURL != nil else { return }
         flattenAndSaveInPlace()
     }
     private func onSaveAsImage() {
-        guard selectedSnapURL != nil else { return }
+        guard selectedSnipURL != nil else { return }
         flattenAndSaveAs()
     }
     private func onZoomNotification(_ notification: Notification) {
@@ -1405,11 +1405,11 @@ struct ContentView: View {
     private func updateMenuState() {
         MenuState.shared.canUndo = !undoStack.isEmpty
         MenuState.shared.canRedo = !redoStack.isEmpty
-        MenuState.shared.hasSelectedImage = selectedSnapURL != nil
+        MenuState.shared.hasSelectedImage = selectedSnipURL != nil
     }
     
     private func reloadCurrentImage() {
-        guard let url = selectedSnapURL else { return }
+        guard let url = selectedSnipURL else { return }
         
         // Force AsyncImage to reload by changing the trigger
         imageReloadTrigger = UUID()
@@ -1682,10 +1682,10 @@ struct ContentView: View {
             Task {
                 // Use the same capture method as the hotkey to avoid duplication
                 if let img = await GlobalHotKeyManager.shared.captureScreenshot(rect: rect) {
-                    if let savedURL = ImageSaver.saveImage(img, to: snapsDirectory()) {
+                    if let savedURL = ImageSaver.saveImage(img, to: SnipsDirectory()) {
                         DispatchQueue.main.async {
-                            // Handle the ContentView-specific cleanup that was in saveSnapToDisk
-                            self.insertSnapURL(savedURL)  // Add to gallery
+                            // Handle the ContentView-specific cleanup that was in saveSnipToDisk
+                            self.insertSnipURL(savedURL)  // Add to gallery
                             
                             // Clear any retained image references
                             self.selectedImageSize = nil
@@ -1815,7 +1815,7 @@ struct ContentView: View {
         
         // 4) Optional: Save the rasterized image to disk when enabled in settings (non-destructive)
         if UserDefaults.standard.bool(forKey: "saveOnCopy") {
-            if let url = selectedSnapURL {
+            if let url = selectedSnipURL {
                 if ImageSaver.writeImage(source, to: url, format: preferredSaveFormat.rawValue, quality: saveQuality) {
                     refreshGalleryAfterSaving(to: url)
                     reloadCurrentImage()
@@ -1829,11 +1829,11 @@ struct ContentView: View {
                     cropDraftRect = nil
                     cropHandle = .none
                 }
-            } else if let dir = snapsDirectory() {
+            } else if let dir = SnipsDirectory() {
                 let newName = ImageSaver.generateFilename(for: preferredSaveFormat.rawValue)
                 let dest = dir.appendingPathComponent(newName)
                 if ImageSaver.writeImage(source, to: dest, format: preferredSaveFormat.rawValue, quality: saveQuality) {
-                    selectedSnapURL = dest
+                    selectedSnipURL = dest
                     refreshGalleryAfterSaving(to: dest)
                     reloadCurrentImage()
                     
@@ -1879,8 +1879,8 @@ struct ContentView: View {
         }
     }
     
-    private func pushUndoSnapshot() {
-        undoStack.append(Snapshot(imageURL: selectedSnapURL, objects: objects))
+    private func pushUndoSnipshot() {
+        undoStack.append(Snipshot(imageURL: selectedSnipURL, objects: objects))
         // Limit for 24/7 operation
         while undoStack.count > 3 { undoStack.removeFirst() }
         redoStack.removeAll()
@@ -1891,7 +1891,7 @@ struct ContentView: View {
     
     // MARK: - Save / Save As
     
-    /// Save As… — prompts for a destination, updates gallery if under snaps folder.
+    /// Save As… — prompts for a destination, updates gallery if under Snips folder.
     private func saveAsCurrent() {
         guard let img = currentImage else { return }
         let panel = NSSavePanel()
@@ -1901,10 +1901,10 @@ struct ContentView: View {
         if !saveDirectoryPath.isEmpty {
             panel.directoryURL = URL(fileURLWithPath: saveDirectoryPath, isDirectory: true)
         }
-        if let sel = selectedSnapURL {
+        if let sel = selectedSnipURL {
             panel.directoryURL = sel.deletingLastPathComponent()
             panel.nameFieldStringValue = sel.lastPathComponent
-        } else if let dir = snapsDirectory() {
+        } else if let dir = SnipsDirectory() {
             panel.directoryURL = dir
             panel.nameFieldStringValue = ImageSaver.generateFilename(for: preferredSaveFormat.rawValue)
         } else {
@@ -1912,17 +1912,17 @@ struct ContentView: View {
         }
         if panel.runModal() == .OK, let url = panel.url {
             if ImageSaver.writeImage(img, to: url, format: preferredSaveFormat.rawValue, quality: saveQuality) {
-                selectedSnapURL = url
+                selectedSnipURL = url
                 refreshGalleryAfterSaving(to: url)
                 reloadCurrentImage()
             }
         }
     }
     
-    /// If saved file is within our snaps directory, update the gallery list.
+    /// If saved file is within our Snips directory, update the gallery list.
     private func refreshGalleryAfterSaving(to url: URL) {
-        if let dir = snapsDirectory(), url.path.hasPrefix(dir.path) {
-            insertSnapURL(url)
+        if let dir = SnipsDirectory(), url.path.hasPrefix(dir.path) {
+            insertSnipURL(url)
         }
         
         // Refresh thumbnails.
@@ -1940,7 +1940,7 @@ struct ContentView: View {
                 let start = fittedToAuthorPoint(startFit, fitted: fitted, author: author)
                 var current = fittedToAuthorPoint(currentFit, fitted: fitted, author: author)
                 let shift = NSEvent.modifierFlags.contains(.shift)
-                if shift { current = snappedPoint(start: start, raw: current) }
+                if shift { current = SnippedPoint(start: start, raw: current) }
                 
                 if dragStartPoint == nil {
                     dragStartPoint = start
@@ -1966,7 +1966,7 @@ struct ContentView: View {
                     let delta = CGSize(width: current.x - s.x, height: current.y - s.y)
                     let dragDistance = hypot(delta.width, delta.height)
                     if dragDistance > 0.5 {
-                        if !pushedDragUndo { pushUndoSnapshot(); pushedDragUndo = true }
+                        if !pushedDragUndo { pushUndoSnipshot(); pushedDragUndo = true }
                         switch objects[idx] {
                         case .line(let o):
                             var updated = (activeHandle == .none) ? o.moved(by: delta) : o.resizing(activeHandle, to: current)
@@ -1987,7 +1987,7 @@ struct ContentView: View {
                 let endFit = CGPoint(x: value.location.x - insetOrigin.x, y: value.location.y - insetOrigin.y)
                 var end = fittedToAuthorPoint(endFit, fitted: fitted, author: author)
                 if NSEvent.modifierFlags.contains(.shift), let s = dragStartPoint {
-                    end = snappedPoint(start: s, raw: end)
+                    end = SnippedPoint(start: s, raw: end)
                 }
                 
                 defer { dragStartPoint = nil; pushedDragUndo = false; activeHandle = .none; draft = nil; draftRect = nil }
@@ -2002,13 +2002,13 @@ struct ContentView: View {
                 // Create new line from the live draft if present, else from start/end
                 if let d = draft {
                     let new = LineObject(start: d.start, end: d.end, width: d.width, arrow: lineHasArrow, color: lineColor)
-                    pushUndoSnapshot()
+                    pushUndoSnipshot()
                     objects.append(.line(new))
                     if objectSpaceSize == nil { objectSpaceSize = author }
                     selectedObjectID = new.id
                 } else if let s = dragStartPoint {
                     let new = LineObject(start: s, end: end, width: strokeWidth, arrow: lineHasArrow, color: lineColor)
-                    pushUndoSnapshot()
+                    pushUndoSnipshot()
                     objects.append(.line(new))
                     if objectSpaceSize == nil { objectSpaceSize = author }
                     selectedObjectID = new.id
@@ -2050,7 +2050,7 @@ struct ContentView: View {
                     let delta = CGSize(width: current.x - s.x, height: current.y - s.y)
                     let dragDistance = hypot(delta.width, delta.height)
                     if dragDistance > 0.5 {
-                        if !pushedDragUndo { pushUndoSnapshot(); pushedDragUndo = true }
+                        if !pushedDragUndo { pushUndoSnipshot(); pushedDragUndo = true }
                         switch objects[idx] {
                         case .rect(let o):
                             let updated = (activeHandle == .none) ? o.moved(by: delta) : o.resizing(activeHandle, to: current)
@@ -2098,7 +2098,7 @@ struct ContentView: View {
                 if let r = draftRect {
                     let clamped = clampRect(r, in: author)
                     let newObj = RectObject(rect: clamped, width: strokeWidth, color: rectColor)  // Pass current color
-                    pushUndoSnapshot()
+                    pushUndoSnipshot()
                     objects.append(.rect(newObj))
                     if objectSpaceSize == nil { objectSpaceSize = author }
                     selectedObjectID = newObj.id
@@ -2108,7 +2108,7 @@ struct ContentView: View {
                     let rect = CGRect(x: max(0, pEnd.x - d/2), y: max(0, pEnd.y - d/2), width: d, height: d)
                     let clamped = clampRect(rect, in: author)
                     let newObj = RectObject(rect: clamped, width: strokeWidth, color: rectColor)  // Pass current color
-                    pushUndoSnapshot()
+                    pushUndoSnipshot()
                     objects.append(.rect(newObj))
                     if objectSpaceSize == nil { objectSpaceSize = author }
                     selectedObjectID = newObj.id
@@ -2147,7 +2147,7 @@ struct ContentView: View {
                     let delta = CGSize(width: current.x - s.x, height: current.y - s.y)
                     let dragDistance = hypot(delta.width, delta.height)
                     if dragDistance > 0.5 {
-                        if !pushedDragUndo { pushUndoSnapshot(); pushedDragUndo = true }
+                        if !pushedDragUndo { pushUndoSnipshot(); pushedDragUndo = true }
                         switch objects[idx] {
                         case .oval(var o):
                             let updated = (activeHandle == .none) ? o.moved(by: delta) : o.resizing(activeHandle, to: current)
@@ -2179,7 +2179,7 @@ struct ContentView: View {
                 if let r = draftRect {
                     let clamped = clampRect(r, in: author)
                     let newObj = OvalObject(rect: clamped, width: strokeWidth, color: ovalColor)  // Pass current color
-                    pushUndoSnapshot()
+                    pushUndoSnipshot()
                     objects.append(.oval(newObj))
                     if objectSpaceSize == nil { objectSpaceSize = author }
                     selectedObjectID = newObj.id
@@ -2188,7 +2188,7 @@ struct ContentView: View {
                     let rect = CGRect(x: max(0, pEnd.x - d/2), y: max(0, pEnd.y - d/2), width: d, height: d)
                     let clamped = clampRect(rect, in: author)
                     let newObj = OvalObject(rect: clamped, width: strokeWidth, color: ovalColor)  // Pass current color
-                    pushUndoSnapshot()
+                    pushUndoSnipshot()
                     objects.append(.oval(newObj))
                     if objectSpaceSize == nil { objectSpaceSize = author }
                     selectedObjectID = newObj.id
@@ -2230,7 +2230,7 @@ struct ContentView: View {
                     let delta = CGSize(width: current.x - s.x, height: current.y - s.y)
                     let dragDistance = hypot(delta.width, delta.height)
                     if dragDistance > 0.5 {
-                        if !pushedDragUndo { pushUndoSnapshot(); pushedDragUndo = true }
+                        if !pushedDragUndo { pushUndoSnipshot(); pushedDragUndo = true }
                         switch objects[idx] {
                         case .highlight(let o):
                             let updated = (activeHandle == .none) ? o.moved(by: delta) : o.resizing(activeHandle, to: current)
@@ -2268,7 +2268,7 @@ struct ContentView: View {
                 if let r = draftRect {
                     let clamped = clampRect(r, in: author)
                     let newObj = HighlightObject(rect: clamped, color: highlighterColor)
-                    pushUndoSnapshot()
+                    pushUndoSnipshot()
                     objects.append(.highlight(newObj))
                     if objectSpaceSize == nil { objectSpaceSize = author }
                     selectedObjectID = newObj.id
@@ -2279,7 +2279,7 @@ struct ContentView: View {
                     let rect = CGRect(x: max(0, center.x - d/2), y: max(0, center.y - d/2), width: d, height: d)
                     let clamped = clampRect(rect, in: author)
                     let newObj = HighlightObject(rect: clamped, color: highlighterColor)
-                    pushUndoSnapshot()
+                    pushUndoSnipshot()
                     objects.append(.highlight(newObj))
                     if objectSpaceSize == nil { objectSpaceSize = author }
                     selectedObjectID = newObj.id
@@ -2331,7 +2331,7 @@ struct ContentView: View {
                         
                         
                         if !pushedDragUndo {
-                            pushUndoSnapshot()
+                            pushUndoSnipshot()
                             pushedDragUndo = true
                         }
                         switch objects[idx] {
@@ -2411,7 +2411,7 @@ struct ContentView: View {
                                             textColor: textColor,
                                             bgEnabled: textBGEnabled,
                                             bgColor: textBGColor)
-                    pushUndoSnapshot()
+                    pushUndoSnipshot()
                     objects.append(.text(newObj))
                     if objectSpaceSize == nil { objectSpaceSize = author }
                     selectedObjectID = newObj.id
@@ -2465,7 +2465,7 @@ struct ContentView: View {
                 } else if let sel = selectedObjectID, let start = dragStartPoint, let idx = objects.firstIndex(where: { $0.id == sel }) {
                     let delta = CGSize(width: p.x - start.x, height: p.y - start.y)
                     if !pushedDragUndo {
-                        pushUndoSnapshot()
+                        pushUndoSnipshot()
                         pushedDragUndo = true
                     }
                     switch objects[idx] {
@@ -2555,7 +2555,7 @@ struct ContentView: View {
                     let dragDistance = hypot(delta.width, delta.height)
                     
                     if dragDistance > 0.5 { // any movement begins interaction
-                        if !pushedDragUndo { pushUndoSnapshot(); pushedDragUndo = true }
+                        if !pushedDragUndo { pushUndoSnipshot(); pushedDragUndo = true }
                         switch objects[idx] {
                         case .badge(let o):
                             let updated = (activeHandle == .none) ? o.moved(by: delta) : o.resizing(activeHandle, to: p)
@@ -2602,7 +2602,7 @@ struct ContentView: View {
                 let rectClamped = clampRect(rect, in: author)
                 badgeCount &+= 1
                 let newObj = BadgeObject(rect: rectClamped, number: badgeCount, fillColor: badgeColor, textColor: .white)
-                pushUndoSnapshot()
+                pushUndoSnipshot()
                 objects.append(.badge(newObj))
                 if objectSpaceSize == nil { objectSpaceSize = author }
                 selectedObjectID = newObj.id
@@ -2926,10 +2926,10 @@ struct ContentView: View {
     private func flattenAndSaveInPlace() {
         guard let img = currentImage else { return }
         if objectSpaceSize == nil { objectSpaceSize = lastFittedSize ?? img.size }
-        pushUndoSnapshot()
+        pushUndoSnipshot()
         if let flattened = rasterize(base: img, objects: objects) {
             objects.removeAll()
-            if let url = selectedSnapURL {
+            if let url = selectedSnipURL {
                 // Write the flattened image back to the same file
                 if ImageSaver.writeImage(flattened, to: url, format: preferredSaveFormat.rawValue, quality: saveQuality) {
                     refreshGalleryAfterSaving(to: url)
@@ -2944,23 +2944,23 @@ struct ContentView: View {
     private func flattenAndSaveAs() {
         guard let img = currentImage else { return }
         if objectSpaceSize == nil { objectSpaceSize = lastFittedSize ?? img.size }
-        pushUndoSnapshot()
+        pushUndoSnipshot()
         if let flattened = rasterize(base: img, objects: objects) {
             objects.removeAll()
             let panel = NSSavePanel()
             panel.allowedContentTypes = [preferredSaveFormat.utType]
             panel.canCreateDirectories = true
             panel.isExtensionHidden = false
-            if let sel = selectedSnapURL {
+            if let sel = selectedSnipURL {
                 panel.directoryURL = sel.deletingLastPathComponent()
                 panel.nameFieldStringValue = sel.lastPathComponent
-            } else if let dir = snapsDirectory() {
+            } else if let dir = SnipsDirectory() {
                 panel.directoryURL = dir
                 panel.nameFieldStringValue = ImageSaver.generateFilename(for: preferredSaveFormat.rawValue)
             }
             if panel.runModal() == .OK, let url = panel.url {
                 if ImageSaver.writeImage(flattened, to: url, format: preferredSaveFormat.rawValue, quality: saveQuality) {
-                    selectedSnapURL = url
+                    selectedSnipURL = url
                     refreshGalleryAfterSaving(to: url)
                     reloadCurrentImage()
                 }
@@ -3158,7 +3158,7 @@ struct ContentView: View {
             return
         }
         guard let sel = selectedObjectID, let idx = objects.firstIndex(where: { $0.id == sel }) else { return }
-        pushUndoSnapshot()
+        pushUndoSnipshot()
         objects.remove(at: idx)
         selectedObjectID = nil
         activeHandle = .none
@@ -3166,9 +3166,9 @@ struct ContentView: View {
     
     private func performUndo() {
         guard let prev = undoStack.popLast() else { return }
-        let current = Snapshot(imageURL: selectedSnapURL, objects: objects)
+        let current = Snipshot(imageURL: selectedSnipURL, objects: objects)
         redoStack.append(current)
-        selectedSnapURL = prev.imageURL  // Just change the URL
+        selectedSnipURL = prev.imageURL  // Just change the URL
         objects = prev.objects
         
         updateMenuState()
@@ -3177,9 +3177,9 @@ struct ContentView: View {
     
     private func performRedo() {
         guard let next = redoStack.popLast() else { return }
-        let current = Snapshot(imageURL: selectedSnapURL, objects: objects)
+        let current = Snipshot(imageURL: selectedSnipURL, objects: objects)
         undoStack.append(current)
-        selectedSnapURL = next.imageURL  // Just change the URL
+        selectedSnipURL = next.imageURL  // Just change the URL
         objects = next.objects
         
         updateMenuState()
@@ -3223,14 +3223,14 @@ struct ContentView: View {
         return CGRect(x: x, y: y, width: width, height: height)
     }
     
-    // Shift snapping for straight lines at 0°/45°/90°
-    private func snappedPoint(start: CGPoint, raw: CGPoint) -> CGPoint {
+    // Shift Snipping for straight lines at 0°/45°/90°
+    private func SnippedPoint(start: CGPoint, raw: CGPoint) -> CGPoint {
         let dx = raw.x - start.x
         let dy = raw.y - start.y
         let adx = abs(dx)
         let ady = abs(dy)
         if adx == 0 && ady == 0 { return raw }
-        // Thresholds for 22.5° and 67.5° to decide snapping band
+        // Thresholds for 22.5° and 67.5° to decide Snipping band
         let tan22: CGFloat = 0.41421356  // tan(22.5°)
         let tan67: CGFloat = 2.41421356  // tan(67.5°)
         
@@ -3272,7 +3272,7 @@ struct ContentView: View {
             )
             
             let obj = PastedImageObject(rect: rect, image: img)
-            pushUndoSnapshot()
+            pushUndoSnipshot()
             objects.append(.image(obj))
             if objectSpaceSize == nil { objectSpaceSize = author }
             selectedObjectID = obj.id
@@ -3281,13 +3281,13 @@ struct ContentView: View {
         }
     }
     
-    // MARK: - Snaps Persistence
+    // MARK: - Snips Persistence
     
-    //    /// Directory where we store PNG snaps.
-    //    private func snapsDirectory() -> URL? {
+    //    /// Directory where we store PNG Snips.
+    //    private func SnipsDirectory() -> URL? {
     //        let fm = FileManager.default
     //        if let pics = fm.urls(for: .picturesDirectory, in: .userDomainMask).first {
-    //            let dir = pics.appendingPathComponent("screenshotG Snaps", isDirectory: true)
+    //            let dir = pics.appendingPathComponent("screenshotG Snips", isDirectory: true)
     //            if !fm.fileExists(atPath: dir.path) {
     //                do { try fm.createDirectory(at: dir, withIntermediateDirectories: true) } catch { return nil }
     //            }
@@ -3296,16 +3296,16 @@ struct ContentView: View {
     //        return nil
     //    }
     
-    private func snapsDirectory() -> URL? {
+    private func SnipsDirectory() -> URL? {
         // If the user has chosen a custom destination, use it
         if !saveDirectoryPath.isEmpty {
             let custom = URL(fileURLWithPath: saveDirectoryPath, isDirectory: true)
             return custom
         }
-        // Default: ~/Pictures/Screen Snap
+        // Default: ~/Pictures/Screen Snip
         let fm = FileManager.default
         if let pictures = fm.urls(for: .picturesDirectory, in: .userDomainMask).first {
-            let dir = pictures.appendingPathComponent("Screen Snap", isDirectory: true)
+            let dir = pictures.appendingPathComponent("Screen Snip", isDirectory: true)
             if !fm.fileExists(atPath: dir.path) {
                 try? fm.createDirectory(at: dir, withIntermediateDirectories: true)
             }
@@ -3316,13 +3316,13 @@ struct ContentView: View {
     
     
     private var currentImage: NSImage? {
-        guard let url = selectedSnapURL else { return nil }
+        guard let url = selectedSnipURL else { return nil }
         return NSImage(contentsOf: url)  // Load on-demand
     }
     
-    /// Loads existing snaps on disk (all supported formats), newest first.
-    private func loadExistingSnaps() {
-        guard let dir = snapsDirectory() else { return }
+    /// Loads existing Snips on disk (all supported formats), newest first.
+    private func loadExistingSnips() {
+        guard let dir = SnipsDirectory() else { return }
         let fm = FileManager.default
         do {
             let supportedExtensions = Set(["png", "jpg", "jpeg", "heic"])
@@ -3333,28 +3333,28 @@ struct ContentView: View {
                 return ($0, vals?.contentModificationDate ?? .distantPast)
             }
             let sorted = dated.sorted { $0.1 > $1.1 }.map { $0.0 }
-            snapURLs = Array(sorted.prefix(10))
+            SnipURLs = Array(sorted.prefix(10))
             
             // Clean up missing URLs from our tracking set
-            missingSnapURLs = missingSnapURLs.filter { !sorted.contains($0) }
+            missingSnipURLs = missingSnipURLs.filter { !sorted.contains($0) }
             
-            // If currently selected snap no longer exists, clear selection
-            if let sel = selectedSnapURL, !sorted.contains(sel) {
-                selectedSnapURL = nil
+            // If currently selected Snip no longer exists, clear selection
+            if let sel = selectedSnipURL, !sorted.contains(sel) {
+                selectedSnipURL = nil
             }
         } catch {
-            snapURLs = []
+            SnipURLs = []
         }
     }
     
-    /// Opens the snaps directory in Finder as a simple "gallery" view.
-    private func openSnapsInFinder() {
-        guard let dir = snapsDirectory() else { return }
+    /// Opens the Snips directory in Finder as a simple "gallery" view.
+    private func openSnipsInFinder() {
+        guard let dir = SnipsDirectory() else { return }
         NSWorkspace.shared.open(dir)
     }
     
-    private func openSnapsInGallery() {
-        guard let dir = snapsDirectory() else { return }
+    private func openSnipsInGallery() {
+        guard let dir = SnipsDirectory() else { return }
         let fm = FileManager.default
         var urls: [URL] = []
         do {
@@ -3382,16 +3382,16 @@ struct ContentView: View {
                 // Check if file exists before trying to load
                 let fm = FileManager.default
                 if !fm.fileExists(atPath: url.path) {
-                    // File is missing - add to missing set and remove from snapURLs
-                    missingSnapURLs.insert(url)
-                    if let index = snapURLs.firstIndex(of: url) {
-                        snapURLs.remove(at: index)
+                    // File is missing - add to missing set and remove from SnipURLs
+                    missingSnipURLs.insert(url)
+                    if let index = SnipURLs.firstIndex(of: url) {
+                        SnipURLs.remove(at: index)
                     }
                     return
                 }
                 
                 // File exists - load it into the editor using the same logic as the main thumbnail view
-                selectedSnapURL = url
+                selectedSnipURL = url
                 selectedImageSize = probeImageSize(url)
                 
                 // Clear all editing state when switching images (same as main thumbnail logic)
@@ -3417,7 +3417,7 @@ struct ContentView: View {
             },
             onReload: {
                 let fm = FileManager.default
-                guard let dir = snapsDirectory() else { return [] }
+                guard let dir = SnipsDirectory() else { return [] }
                 do {
                     let all = try fm.contentsOfDirectory(at: dir,
                                                          includingPropertiesForKeys: [.contentModificationDateKey, .isRegularFileKey],
@@ -3437,20 +3437,20 @@ struct ContentView: View {
     }
     
     /// Inserts a newly saved URL at the start of the list (leftmost), de-duplicating if necessary.
-    private func insertSnapURL(_ url: URL) {
-        if let idx = snapURLs.firstIndex(of: url) {
-            snapURLs.remove(at: idx)
+    private func insertSnipURL(_ url: URL) {
+        if let idx = SnipURLs.firstIndex(of: url) {
+            SnipURLs.remove(at: idx)
         }
-        snapURLs.insert(url, at: 0)
+        SnipURLs.insert(url, at: 0)
     }
     
-    /// Select a snap URL, probe its pixel size and reset view state
-    private func selectSnap(_ url: URL) {
+    /// Select a Snip URL, probe its pixel size and reset view state
+    private func selectSnip(_ url: URL) {
         // Reset undo/redo for a fresh image session
         undoStack.removeAll()
         redoStack.removeAll()
         // Set selection and compute size (no NSImage held in state)
-        selectedSnapURL = url
+        selectedSnipURL = url
         lastFittedSize = nil
         // Clear editing state
         objects.removeAll()
@@ -3462,8 +3462,8 @@ struct ContentView: View {
         cropHandle = .none
     }
     
-    /// Delete a snap from disk and update gallery/selection.
-    private func deleteSnap(_ url: URL) {
+    /// Delete a Snip from disk and update gallery/selection.
+    private func deleteSnip(_ url: URL) {
         let fm = FileManager.default
         // Prefer moving to Trash; fall back to remove.
         do {
@@ -3473,13 +3473,13 @@ struct ContentView: View {
             try? fm.removeItem(at: url)
         }
         // Update gallery list
-        if let idx = snapURLs.firstIndex(of: url) {
-            snapURLs.remove(at: idx)
+        if let idx = SnipURLs.firstIndex(of: url) {
+            SnipURLs.remove(at: idx)
         }
         // Update current selection / preview
-        if selectedSnapURL == url {
-            selectedSnapURL = snapURLs.first
-            if let sel = selectedSnapURL {
+        if selectedSnipURL == url {
+            selectedSnipURL = SnipURLs.first
+            if let sel = selectedSnipURL {
                 selectedImageSize = probeImageSize(sel)
                 lastFittedSize = nil
             } else {
@@ -4042,7 +4042,7 @@ private struct PastedImageObject: DrawableObject {
         
         guard keepAspect else { return c }
         
-        // Snap to original aspect by adjusting the dimension that needs the smallest change.
+        // Snip to original aspect by adjusting the dimension that needs the smallest change.
         let targetW = c.rect.height * aspect
         let targetH = c.rect.width / aspect
         if abs(targetW - c.rect.width) < abs(targetH - c.rect.height) {

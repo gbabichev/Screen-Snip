@@ -1,6 +1,6 @@
 //
 //  SettingsSection.swift
-//  Screen Snap
+//  Screen Snip
 //
 //  Created by George Babichev on 9/13/25.
 //
