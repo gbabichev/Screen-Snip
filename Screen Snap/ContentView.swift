@@ -810,60 +810,60 @@ struct ContentView: View {
                             }
                         }
                         
-                        Picker("Save format", selection: $preferredSaveFormatRaw) {
+                        Text("Save Format").bold()
+                        Picker(selection: $preferredSaveFormatRaw, label: Image(systemName: "photo")) {
                             Text("PNG").tag(SaveFormat.png.rawValue)
                             Text("JPEG").tag(SaveFormat.jpeg.rawValue)
                             Text("HEIC").tag(SaveFormat.heic.rawValue)
                         }
-                        .bold()
                         .pickerStyle(.segmented)
                         
                         if preferredSaveFormat == .jpeg || preferredSaveFormat == .heic {
+                            Text("Quality").bold()
                             HStack {
-                                Text("Quality")
-                                    .bold()
                                 Slider(value: $saveQuality, in: 0.4...1.0)
                                 Text(String(format: "%.0f%%", saveQuality * 100))
-                                    .frame(width: 44, alignment: .trailing)
+                                .frame(width: 44, alignment: .trailing)
                             }
+
+                        
+                        }
+                             
+                        Divider()
+                        
+                        SettingsRow("Downsample Retina Screenshots", subtitle: "High DPI (4k,5k) Snaps will be saved as 1x.") {
+                            Toggle("", isOn: $downsampleToNonRetinaForSave)
+                                .toggleStyle(.switch)
+                        }
+                        SettingsRow("Automatically Save on Copy", subtitle: "Edits will be immediately saved to disk when copied.") {
+                            Toggle("", isOn: $saveOnCopy)
+                                .toggleStyle(.switch)
+                        }
+                        SettingsRow("Downsample Retina Screenshots for Copy", subtitle: "High DPI images will be copied to clipboard as 1x.") {
+                            Toggle("", isOn: $downsampleToNonRetinaClipboard)
+                                .toggleStyle(.switch)
+                                .disabled(downsampleToNonRetinaForSave && saveOnCopy)
                         }
                         
                         Divider()
                         
-                        
-                        Toggle("Hide Dock icon (requires no Dock/App Switcher)", isOn: $hideDockIcon)
+                        SettingsRow("Hide Dock Icon", subtitle: "App will continue to run in background.") {
+                            Toggle("", isOn: $hideDockIcon)
+                                .toggleStyle(.switch)
+                        }
+                        SettingsRow("Fit image to window", subtitle: "Enabled : Fill Full Window.\nDisabled: Show True Size.") {
+                            Toggle("", isOn: Binding(
+                                get: { imageDisplayMode == "fit" },
+                                set: { imageDisplayMode = $0 ? "fit" : "actual" }
+                            ))
                             .toggleStyle(.switch)
-                            .help("When on, the app runs as an accessory (no Dock icon, no ")
-                        
-                        Toggle("Fit image to window", isOn: Binding(
-                            get: { imageDisplayMode == "fit" },
-                            set: { imageDisplayMode = $0 ? "fit" : "actual" }
-                        ))
-                        .toggleStyle(.switch)
-                        .help("When off, images display at actual size. When on, images scale to fit the window.")
-                        
-                        Divider()
-                        
-                        Toggle("Downsample retina screenshots for save", isOn: $downsampleToNonRetinaForSave)
-                            .toggleStyle(.switch)
-                            .help("When copying to clipboard, convert 2x screenshots to 1x resolution")
-                        
-                        Toggle("Save on Copy", isOn: $saveOnCopy)
-                            .toggleStyle(.switch)
-                            .help("Save on copy")
-                        
-                        Toggle("Downsample retina screenshots for clipboard", isOn: $downsampleToNonRetinaClipboard)
-                            .toggleStyle(.switch)
-                            .help("When copying to clipboard, convert 2x screenshots to 1x resolution")
-                            .disabled(downsampleToNonRetinaForSave && saveOnCopy)
-                        
-                        
+                        }
                         
                         
                         
                     }
                     .padding(16)
-                    .frame(minWidth: 320)
+                    .frame(minWidth: 420)
                 }
                 
             }
