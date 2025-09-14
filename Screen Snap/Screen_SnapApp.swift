@@ -1,6 +1,6 @@
 //
-//  Screen_SnapApp.swift
-//  Screen Snap
+//  Screen_SnipApp.swift
+//  Screen Snip
 //
 
 
@@ -23,16 +23,16 @@ enum ToolKind: String {
 }
 
 extension Notification.Name {
-    static let selectTool = Notification.Name("com.georgebabichev.screensnap.selectTool")
-    static let openImageFile = Notification.Name("com.georgebabichev.screensnap.openImageFile")
-    static let copyToClipboard = Notification.Name("com.georgebabichev.screensnap.copyToClipboard")
-    static let performUndo = Notification.Name("com.georgebabichev.screensnap.performUndo")
-    static let performRedo = Notification.Name("com.georgebabichev.screensnap.performRedo")
-    static let saveImage = Notification.Name("com.georgebabichev.screensnap.saveImage")
-    static let saveAsImage = Notification.Name("com.georgebabichev.screensnap.saveAsImage")
-    static let zoomIn = Notification.Name("com.georgebabichev.screensnap.zoomIn")
-    static let zoomOut = Notification.Name("com.georgebabichev.screensnap.zoomOut")
-    static let resetZoom = Notification.Name("com.georgebabichev.screensnap.resetZoom")
+    static let selectTool = Notification.Name("com.georgebabichev.screenSnip.selectTool")
+    static let openImageFile = Notification.Name("com.georgebabichev.screenSnip.openImageFile")
+    static let copyToClipboard = Notification.Name("com.georgebabichev.screenSnip.copyToClipboard")
+    static let performUndo = Notification.Name("com.georgebabichev.screenSnip.performUndo")
+    static let performRedo = Notification.Name("com.georgebabichev.screenSnip.performRedo")
+    static let saveImage = Notification.Name("com.georgebabichev.screenSnip.saveImage")
+    static let saveAsImage = Notification.Name("com.georgebabichev.screenSnip.saveAsImage")
+    static let zoomIn = Notification.Name("com.georgebabichev.screenSnip.zoomIn")
+    static let zoomOut = Notification.Name("com.georgebabichev.screenSnip.zoomOut")
+    static let resetZoom = Notification.Name("com.georgebabichev.screenSnip.resetZoom")
 }
 
 class MenuState: ObservableObject {
@@ -45,14 +45,14 @@ class MenuState: ObservableObject {
 }
 
 @main
-struct Screen_SnapApp: App {
+struct Screen_SnipApp: App {
     @NSApplicationDelegateAdaptor(AppDelegate.self) var appDelegate
     @StateObject private var menuState = MenuState.shared
     @AppStorage("hideDockIcon") private var hideDockIcon: Bool = false
 
 
     init() {
-        GlobalHotKeyManager.shared.registerSnapHotKey()
+        GlobalHotKeyManager.shared.registerSnipHotKey()
         applyActivationPolicy(hideDockIcon)
 
     }
@@ -292,7 +292,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
 
     func applicationDidBecomeActive(_ notification: Notification) {
         // Defensive: ensure hotkey stays registered across weird state changes
-        GlobalHotKeyManager.shared.registerSnapHotKey()
+        GlobalHotKeyManager.shared.registerSnipHotKey()
     }
 
     func applicationWillTerminate(_ notification: Notification) {
@@ -334,7 +334,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             DispatchQueue.main.async {
                 let alert = NSAlert()
                 alert.messageText = "Unsupported File Type"
-                alert.informativeText = "Screen Snap can only open image files (PNG, JPEG, HEIC, GIF, TIFF, WebP)."
+                alert.informativeText = "Screen Snip can only open image files (PNG, JPEG, HEIC, GIF, TIFF, WebP)."
                 alert.alertStyle = .warning
                 alert.addButton(withTitle: "OK")
                 alert.runModal()
@@ -488,7 +488,7 @@ final class WindowManager {
         // Post notification with the dictionary
         DispatchQueue.main.asyncAfter(deadline: .now() + 0.1) {
             NotificationCenter.default.post(
-                name: Notification.Name("com.georgebabichev.screensnap.beginSnapFromIntent"),
+                name: Notification.Name("com.georgebabichev.screenSnip.beginSnipFromIntent"),
                 object: nil,
                 userInfo: userInfo
             )
@@ -513,13 +513,13 @@ final class GlobalHotKeyManager {
     
     private init() {}
     
-    func registerSnapHotKey() {
+    func registerSnipHotKey() {
         unregister()
         
         let keyCode: UInt32 = UInt32(kVK_ANSI_2)
         let modifiers: UInt32 = UInt32(cmdKey | shiftKey)
         
-        let hotKeyID = EventHotKeyID(signature: OSType("SNAP".fourCC), id: UInt32(1))
+        let hotKeyID = EventHotKeyID(signature: OSType("Snip".fourCC), id: UInt32(1))
         
         let handler: EventHandlerUPP = { _, eventRef, _ in
             var hkID = EventHotKeyID()
@@ -531,9 +531,9 @@ final class GlobalHotKeyManager {
                               nil,
                               &hkID)
             
-            if hkID.signature == OSType("SNAP".fourCC), hkID.id == UInt32(1) {
+            if hkID.signature == OSType("Snip".fourCC), hkID.id == UInt32(1) {
                 DispatchQueue.main.async {
-                    GlobalHotKeyManager.shared.handleSnapHotkey()
+                    GlobalHotKeyManager.shared.handleSnipHotkey()
                 }
                 return noErr
             }
@@ -566,7 +566,7 @@ final class GlobalHotKeyManager {
         eventHandler = nil
     }
     
-    private func handleSnapHotkey() {
+    private func handleSnipHotkey() {
         // Close all app windows before starting selection
         WindowManager.shared.closeAllAppWindows()
         

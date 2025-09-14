@@ -43,7 +43,7 @@ final class GalleryWindow {
             defer: false
         )
         //win.titleVisibility = .hidden
-        win.title = "Snap Gallery"
+        win.title = "Snip Gallery"
         win.titlebarAppearsTransparent = true
         win.isMovableByWindowBackground = true
         win.tabbingMode = .disallowed
@@ -53,7 +53,7 @@ final class GalleryWindow {
         
         // Create controller and set up autosave through the controller
         let controller = NSWindowController(window: win)
-        let autosaveName = "SnapGalleryWindowV2"
+        let autosaveName = "SnipGalleryWindowV2"
         controller.windowFrameAutosaveName = autosaveName
         
         self.window = win
@@ -144,10 +144,10 @@ struct GalleryView: View {
     private func extractDateString(from url: URL) -> String {
         let filename = url.deletingPathExtension().lastPathComponent
         
-        // Try to extract date from Gsnap_YYYYMMDD_HHMMSS_xxx format
-        if filename.hasPrefix("Gsnap_"),
-           let dateRange = filename.range(of: "Gsnap_"),
-           filename.count >= "Gsnap_YYYYMMDD".count {
+        // Try to extract date from GSnip_YYYYMMDD_HHMMSS_xxx format
+        if filename.hasPrefix("GSnip_"),
+           let dateRange = filename.range(of: "GSnip_"),
+           filename.count >= "GSnip_YYYYMMDD".count {
             let afterPrefix = filename[dateRange.upperBound...]
             let dateString = String(afterPrefix.prefix(8)) // YYYYMMDD
             
@@ -174,8 +174,8 @@ struct GalleryView: View {
     private func extractTimeString(from url: URL) -> String {
         let filename = url.deletingPathExtension().lastPathComponent
         
-        // Try to extract time from Gsnap_YYYYMMDD_HHMMSS_xxx format
-        if filename.hasPrefix("Gsnap_") {
+        // Try to extract time from GSnip_YYYYMMDD_HHMMSS_xxx format
+        if filename.hasPrefix("GSnip_") {
             let components = filename.components(separatedBy: "_")
             if components.count >= 3 {
                 return components[2] // HHMMSS
@@ -213,13 +213,13 @@ struct GalleryView: View {
         return formatter.date(from: dateString) ?? .distantPast
     }
     
-    private func snapsDirectoryFromSettings() -> URL? {
+    private func SnipsDirectoryFromSettings() -> URL? {
         if !saveDirectoryPath.isEmpty {
             return URL(fileURLWithPath: saveDirectoryPath, isDirectory: true)
         }
         let fm = FileManager.default
         if let pictures = fm.urls(for: .picturesDirectory, in: .userDomainMask).first {
-            let dir = pictures.appendingPathComponent("Screen Snap", isDirectory: true)
+            let dir = pictures.appendingPathComponent("Screen Snip", isDirectory: true)
             if !fm.fileExists(atPath: dir.path) {
                 try? fm.createDirectory(at: dir, withIntermediateDirectories: true)
             }
@@ -228,8 +228,8 @@ struct GalleryView: View {
         return nil
     }
     
-    private func openSnapsInFinder() {
-        guard let dir = snapsDirectoryFromSettings() else { return }
+    private func openSnipsInFinder() {
+        guard let dir = SnipsDirectoryFromSettings() else { return }
         NSWorkspace.shared.open(dir)
     }
     
@@ -313,7 +313,7 @@ struct GalleryView: View {
                     Label("Reload", systemImage: "arrow.clockwise")
                 }
                 Button {
-                    openSnapsInFinder()
+                    openSnipsInFinder()
                 } label: {
                     Label("Open in Finder", systemImage: "folder")
                 }

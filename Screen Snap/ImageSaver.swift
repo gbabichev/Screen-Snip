@@ -9,7 +9,7 @@ struct ImageSaver {
     private static func generateFilename(fileExtension: String) -> String {
         let formatter = DateFormatter()
         formatter.dateFormat = "yyyyMMdd_HHmmss_SSS"
-        return "Gsnap_\(formatter.string(from: Date())).\(fileExtension)"
+        return "GSnip_\(formatter.string(from: Date())).\(fileExtension)"
     }
     
     static func saveImage(_ image: NSImage, to directory: URL? = nil) -> URL? {
@@ -36,7 +36,7 @@ struct ImageSaver {
             saveDir = URL(fileURLWithPath: saveDirectoryPath, isDirectory: true)
         } else {
             guard let pictures = FileManager.default.urls(for: .picturesDirectory, in: .userDomainMask).first else { return nil }
-            saveDir = pictures.appendingPathComponent("Screen Snap", isDirectory: true)
+            saveDir = pictures.appendingPathComponent("Screen Snip", isDirectory: true)
             if !FileManager.default.fileExists(atPath: saveDir.path) {
                 try? FileManager.default.createDirectory(at: saveDir, withIntermediateDirectories: true)
             }
