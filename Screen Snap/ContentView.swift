@@ -993,12 +993,7 @@ struct ContentView: View {
                         Divider()
                         
                         if selectedTool == .highlighter {
-                            Section("Highlighter Color") {
-                                PenColorButton(current: highlighterColorBinding, color: NSColor.systemYellow.withAlphaComponent(0.35), name: "Yellow")
-                                PenColorButton(current: highlighterColorBinding, color: NSColor.systemGreen.withAlphaComponent(0.35), name: "Green")
-                                PenColorButton(current: highlighterColorBinding, color: NSColor.systemBlue.withAlphaComponent(0.35), name: "Blue")
-                                PenColorButton(current:highlighterColorBinding, color: NSColor.systemPink.withAlphaComponent(0.35), name: "Pink")
-                            }
+                            highlightColorButtons(current: highlighterColorBinding)
                         }
                         else {
                             colorButtons(current: lineColorBinding)
@@ -1050,7 +1045,7 @@ struct ContentView: View {
                             focusedTextID = nil
                         }
                     }
-                    .id("\(selectedTool)-\(lineHasArrow)-\(lineColor)")
+                    .id("\(selectedTool)-\(lineHasArrow)-\(lineColor)-\(highlighterColor)")
                     .glassEffect(
                         (selectedTool == .line || selectedTool == .highlighter)
                         ? .regular.tint(
@@ -1173,12 +1168,7 @@ struct ContentView: View {
                         Toggle("Background", isOn: $textBGEnabled)
                         
                         Menu("Background Color") {
-                            PenColorButton(current: textBGColorBinding, color: .black.withAlphaComponent(0.6), name: "Black 60%")
-                            PenColorButton(current: textBGColorBinding, color: NSColor.white.withAlphaComponent(0.7), name: "White 70%")
-                            PenColorButton(current: textBGColorBinding, color: NSColor.red.withAlphaComponent(0.5), name: "Red 50%")
-                            PenColorButton(current: textBGColorBinding, color: NSColor.blue.withAlphaComponent(0.5), name: "Blue 50%")
-                            PenColorButton(current: textBGColorBinding, color: NSColor.systemGreen.withAlphaComponent(0.5), name: "Green 50%")
-                            PenColorButton(current: textBGColorBinding, color: NSColor.systemYellow.withAlphaComponent(0.5), name: "Yellow 50%")
+                            highlightColorButtons(current: textBGColorBinding)
                         }
                         
                         
@@ -1191,10 +1181,7 @@ struct ContentView: View {
                         selectedTool = .text
                         selectedObjectID = nil; activeHandle = .none; cropDraftRect = nil; cropRect = nil; cropHandle = .none
                     }
-                    .id(textColor)
-                    .id(textBGEnabled)
-                    .id(textBGColor)
-                    .id(textFontSize)
+                    .id("\(textColor)-\(textBGEnabled)-\(textBGColor)-\(textFontSize)-\(textBGColor)")
                     .glassEffect(selectedTool == .text ? .regular.tint(Color(nsColor: textColor).opacity(0.7)) : .regular)
                     .help("Click to place a text box.")
                     
@@ -1499,13 +1486,62 @@ struct ContentView: View {
         return clamped
     }
     
-    
-    func colorButtons(current: Binding<NSColor>) -> some View {
-        let availableColors = ["red", "blue", "green", "yellow", "black", "white", "orange", "purple", "pink", "gray"]
-        
+    func highlightColorButton(current: Binding<NSColor>, name: String, color: NSColor) -> some View {
+
+        let isSelected = colorsEqual(current.wrappedValue, color)
+        return Button { current.wrappedValue = color } label: {
+            HStack {
+                Image(systemName: isSelected ? "checkmark" : "circle.fill")
+                    .foregroundStyle(Color(nsColor: color), .primary, .secondary)
+                Text(name.capitalized)
+            }
+        }
+    }
+
+    func highlightColorButtons(current: Binding<NSColor>) -> some View {
+        let options: [(name: String, color: NSColor)] = [
+            ("Yellow", NSColor.systemYellow.withAlphaComponent(0.35)),
+            ("Green",  NSColor.systemGreen.withAlphaComponent(0.35)),
+            ("Blue",   NSColor.systemBlue.withAlphaComponent(0.35)),
+            ("Pink",   NSColor.systemPink.withAlphaComponent(0.35))
+        ]
+
         return VStack(alignment: .leading, spacing: 8) {
-            ForEach(availableColors, id: \.self) { colorName in
-                colorButton(current: current, colorName: colorName)
+            ForEach(options, id: \.name) { opt in
+                highlightColorButton(current: current, name: opt.name, color: opt.color)
+            }
+        }
+    }
+    
+    
+    func colorButton(current: Binding<NSColor>, name: String, color: NSColor) -> some View {
+        let isSelected = colorsEqual(current.wrappedValue, color)
+        return Button { current.wrappedValue = color } label: {
+            HStack {
+                Image(systemName: isSelected ? "checkmark" : "circle.fill")
+                    .foregroundStyle(Color(nsColor: color), .primary, .secondary)
+                Text(name.capitalized)
+            }
+        }
+    }
+
+    func colorButtons(current: Binding<NSColor>) -> some View {
+        let colors: [(String, NSColor)] = [
+            ("red", .systemRed),
+            ("blue", .systemBlue),
+            ("green", .systemGreen),
+            ("yellow", .systemYellow),
+            ("black", .black),
+            ("white", .white),
+            ("orange", .systemOrange),
+            ("purple", .systemPurple),
+            ("pink", .systemPink),
+            ("gray", .systemGray)   // covers both "gray"/"grey" input
+        ]
+
+        return VStack(alignment: .leading, spacing: 8) {
+            ForEach(colors, id: \.0) { (name, color) in
+                colorButton(current: current, name: name, color: color)
             }
         }
     }
@@ -1526,37 +1562,7 @@ struct ContentView: View {
         }
         return a.isEqual(b)
     }
-    
-    func colorButton(current: Binding<NSColor>, colorName: String) -> some View {
-        // Map string to NSColor
-        let color: NSColor = {
-            switch colorName.lowercased() {
-            case "red":    .systemRed
-            case "blue":   .systemBlue
-            case "green":  .systemGreen
-            case "yellow": .systemYellow
-            case "black":  .black
-            case "white":  .white
-            case "orange": .systemOrange
-            case "purple": .systemPurple
-            case "pink":   .systemPink
-            case "gray", "grey": .systemGray
-            default:       .black
-            }
-        }()
         
-        let displayName = colorName.prefix(1).uppercased() + colorName.dropFirst().lowercased()
-        let isSelected = colorsEqual(current.wrappedValue, color)
-        
-        return Button(action: { current.wrappedValue = color }) {
-            HStack {
-                Image(systemName: isSelected ? "checkmark" : "circle.fill")
-                    .foregroundStyle(Color(nsColor: color), .primary, .secondary)
-                Text(displayName)
-            }
-        }
-    }
-    
     // Centralized tool switching used by menu notifications
     private func handleSelectTool(_ raw: String) {
         switch raw {
@@ -4296,26 +4302,6 @@ final class SelectionWindowManager {
 private extension CGRect {
     var area: CGFloat { max(0, width) * max(0, height) }
 }
-
-// MARK: - Pen Color Menu Helper
-private struct PenColorButton: View {
-    @Binding var current: NSColor
-    let color: NSColor
-    let name: String
-    var body: some View {
-        Button(action: { current = color }) {
-            HStack {
-                Circle()
-                    .fill(Color(nsColor: color))
-                    .frame(width: 14, height: 14)
-                Text(name)
-                Spacer()
-                if current.isEqual(color) { Image(systemName: "checkmark") }
-            }
-        }
-    }
-}
-
 
 
 private func fittedToAuthorPoint(_ p: CGPoint, fitted: CGSize, author: CGSize) -> CGPoint {
