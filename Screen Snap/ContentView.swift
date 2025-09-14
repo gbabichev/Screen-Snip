@@ -160,7 +160,7 @@ struct ContentView: View {
     @State private var pushedDragUndo = false
     @State private var keyMonitor: Any? = nil
     
-    @State private var textFontSize: CGFloat = 18
+    @AppStorage("textFontSize") private var textFontSize: Double = 18
     
     @AppStorage("textColor") private var textColorRaw: String = "#FFFFFFFF"
     private var textColor: NSColor {
@@ -171,7 +171,8 @@ struct ContentView: View {
         Binding(get: { textColor }, set: { textColorRaw = $0.toHexRGBA() })
     }
     
-    @State private var textBGEnabled: Bool = true
+    @AppStorage("textBGEnabled") private var textBGEnabled: Bool = true
+
     
     @AppStorage("textBGColor") private var textBGColorRaw: String = "#00000099"
     private var textBGColor: NSColor {
