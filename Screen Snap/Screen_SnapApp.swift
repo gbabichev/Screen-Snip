@@ -306,6 +306,57 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         }
         return true
     }
+    
+    // MARK: - File Opening Support
+    
+    /// Called when user opens files with the app (e.g., "Open With" context menu)
+    func application(_ sender: NSApplication, openFiles filenames: [String]) {
+        handleOpenFiles(filenames.map { URL(fileURLWithPath: $0) })
+    }
+    
+    /// Called when files are opened via URL schemes or document types
+    func application(_ application: NSApplication, open urls: [URL]) {
+        handleOpenFiles(urls)
+    }
+    
+    /// Handle opening image files in the app
+    private func handleOpenFiles(_ urls: [URL]) {
+        // Filter to only supported image formats
+        let supportedExtensions: Set<String> = ["png", "jpg", "jpeg", "heic", "heif", "gif", "tiff", "tif", "webp"]
+        let imageURLs = urls.filter { url in
+            guard url.isFileURL else { return false }
+            let ext = url.pathExtension.lowercased()
+            return supportedExtensions.contains(ext)
+        }
+        
+        guard !imageURLs.isEmpty else {
+            // No supported images found - show alert
+            DispatchQueue.main.async {
+                let alert = NSAlert()
+                alert.messageText = "Unsupported File Type"
+                alert.informativeText = "Screen Snap can only open image files (PNG, JPEG, HEIC, GIF, TIFF, WebP)."
+                alert.alertStyle = .warning
+                alert.addButton(withTitle: "OK")
+                alert.runModal()
+            }
+            return
+        }
+        
+        // Open the first supported image
+        let firstImage = imageURLs[0]
+        
+        DispatchQueue.main.async {
+            // Ensure we have a window and load the image
+            WindowManager.shared.loadImageIntoWindow(url: firstImage, shouldActivate: true)
+            
+            // If multiple images were selected, you could show a picker or open them in separate windows
+            if imageURLs.count > 1 {
+                print("Multiple images selected. Currently opening the first one: \(firstImage.lastPathComponent)")
+                // Optionally implement multi-image handling here
+            }
+        }
+    }
+    
 }
 
 // MARK: - Centralized Window Manager

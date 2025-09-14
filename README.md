@@ -16,7 +16,6 @@ Inspired by Greenshot on Windows - the goal is to make a tiny app that can do th
 </div>
 
 ## Work in Progress
-- Add Right click Open With menu. 
 - Start on Login.
 
 
@@ -68,6 +67,7 @@ Inspired by Greenshot on Windows - the goal is to make a tiny app that can do th
 - <del>User adjustable dock icon.
 - <del>Fix crop, text, badge after reworking the canvas. 
 - <del>Rework settings UI
+- <del>Add Right click Open With menu. 
 
 
 ### Stretch Goals 
