@@ -23,7 +23,7 @@ extension NSColor {
         let a = CGFloat( val        & 0xFF) / 255.0
         self.init(srgbRed: r, green: g, blue: b, alpha: a)
     }
-
+    
     /// Convert to hex string `#RRGGBBAA` in sRGB
     func toHexRGBA() -> String {
         guard let srgb = usingColorSpace(.sRGB) else { return "#000000FF" }
@@ -62,10 +62,10 @@ enum SaveFormat: String, CaseIterable, Identifiable {
 struct ContentView: View {
     
     @State private var currentGeometrySize: CGSize = CGSize(width: 800, height: 600)
-
+    
     
     @State private var thumbnailRefreshTrigger = UUID()
-
+    
     @State private var selectedImageSize: CGSize? = nil
     @State private var imageReloadTrigger = UUID()
     @State private var missingSnapURLs: Set<URL> = []
@@ -86,7 +86,7 @@ struct ContentView: View {
     @AppStorage("downsampleToNonRetinaForSave") private var downsampleToNonRetinaForSave: Bool = false
     @AppStorage("imageDisplayMode") private var imageDisplayMode: String = "actual" // "actual" or "fit"
     @AppStorage("saveOnCopy") private var saveOnCopy: Bool = true
-
+    
     
     private enum ImporterKind { case image, folder }
     @State private var activeImporter: ImporterKind? = nil
@@ -206,7 +206,7 @@ struct ContentView: View {
     @State private var objectSpaceSize: CGSize? = nil  // tracks the UI coordinate space size the objects are authored in
     
     @State private var lastDraftTick: CFTimeInterval = 0
-
+    
     @State private var lastTextEditDoubleClickAt: CFTimeInterval = 0
     
     // Throttle rapid draft updates to ~90 Hz (for drag gestures)
@@ -243,11 +243,11 @@ struct ContentView: View {
                     if let url = selectedSnapURL, let imgSize = selectedImageSize {
                         GeometryReader { geo in
                             let baseFitted = imageDisplayMode == "fit"
-                                ? fittedImageSize(original: getActualDisplaySize(imgSize), in: geo.size)  // Use point size for fitting
-                                : getActualDisplaySize(imgSize)  // Use point size for actual
+                            ? fittedImageSize(original: getActualDisplaySize(imgSize), in: geo.size)  // Use point size for fitting
+                            : getActualDisplaySize(imgSize)  // Use point size for actual
                             let fitted = CGSize(width: baseFitted.width * zoomLevel,
                                                 height: baseFitted.height * zoomLevel)
-
+                            
                             ScrollView([.horizontal, .vertical], showsIndicators: true) {
                                 ZStack {
                                     let author = objectSpaceSize ?? baseFitted
@@ -258,14 +258,14 @@ struct ContentView: View {
                                         x: max(0, (fitted.width  - scaledSize.width)  / 2),
                                         y: max(0, (fitted.height - scaledSize.height) / 2)
                                     )
-
+                                    
                                     // Base image streamed without holding NSImage in @State
                                     AsyncImage(url: url) { phase in
                                         switch phase {
                                         case .success(let img):
                                             img.resizable()
-                                               .interpolation(.high)
-                                               .frame(width: fitted.width, height: fitted.height)
+                                                .interpolation(.high)
+                                                .frame(width: fitted.width, height: fitted.height)
                                         case .empty:
                                             ProgressView()
                                                 .frame(width: fitted.width, height: fitted.height)
@@ -287,7 +287,7 @@ struct ContentView: View {
                                     .id(imageReloadTrigger)
                                     .onAppear { currentGeometrySize = geo.size }
                                     .onChange(of: geo.size) { _, newSize in currentGeometrySize = newSize }
-
+                                    
                                     // Object Overlay
                                     
                                     ZStack {
@@ -376,7 +376,7 @@ struct ContentView: View {
                                                     .position(x: o.rect.midX, y: o.rect.midY)
                                             }
                                         }
-
+                                        
                                         // MOVE SELECTION HANDLES INSIDE THE SCALED CONTEXT
                                         if let sel = selectedObjectID, let idx = objects.firstIndex(where: { $0.id == sel }) {
                                             switch objects[idx] {
@@ -389,7 +389,7 @@ struct ContentView: View {
                                             case .image(let o): selectionHandlesForImage(o)
                                             }
                                         }
-
+                                        
                                         // Drafts, crop visuals — leave exactly as your code has them
                                         if let d = draft {
                                             Path { p in p.move(to: d.start); p.addLine(to: d.end) }
@@ -400,7 +400,7 @@ struct ContentView: View {
                                                     .fill(Color(nsColor: lineColor).opacity(0.8))
                                             }
                                         }
-
+                                        
                                         if let r = draftRect {
                                             switch selectedTool {
                                             case .rect:
@@ -422,13 +422,13 @@ struct ContentView: View {
                                                 EmptyView()
                                             }
                                         }
-
+                                        
                                         if let crp = cropRect {
                                             Rectangle().path(in: crp)
                                                 .stroke(Color.orange.opacity(0.95),
                                                         style: StrokeStyle(lineWidth: max(1, strokeWidth), dash: [8,4]))
                                                 .overlay(Rectangle().path(in: crp).fill(Color.orange.opacity(0.10)))
-
+                                            
                                             let pts = [
                                                 CGPoint(x: crp.minX, y: crp.minY),
                                                 CGPoint(x: crp.maxX, y: crp.minY),
@@ -442,7 +442,7 @@ struct ContentView: View {
                                                     .position(pt)
                                             }
                                         }
-
+                                        
                                         if let cr = cropDraftRect {
                                             Rectangle().path(in: cr)
                                                 .stroke(Color.orange.opacity(0.9),
@@ -481,8 +481,8 @@ struct ContentView: View {
                                     .simultaneousGesture(selectedTool == .crop       ? cropGesture(insetOrigin: origin, fitted: fitted, author: author)    : nil)
                                     .simultaneousGesture(selectedTool == .badge      ? badgeGesture(insetOrigin: origin, fitted: fitted, author: author)   : nil)
                                     .simultaneousGesture(selectedTool == .highlighter ? highlightGesture(insetOrigin: origin, fitted: fitted, author: author): nil)
-
-
+                                    
+                                    
                                     .simultaneousGesture(selectedTool == .pointer    ? pointerGesture(insetOrigin: origin, fitted: fitted, author: author) : nil)
                                     .simultaneousGesture(selectedTool == .line       ? lineGesture(insetOrigin: origin, fitted: fitted, author: author)    : nil)
                                     .simultaneousGesture(selectedTool == .rect       ? rectGesture(insetOrigin: origin, fitted: fitted, author: author)    : nil)
@@ -603,7 +603,7 @@ struct ContentView: View {
                                         height: 90,
                                         refreshTrigger: thumbnailRefreshTrigger
                                     )
-
+                                    
                                     Text(url.lastPathComponent)
                                         .lineLimit(1)
                                         .font(.caption2)
@@ -704,7 +704,7 @@ struct ContentView: View {
                             pushUndoSnapshot()
                             if let base = NSImage(contentsOf: url) {
                                 let flattened = rasterize(base: base, objects: objects) ?? base
-
+                                
                                 // Use the SAME coordinate space calculations as the main view
                                 let actualDisplaySize = getActualDisplaySize(selectedImageSize ?? CGSize(width: flattened.size.width, height: flattened.size.height))
                                 
@@ -714,7 +714,7 @@ struct ContentView: View {
                                 } else {
                                     fittedForUI = actualDisplaySize
                                 }
-
+                                
                                 // The crop rect is in author space - convert to fitted space first
                                 let authorSpace = objectSpaceSize ?? fittedForUI
                                 
@@ -731,17 +731,17 @@ struct ContentView: View {
                                         height: rect.height * (fittedForUI.height / authorSpace.height)
                                     )
                                 }
-
+                                
                                 // Get pixel dimensions
                                 let imagePxSize = pixelSize(of: flattened)
-
+                                
                                 // Convert from fitted space to pixel space (bottom-left origin)
                                 let imgRectBL = fittedRectToImageBottomLeftRect(
                                     crpRect: rectInFittedSpace,
                                     fitted: fittedForUI,
                                     imagePx: imagePxSize
                                 )
-
+                                
                                 if let cropped = cropImage(flattened, toBottomLeftRect: imgRectBL) {
                                     // Write the cropped image back to the file
                                     if ImageSaver.writeImage(cropped, to: url, format: preferredSaveFormat.rawValue, quality: saveQuality) {
@@ -765,10 +765,10 @@ struct ContentView: View {
                         return nil
                     }
                 }
-
-
-
-
+                
+                
+                
+                
                 return event
             }
         }
@@ -857,8 +857,8 @@ struct ContentView: View {
                             .disabled(downsampleToNonRetinaForSave && saveOnCopy)
                         
                         
-
-
+                        
+                        
                         
                     }
                     .padding(16)
@@ -1052,15 +1052,15 @@ struct ContentView: View {
                     .id("\(selectedTool)-\(lineHasArrow)-\(lineColor)")
                     .glassEffect(
                         (selectedTool == .line || selectedTool == .highlighter)
-                            ? .regular.tint(
-                                Color(nsColor: selectedTool == .line
-                                      ? lineColor
-                                      : highlighterColor
-                                ).opacity(0.7)
-                            )
-                            : .regular
+                        ? .regular.tint(
+                            Color(nsColor: selectedTool == .line
+                                  ? lineColor
+                                  : highlighterColor
+                                 ).opacity(0.7)
+                        )
+                        : .regular
                     )
-
+                    
                 }
                 
                 
@@ -1084,7 +1084,7 @@ struct ContentView: View {
                         } label: {
                             Label("Oval", systemImage: "circle.dashed")
                         }
-
+                        
                         
                         Divider()
                         
@@ -1105,7 +1105,7 @@ struct ContentView: View {
                                 }
                             }
                         }
-  
+                        
                     } label: {
                         if selectedTool == .oval {
                             Label("Shapes", systemImage: "circle.dashed")
@@ -1122,17 +1122,17 @@ struct ContentView: View {
                     .id("\(selectedTool)-\(rectColor.description)-\(ovalColor.description)")
                     .glassEffect(
                         selectedTool == .oval
-                            ? .regular.tint(Color(nsColor: ovalColor).opacity(0.7))
-                            : selectedTool == .rect
-                                ? .regular.tint(Color(nsColor: rectColor).opacity(0.7))
-                                : .regular
+                        ? .regular.tint(Color(nsColor: ovalColor).opacity(0.7))
+                        : selectedTool == .rect
+                        ? .regular.tint(Color(nsColor: rectColor).opacity(0.7))
+                        : .regular
                     )
                     .help("Click to draw a shape")
                     
                     // Increment (badge)
                     Menu {
                         colorButtons(current: badgeColorBinding)
-
+                        
                         Divider()
                         
                         Button("Reset Counter") { badgeCount = 0 }
@@ -1170,7 +1170,7 @@ struct ContentView: View {
                         Divider()
                         
                         Toggle("Background", isOn: $textBGEnabled)
-                                                
+                        
                         Menu("Background Color") {
                             PenColorButton(current: textBGColorBinding, color: .black.withAlphaComponent(0.6), name: "Black 60%")
                             PenColorButton(current: textBGColorBinding, color: NSColor.white.withAlphaComponent(0.7), name: "White 70%")
@@ -1292,37 +1292,37 @@ struct ContentView: View {
         ])
         .eraseToAnyPublisher()
     }
-
+    
     // Central handler so the `.onReceive` body stays tiny.
     private func handleAppNotification(_ note: Notification) {
         switch note.name {
         case Notification.Name("com.georgebabichev.screensnap.beginSnapFromIntent"):
             onBeginSnapFromIntent(note)
-
+            
         case .selectTool:
             onSelectToolNotification(note)
-
+            
         case .openImageFile:
             onOpenImageFile()
-
+            
         case .copyToClipboard:
             onCopyToClipboard()
-
+            
         case .performUndo:
             onPerformUndo()
-
+            
         case .performRedo:
             onPerformRedo()
-
+            
         case .saveImage:
             onSaveImage()
-
+            
         case .saveAsImage:
             onSaveAsImage()
-
+            
         case .zoomIn, .zoomOut, .resetZoom:
             onZoomNotification(note)
-
+            
         default:
             break
         }
@@ -1334,7 +1334,7 @@ struct ContentView: View {
         
         // Extract URL and activation flag from userInfo
         guard let userInfo = note.userInfo,
-                let url = userInfo["url"] as? URL else {
+              let url = userInfo["url"] as? URL else {
             print("🔥 [DEBUG] ERROR: beginSnapFromIntent notification has no URL")
             return
         }
@@ -1438,7 +1438,7 @@ struct ContentView: View {
             height: rect.height * sy
         )
     }
-
+    
     /// Double-click / double-tap to toggle zoom using existing zoom slider values.
     /// - Note: Only active when imageDisplayMode is not "fit".
     private func handleDoubleTapZoom() {
@@ -1462,7 +1462,7 @@ struct ContentView: View {
         let h = (props[kCGImagePropertyPixelHeight] as? NSNumber)?.doubleValue ?? 0
         return (w > 0 && h > 0) ? CGSize(width: w, height: h) : nil
     }
-
+    
     /// Returns the pixel dimensions of an NSImage by inspecting its best bitmap representation.
     private func pixelSize(of image: NSImage) -> CGSize {
         if let bestRep = image.representations
@@ -1472,7 +1472,7 @@ struct ContentView: View {
         }
         return CGSize(width: image.size.width, height: image.size.height)
     }
-
+    
     /// Map a rect in the *fitted/UI* coordinate space directly into *image pixel* space (bottom-left origin).
     /// - Parameters:
     ///   - crpRect: Rect drawn in fitted-space (top-left origin inside SwiftUI, but our math uses sizes so origin is fine).
@@ -1481,15 +1481,15 @@ struct ContentView: View {
     private func fittedRectToImageBottomLeftRect(crpRect: CGRect, fitted: CGSize, imagePx: CGSize) -> CGRect {
         let sx = imagePx.width / max(1, fitted.width)
         let sy = imagePx.height / max(1, fitted.height)
-
+        
         let x = crpRect.origin.x * sx
         let w = crpRect.size.width * sx
-
+        
         // Convert to bottom-left: y_bl = H - (y_top + h)
         let yTop = crpRect.origin.y * sy
         let h = crpRect.size.height * sy
         let yBL = imagePx.height - (yTop + h)
-
+        
         // Clamp to image bounds to avoid tiny rounding issues
         let clamped = CGRect(x: max(0, x).rounded(.down),
                              y: max(0, yBL).rounded(.down),
@@ -1513,15 +1513,15 @@ struct ContentView: View {
         // Prefer sRGB; fall back to deviceRGB; finally fall back to NSObject equality.
         if let ar = a.usingColorSpace(.sRGB), let br = b.usingColorSpace(.sRGB) {
             return abs(ar.redComponent   - br.redComponent)   < tol &&
-                   abs(ar.greenComponent - br.greenComponent) < tol &&
-                   abs(ar.blueComponent  - br.blueComponent)  < tol &&
-                   abs(ar.alphaComponent - br.alphaComponent) < tol
+            abs(ar.greenComponent - br.greenComponent) < tol &&
+            abs(ar.blueComponent  - br.blueComponent)  < tol &&
+            abs(ar.alphaComponent - br.alphaComponent) < tol
         }
         if let ar = a.usingColorSpace(.deviceRGB), let br = b.usingColorSpace(.deviceRGB) {
             return abs(ar.redComponent   - br.redComponent)   < tol &&
-                   abs(ar.greenComponent - br.greenComponent) < tol &&
-                   abs(ar.blueComponent  - br.blueComponent)  < tol &&
-                   abs(ar.alphaComponent - br.alphaComponent) < tol
+            abs(ar.greenComponent - br.greenComponent) < tol &&
+            abs(ar.blueComponent  - br.blueComponent)  < tol &&
+            abs(ar.alphaComponent - br.alphaComponent) < tol
         }
         return a.isEqual(b)
     }
@@ -1543,10 +1543,10 @@ struct ContentView: View {
             default:       .black
             }
         }()
-
+        
         let displayName = colorName.prefix(1).uppercased() + colorName.dropFirst().lowercased()
         let isSelected = colorsEqual(current.wrappedValue, color)
-
+        
         return Button(action: { current.wrappedValue = color }) {
             HStack {
                 Image(systemName: isSelected ? "checkmark" : "circle.fill")
@@ -1628,7 +1628,7 @@ struct ContentView: View {
         return downsampledImage
     }
     
-
+    
     
     private func cropHandleHitTest(_ rect: CGRect, at p: CGPoint) -> Handle {
         let r: CGFloat = 8
@@ -1769,27 +1769,27 @@ struct ContentView: View {
         return CGRect(x: xPx.rounded(.down), y: yPx.rounded(.down), width: widthPx.rounded(.down), height: heightPx.rounded(.down))
     }
     
-
+    
     private func copyToPasteboard(_ image: NSImage) {
         // 1) ALWAYS flatten first so annotations are included
         let flattened: NSImage = {
             if let f = rasterize(base: image, objects: objects) { return f }
             return image // graceful fallback
         }()
-
+        
         // 2) Respect user toggle: only downsample if requested AND the image is retina
         let shouldDownsample = downsampleToNonRetinaClipboard && isRetinaImage(flattened)
         let source: NSImage = shouldDownsample ? downsampleImage(flattened) : flattened
-
+        
         // 3) Put pixel-accurate PNG bytes on the pasteboard to avoid implicit 1x collapse
         let pb = NSPasteboard.general
         pb.clearContents()
-
+        
         // Prefer the backing bitmap rep's CGImage to avoid collapsing to 1x
         let bestRep = source.representations
             .compactMap { $0 as? NSBitmapImageRep }
             .max(by: { $0.pixelsWide * $0.pixelsHigh < $1.pixelsWide * $1.pixelsHigh })
-
+        
         if let cg = bestRep?.cgImage ?? source.cgImage(forProposedRect: nil, context: nil, hints: nil) {
             let rep = NSBitmapImageRep(cgImage: cg)
             if let data = rep.representation(using: .png, properties: [:]) {
@@ -1800,7 +1800,7 @@ struct ContentView: View {
         } else {
             pb.writeObjects([source])
         }
-
+        
         // 4) Optional: Save the rasterized image to disk when enabled in settings (non-destructive)
         if UserDefaults.standard.bool(forKey: "saveOnCopy") {
             if let url = selectedSnapURL {
@@ -1849,7 +1849,7 @@ struct ContentView: View {
                 cropHandle = .none
             }
         }
-
+        
         withAnimation { showCopiedHUD = true }
         DispatchQueue.main.asyncAfter(deadline: .now() + 1.2) {
             withAnimation { showCopiedHUD = false }
@@ -1929,7 +1929,7 @@ struct ContentView: View {
                 var current = fittedToAuthorPoint(currentFit, fitted: fitted, author: author)
                 let shift = NSEvent.modifierFlags.contains(.shift)
                 if shift { current = snappedPoint(start: start, raw: current) }
-
+                
                 if dragStartPoint == nil {
                     dragStartPoint = start
                     // Start over an existing line? select + figure out which endpoint (if any) we grabbed
@@ -1977,16 +1977,16 @@ struct ContentView: View {
                 if NSEvent.modifierFlags.contains(.shift), let s = dragStartPoint {
                     end = snappedPoint(start: s, raw: end)
                 }
-
+                
                 defer { dragStartPoint = nil; pushedDragUndo = false; activeHandle = .none; draft = nil; draftRect = nil }
-
+                
                 // Finished moving/resizing an existing line
                 if let _ = selectedObjectID,
                    let idx = objects.firstIndex(where: { $0.id == selectedObjectID }),
                    case .line = objects[idx] {
                     return
                 }
-
+                
                 // Create new line from the live draft if present, else from start/end
                 if let d = draft {
                     let new = LineObject(start: d.start, end: d.end, width: d.width, arrow: lineHasArrow, color: lineColor)
@@ -2013,7 +2013,7 @@ struct ContentView: View {
                 let start = fittedToAuthorPoint(startFit, fitted: fitted, author: author)
                 let current = fittedToAuthorPoint(currentFit, fitted: fitted, author: author)
                 let shift = NSEvent.modifierFlags.contains(.shift)
-
+                
                 if dragStartPoint == nil {
                     dragStartPoint = start
                     // If starting on an existing rect, select it and capture which handle (if any)
@@ -2071,9 +2071,9 @@ struct ContentView: View {
             .onEnded { value in
                 let endFit = CGPoint(x: value.location.x - insetOrigin.x, y: value.location.y - insetOrigin.y)
                 let pEnd = fittedToAuthorPoint(endFit, fitted: fitted, author: author)
-
+                
                 defer { dragStartPoint = nil; pushedDragUndo = false; activeHandle = .none; draftRect = nil }
-
+                
                 // If we were moving/resizing an existing rect, we're done
                 if let _ = selectedObjectID,
                    let idx = objects.firstIndex(where: { $0.id == selectedObjectID }) {
@@ -2081,7 +2081,7 @@ struct ContentView: View {
                         return
                     }
                 }
-
+                
                 // Create a new rectangle from the draft drag area if present…
                 if let r = draftRect {
                     let clamped = clampRect(r, in: author)
@@ -2112,7 +2112,7 @@ struct ContentView: View {
                 let currentFit = CGPoint(x: value.location.x - insetOrigin.x, y: value.location.y - insetOrigin.y)
                 let start = fittedToAuthorPoint(startFit, fitted: fitted, author: author)
                 let current = fittedToAuthorPoint(currentFit, fitted: fitted, author: author)
-
+                
                 if dragStartPoint == nil {
                     dragStartPoint = start
                     if let idx = objects.lastIndex(where: { obj in
@@ -2159,11 +2159,11 @@ struct ContentView: View {
             .onEnded { value in
                 let endFit = CGPoint(x: value.location.x - insetOrigin.x, y: value.location.y - insetOrigin.y)
                 let pEnd = fittedToAuthorPoint(endFit, fitted: fitted, author: author)
-
+                
                 defer { dragStartPoint = nil; pushedDragUndo = false; activeHandle = .none; draftRect = nil }
-
+                
                 if let _ = selectedObjectID { return } // finished move/resize
-
+                
                 if let r = draftRect {
                     let clamped = clampRect(r, in: author)
                     let newObj = OvalObject(rect: clamped, width: strokeWidth, color: ovalColor)  // Pass current color
@@ -2188,12 +2188,12 @@ struct ContentView: View {
         DragGesture(minimumDistance: 0)
             .onChanged { value in
                 guard allowDraftTick() else { return }
-
+                
                 let startFit = CGPoint(x: value.startLocation.x - insetOrigin.x, y: value.startLocation.y - insetOrigin.y)
                 let currentFit = CGPoint(x: value.location.x - insetOrigin.x, y: value.location.y - insetOrigin.y)
                 let start = fittedToAuthorPoint(startFit, fitted: fitted, author: author)
                 let current = fittedToAuthorPoint(currentFit, fitted: fitted, author: author)
-
+                
                 if dragStartPoint == nil {
                     dragStartPoint = start
                     // If starting on an existing highlight, select it and capture handle (if any)
@@ -2242,16 +2242,16 @@ struct ContentView: View {
             .onEnded { value in
                 let endFit = CGPoint(x: value.location.x - insetOrigin.x, y: value.location.y - insetOrigin.y)
                 _ = fittedToAuthorPoint(endFit, fitted: fitted, author: author) // not used directly
-
+                
                 defer { dragStartPoint = nil; pushedDragUndo = false; activeHandle = .none; draftRect = nil }
-
+                
                 // If we were moving/resizing an existing highlight, we're done
                 if let _ = selectedObjectID,
                    let idx = objects.firstIndex(where: { $0.id == selectedObjectID }),
                    case .highlight = objects[idx] {
                     return
                 }
-
+                
                 // Otherwise create a new highlight from the draft
                 if let r = draftRect {
                     let clamped = clampRect(r, in: author)
@@ -2506,7 +2506,7 @@ struct ContentView: View {
                 let dx = pEnd.x - pStart.x
                 let dy = pEnd.y - pStart.y
                 let _ = hypot(dx, dy) > 5
-
+                
                 dragStartPoint = nil
                 pushedDragUndo = false
             }
@@ -2603,7 +2603,7 @@ struct ContentView: View {
         let sy = author.height / max(1, fitted.height)
         return CGPoint(x: p.x * sx, y: p.y * sy)
     }
-
+    
     @inline(__always)
     private func normalizeRect(_ r: CGRect) -> CGRect {
         CGRect(x: min(r.minX, r.maxX),
@@ -2638,7 +2638,7 @@ struct ContentView: View {
                 )
                 // 3) Convert to author/object space where overlay lives
                 let locAuthor = fittedToAuthorPoint(clampedFitted, fitted: fitted, author: author)
-
+                
                 if cropDragStart == nil {
                     // First event of this drag
                     cropDragStart = locAuthor
@@ -2652,7 +2652,7 @@ struct ContentView: View {
                         }
                     }
                 }
-
+                
                 if cropHandle != .none, let original = cropOriginalRect {
                     // Resizing existing rect
                     cropRect = normalizeRect(resizeRect(original, handle: cropHandle, to: locAuthor))
@@ -2673,14 +2673,14 @@ struct ContentView: View {
                     cropOriginalRect = nil
                     cropHandle = .none
                 }
-
+                
                 if cropHandle != .none, let updated = cropRect {
                     // Finished a resize — keep normalized
                     cropRect = normalizeRect(updated)
                     cropDraftRect = nil
                     return
                 }
-
+                
                 if let draft = cropDraftRect {
                     // Commit new rect
                     cropRect = normalizeRect(draft)
@@ -2735,7 +2735,7 @@ struct ContentView: View {
                 .position(o.end)
         }
     }
-
+    
     private func selectionHandlesForRect(_ o: RectObject) -> some View {
         let pts = [
             CGPoint(x: o.rect.minX, y: o.rect.minY),
@@ -2753,7 +2753,7 @@ struct ContentView: View {
             }
         }
     }
-
+    
     private func selectionHandlesForOval(_ o: OvalObject) -> some View {
         let pts = [
             CGPoint(x: o.rect.minX, y: o.rect.minY),
@@ -2771,7 +2771,7 @@ struct ContentView: View {
             }
         }
     }
-
+    
     private func selectionHandlesForText(_ o: TextObject) -> some View {
         let pts = [
             CGPoint(x: o.rect.minX, y: o.rect.minY),
@@ -2822,7 +2822,7 @@ struct ContentView: View {
             }
         }
     }
-
+    
     private func selectionHandlesForBadge(_ o: BadgeObject) -> some View {
         let pts = [
             CGPoint(x: o.rect.minX, y: o.rect.minY),
@@ -2840,7 +2840,7 @@ struct ContentView: View {
             }
         }
     }
-
+    
     private func selectionHandlesForHighlight(_ o: HighlightObject) -> some View {
         let pts = [
             CGPoint(x: o.rect.minX, y: o.rect.minY),
@@ -2858,7 +2858,7 @@ struct ContentView: View {
             }
         }
     }
-
+    
     private func selectionHandlesForImage(_ o: PastedImageObject) -> some View {
         let pts = [
             CGPoint(x: o.rect.minX, y: o.rect.minY),
@@ -2884,25 +2884,25 @@ struct ContentView: View {
         let dy = end.y - start.y
         let len = hypot(dx, dy)
         guard len > 0.0001 else { return path }
-
+        
         // Direction unit vector from start -> end
         let ux = dx / len
         let uy = dy / len
-
+        
         // Bigger head: scale with stroke width, but cap by a fraction of the line length
         let desired = max(16, lineWidth * 6.0)
         let capped  = min(len * 0.35, 280)
         let headLength = min(desired, capped)
         let headWidth  = headLength * 0.90
-
+        
         let tip = end
         let baseX = tip.x - headLength * ux
         let baseY = tip.y - headLength * uy
-
+        
         let px = -uy, py = ux // perpendicular
         let left  = CGPoint(x: baseX + (headWidth * 0.5) * px, y: baseY + (headWidth * 0.5) * py)
         let right = CGPoint(x: baseX - (headWidth * 0.5) * px, y: baseY - (headWidth * 0.5) * py)
-
+        
         path.move(to: tip)
         path.addLine(to: left)
         path.addLine(to: right)
@@ -2959,7 +2959,7 @@ struct ContentView: View {
     private func rasterize(base: NSImage, objects: [Drawable]) -> NSImage? {
         // Keep logical canvas in points (matches editor), but render into a bitmap using the base image's backing pixels.
         let imgSize = base.size // points
-
+        
         // Determine backing pixel dimensions (prefer CGImage; else largest bitmap rep; else fall back to points)
         let pixelDims: (w: Int, h: Int) = {
             if let cg = base.cgImage(forProposedRect: nil, context: nil, hints: nil) {
@@ -2972,7 +2972,7 @@ struct ContentView: View {
             }
             return (Int(round(imgSize.width)), Int(round(imgSize.height)))
         }()
-
+        
         guard let rep = NSBitmapImageRep(
             bitmapDataPlanes: nil,
             pixelsWide: max(1, pixelDims.w),
@@ -2985,27 +2985,27 @@ struct ContentView: View {
             bytesPerRow: 0,
             bitsPerPixel: 0
         ) else { return nil }
-
+        
         // Critical: set logical size (points). Drawing uses points; pixels are handled by the rep's pixel size.
         rep.size = imgSize
-
+        
         let composed = NSImage(size: imgSize)
         composed.addRepresentation(rep)
-
+        
         NSGraphicsContext.saveGraphicsState()
         if let ctx = NSGraphicsContext(bitmapImageRep: rep) {
             NSGraphicsContext.current = ctx
             ctx.imageInterpolation = .high
-
+            
             // Draw the base image to fill the logical canvas
             base.draw(in: CGRect(origin: .zero, size: imgSize))
-
+            
             // Render overlay objects. These utilities assume `image` is in points, which matches `imgSize`.
             let fitted = objectSpaceSize ?? lastFittedSize ?? imgSize
             let scaleX = imgSize.width / max(1, fitted.width)
             let scaleY = imgSize.height / max(1, fitted.height)
             let scaleW = (scaleX + scaleY) / 2
-
+            
             for obj in objects {
                 switch obj {
                 case .line(let o):
@@ -3041,19 +3041,19 @@ struct ContentView: View {
                         let dx = e.x - s.x, dy = e.y - s.y
                         let len = max(1, hypot(dx, dy))
                         let ux = dx / len, uy = dy / len
-
+                        
                         let desired = max(16, widthScaled * 6.0)
                         let capped  = min(len * 0.35, 280)
                         let headLength = min(desired, capped)
                         let headWidth  = headLength * 0.90
-
+                        
                         // Arrow head at the exact end point
                         let bx = e.x - ux * headLength
                         let by = e.y - uy * headLength
                         let px = -uy, py = ux
                         let p1 = CGPoint(x: bx + (headWidth * 0.5) * px, y: by + (headWidth * 0.5) * py)
                         let p2 = CGPoint(x: bx - (headWidth * 0.5) * px, y: by - (headWidth * 0.5) * py)
-
+                        
                         let tri = NSBezierPath()
                         tri.move(to: e)  // Tip at exact end point
                         tri.line(to: p1)
@@ -3146,7 +3146,7 @@ struct ContentView: View {
         objects = prev.objects
         
         updateMenuState()
-
+        
     }
     
     private func performRedo() {
@@ -3157,7 +3157,7 @@ struct ContentView: View {
         objects = next.objects
         
         updateMenuState()
-
+        
     }
     
     private func clampPoint(_ p: CGPoint, in fitted: CGSize) -> CGPoint {
@@ -3346,10 +3346,10 @@ struct ContentView: View {
         } catch {
             urls = []
         }
-
+        
         // Fallback: if we failed to enumerate, do nothing
         guard !urls.isEmpty else { return }
-
+        
         GalleryWindow.shared.present(
             urls: urls,
             onSelect: { url in
@@ -3417,7 +3417,7 @@ struct ContentView: View {
         }
         snapURLs.insert(url, at: 0)
     }
-
+    
     /// Select a snap URL, probe its pixel size and reset view state
     private func selectSnap(_ url: URL) {
         // Reset undo/redo for a fresh image session
@@ -3698,22 +3698,22 @@ private struct OvalObject: DrawableObject {
     var rect: CGRect
     var width: CGFloat
     var color: NSColor  // Add color property
-
+    
     init(id: UUID = UUID(), rect: CGRect, width: CGFloat, color: NSColor = .black) {
         self.id = id
         self.rect = rect
         self.width = width
         self.color = color
     }
-
+    
     static func == (lhs: OvalObject, rhs: OvalObject) -> Bool {
         lhs.id == rhs.id && lhs.rect == rhs.rect && lhs.width == rhs.width && lhs.color == rhs.color
     }
-
+    
     func drawPath(in _: CGSize) -> Path {
         Ellipse().path(in: rect)
     }
-
+    
     func hitTest(_ p: CGPoint) -> Bool {
         // Ellipse hit test: normalize point into ellipse space and check if inside
         let rx = rect.width / 2.0
@@ -3725,7 +3725,7 @@ private struct OvalObject: DrawableObject {
         let ny = (p.y - cy) / ry
         return (nx * nx + ny * ny) <= 1.0
     }
-
+    
     func handleHitTest(_ p: CGPoint) -> Handle {
         let r: CGFloat = 8
         let tl = CGRect(x: rect.minX - r, y: rect.minY - r, width: 2*r, height: 2*r)
@@ -3738,14 +3738,14 @@ private struct OvalObject: DrawableObject {
         if br.contains(p) { return .rectBottomRight }
         return .none
     }
-
+    
     func moved(by d: CGSize) -> OvalObject {
         var c = self
         c.rect.origin.x += d.width
         c.rect.origin.y += d.height
         return c
     }
-
+    
     func resizing(_ handle: Handle, to p: CGPoint) -> OvalObject {
         var c = self
         switch handle {
