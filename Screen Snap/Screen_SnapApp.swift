@@ -1,14 +1,8 @@
-//
-//  Screen_SnapApp.swift
-//  Screen Snap
-//
-
-
 import SwiftUI
-import Carbon.HIToolbox
 import ScreenCaptureKit
 import UniformTypeIdentifiers
 import Combine
+import Cocoa
 
 enum ToolKind: String {
     case pointer
@@ -33,6 +27,8 @@ extension Notification.Name {
     static let zoomIn = Notification.Name("com.georgebabichev.screensnap.zoomIn")
     static let zoomOut = Notification.Name("com.georgebabichev.screensnap.zoomOut")
     static let resetZoom = Notification.Name("com.georgebabichev.screensnap.resetZoom")
+    static let openNewWindow = Notification.Name("com.georgebabichev.screensnap.openNewWindow") // Add this line
+
 }
 
 class MenuState: ObservableObject {
@@ -50,15 +46,13 @@ struct Screen_SnapApp: App {
     @StateObject private var menuState = MenuState.shared
     @AppStorage("hideDockIcon") private var hideDockIcon: Bool = false
 
-
     init() {
-        GlobalHotKeyManager.shared.registerSnapHotKey()
+        // Initialize hotkey manager but don't register yet - do it in app delegate
         applyActivationPolicy(hideDockIcon)
-
     }
 
     var body: some Scene {
-        // Remove WindowGroup entirely - we'll manage windows manually
+        
         Settings {
             EmptyView()
         }
@@ -66,10 +60,8 @@ struct Screen_SnapApp: App {
             applyActivationPolicy(newValue)
         }
         .commands {
-
             CommandGroup(after: .newItem) {
                 Button {
-                    WindowManager.shared.ensureMainWindow()
                     NotificationCenter.default.post(
                         name: .openImageFile,
                         object: nil
@@ -117,7 +109,6 @@ struct Screen_SnapApp: App {
             }
             
             CommandGroup(replacing: .pasteboard) {
-                
                 Button {
                     NotificationCenter.default.post(name: .copyToClipboard, object: nil)
                 } label: {
@@ -125,7 +116,6 @@ struct Screen_SnapApp: App {
                 }
                 .keyboardShortcut("c", modifiers: .command)
                 .disabled(!menuState.hasSelectedImage)
-
             }
             
             CommandMenu("Tools") {
@@ -236,7 +226,6 @@ struct Screen_SnapApp: App {
                 }
                 .keyboardShortcut("9", modifiers: .command)
                 .disabled(!menuState.hasSelectedImage)
-
             }
             
             CommandGroup(after: .sidebar) {
@@ -259,19 +248,14 @@ struct Screen_SnapApp: App {
                 .disabled(!menuState.hasSelectedImage)
                 
                 Divider()
-                
             }
         }
     }
 }
 
-
 private func applyActivationPolicy(_ hide: Bool) {
-    // Must run on main thread for NSApp mutations.
     DispatchQueue.main.async {
         NSApp.setActivationPolicy(hide ? .accessory : .regular)
-
-        // Optional: when re-showing the Dock icon, bring app forward so users see it.
         if !hide {
             NSApp.activate(ignoringOtherApps: true)
         }
@@ -281,17 +265,20 @@ private func applyActivationPolicy(_ hide: Bool) {
 final class AppDelegate: NSObject, NSApplicationDelegate {
     
     func applicationDidFinishLaunching(_ notification: Notification) {
-        // Create initial window on app launch
+        // Register hotkey after app is fully launched
+        GlobalHotKeyManager.shared.registerSnapHotKey()
+        
+        // Opens a window on launch.
         WindowManager.shared.ensureMainWindow()
+
+        
     }
     
     func applicationShouldTerminateAfterLastWindowClosed(_ sender: NSApplication) -> Bool {
-        // Keep the app alive so the hotkey continues to work with no windows
         return false
     }
 
     func applicationDidBecomeActive(_ notification: Notification) {
-        // Defensive: ensure hotkey stays registered across weird state changes
         GlobalHotKeyManager.shared.registerSnapHotKey()
     }
 
@@ -301,7 +288,6 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     
     func applicationShouldHandleReopen(_ sender: NSApplication, hasVisibleWindows flag: Bool) -> Bool {
         if !flag {
-            // No visible windows - create one
             WindowManager.shared.ensureMainWindow()
         }
         return true
@@ -309,19 +295,15 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     
     // MARK: - File Opening Support
     
-    /// Called when user opens files with the app (e.g., "Open With" context menu)
     func application(_ sender: NSApplication, openFiles filenames: [String]) {
         handleOpenFiles(filenames.map { URL(fileURLWithPath: $0) })
     }
     
-    /// Called when files are opened via URL schemes or document types
     func application(_ application: NSApplication, open urls: [URL]) {
         handleOpenFiles(urls)
     }
     
-    /// Handle opening image files in the app
     private func handleOpenFiles(_ urls: [URL]) {
-        // Filter to only supported image formats
         let supportedExtensions: Set<String> = ["png", "jpg", "jpeg", "heic", "heif", "gif", "tiff", "tif", "webp"]
         let imageURLs = urls.filter { url in
             guard url.isFileURL else { return false }
@@ -330,7 +312,6 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         }
         
         guard !imageURLs.isEmpty else {
-            // No supported images found - show alert
             DispatchQueue.main.async {
                 let alert = NSAlert()
                 alert.messageText = "Unsupported File Type"
@@ -342,24 +323,29 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             return
         }
         
-        // Open the first supported image
         let firstImage = imageURLs[0]
         
         DispatchQueue.main.async {
-            // Ensure we have a window and load the image
-            WindowManager.shared.loadImageIntoWindow(url: firstImage, shouldActivate: true)
+            // Send notification to load the image
+            let userInfo: [String: Any] = [
+                "url": firstImage,
+                "shouldActivate": true
+            ]
             
-            // If multiple images were selected, you could show a picker or open them in separate windows
+            NotificationCenter.default.post(
+                name: Notification.Name("com.georgebabichev.screensnap.beginSnapFromIntent"),
+                object: nil,
+                userInfo: userInfo
+            )
+            
             if imageURLs.count > 1 {
                 print("Multiple images selected. Currently opening the first one: \(firstImage.lastPathComponent)")
-                // Optionally implement multi-image handling here
             }
         }
     }
-    
 }
 
-// MARK: - Centralized Window Manager
+// Simplified window manager - let SwiftUI handle the window lifecycle
 final class WindowManager {
     static let shared = WindowManager()
     
@@ -368,11 +354,8 @@ final class WindowManager {
     
     private init() {}
     
-    /// Closes all app windows - used before screen capture
     func closeAllAppWindows() {
-        // Close all visible windows belonging to our app
         for window in NSApp.windows {
-            // Skip panels and sheets, focus on main windows
             if window.isVisible &&
                !window.isMiniaturized &&
                window.canBecomeKey &&
@@ -383,7 +366,6 @@ final class WindowManager {
         }
     }
     
-    /// Ensures exactly one main window exists, creating if necessary
     func ensureMainWindow() {
         // If we already have a valid window, just bring it forward
         if let controller = mainWindowController,
@@ -404,22 +386,6 @@ final class WindowManager {
         createMainWindow()
     }
     
-    /// Creates a window without activating the app
-    private func ensureMainWindowWithoutActivating() {
-        // If we already have a valid window, don't touch it at all
-        if let controller = mainWindowController,
-           let window = controller.window,
-           !window.isSheet {
-            
-            // Don't even deminiaturize - just leave it as is
-            return
-        }
-        
-        // Create new window but don't activate
-        createMainWindow(shouldActivate: false)
-    }
-    
-    /// Creates a new main window, replacing any existing one
     private func createMainWindow(shouldActivate: Bool = true) {
         // Clean up existing window
         if let controller = mainWindowController {
@@ -440,7 +406,7 @@ final class WindowManager {
         window.isReleasedWhenClosed = false
         window.contentMinSize = NSSize(width: 900, height: 600)
         
-        // Create ContentView
+        // Create ContentView - THIS IS THE KEY PART
         let contentView = ContentView()
         window.contentViewController = NSHostingController(rootView: contentView)
         
@@ -460,42 +426,33 @@ final class WindowManager {
         // Store reference
         mainWindowController = controller
         
-        // Show window differently based on activation requirement
         if shouldActivate {
             window.center()
             controller.showWindow(nil)
             NSApp.activate(ignoringOtherApps: true)
         } else {
             window.center()
-            // Just make window visible without making it key or activating the app
             window.orderFront(nil)
         }
     }
-    /// Loads an image into the existing window, creating window if needed
+    
     func loadImageIntoWindow(url: URL, shouldActivate: Bool = true) {
-        if shouldActivate {
-            ensureMainWindow()
-        } else {
-            ensureMainWindowWithoutActivating()
-        }
+        // Always ensure we have a window first
+        ensureMainWindow()
         
-        // Create a dictionary with both URL and activation flag
         let userInfo: [String: Any] = [
             "url": url,
             "shouldActivate": shouldActivate
         ]
         
-        // Post notification with the dictionary
-        DispatchQueue.main.asyncAfter(deadline: .now() + 0.1) {
-            NotificationCenter.default.post(
-                name: Notification.Name("com.georgebabichev.screensnap.beginSnapFromIntent"),
-                object: nil,
-                userInfo: userInfo
-            )
-        }
+        // Send notification immediately - now there's a ContentView to receive it
+        NotificationCenter.default.post(
+            name: Notification.Name("com.georgebabichev.screensnap.beginSnapFromIntent"),
+            object: nil,
+            userInfo: userInfo
+        )
     }
     
-    /// Check if we have a visible main window
     func hasVisibleWindow() -> Bool {
         guard let controller = mainWindowController,
               let window = controller.window else { return false }
@@ -504,87 +461,133 @@ final class WindowManager {
     }
 }
 
-// MARK: - Global HotKey Manager (Updated with Window Closing)
+
 final class GlobalHotKeyManager {
     static let shared = GlobalHotKeyManager()
     
-    private var hotKeyRef: EventHotKeyRef?
-    private var eventHandler: EventHandlerRef?
+    private var eventTap: CFMachPort?
+    private var runLoopSource: CFRunLoopSource?
     
     private init() {}
     
     func registerSnapHotKey() {
         unregister()
         
-        let keyCode: UInt32 = UInt32(kVK_ANSI_2)
-        let modifiers: UInt32 = UInt32(cmdKey | shiftKey)
+        // Request accessibility permissions if needed
+        let trusted = kAXTrustedCheckOptionPrompt.takeUnretainedValue()
+        let privOptions = [trusted: true] as CFDictionary
+        let accessEnabled = AXIsProcessTrustedWithOptions(privOptions)
         
-        let hotKeyID = EventHotKeyID(signature: OSType("SNAP".fourCC), id: UInt32(1))
+        if !accessEnabled {
+            print("Accessibility access not granted. Please enable it in System Preferences.")
+            return
+        }
         
-        let handler: EventHandlerUPP = { _, eventRef, _ in
-            var hkID = EventHotKeyID()
-            GetEventParameter(eventRef,
-                              EventParamName(kEventParamDirectObject),
-                              EventParamType(typeEventHotKeyID),
-                              nil,
-                              MemoryLayout<EventHotKeyID>.size,
-                              nil,
-                              &hkID)
-            
-            if hkID.signature == OSType("SNAP".fourCC), hkID.id == UInt32(1) {
-                DispatchQueue.main.async {
-                    GlobalHotKeyManager.shared.handleSnapHotkey()
+        // Create event tap for system-wide key monitoring
+        let eventMask = (1 << CGEventType.keyDown.rawValue)
+        
+        eventTap = CGEvent.tapCreate(
+            tap: .cgSessionEventTap,
+            place: .headInsertEventTap,
+            options: .defaultTap,
+            eventsOfInterest: CGEventMask(eventMask),
+            callback: { (proxy, type, event, refcon) -> Unmanaged<CGEvent>? in
+                guard let refcon = refcon else { return Unmanaged.passUnretained(event) }
+                
+                let manager = Unmanaged<GlobalHotKeyManager>.fromOpaque(refcon).takeUnretainedValue()
+                
+                if manager.handleCGEvent(event) {
+                    // Consume the event
+                    return nil
+                } else {
+                    // Pass the event through
+                    return Unmanaged.passUnretained(event)
                 }
-                return noErr
-            }
-            return noErr
+            },
+            userInfo: Unmanaged.passUnretained(self).toOpaque()
+        )
+        
+        guard let eventTap = eventTap else {
+            print("Failed to create event tap")
+            return
         }
         
-        let eventType = EventTypeSpec(eventClass: OSType(kEventClassKeyboard),
-                                      eventKind: UInt32(kEventHotKeyPressed))
+        runLoopSource = CFMachPortCreateRunLoopSource(kCFAllocatorDefault, eventTap, 0)
+        CFRunLoopAddSource(CFRunLoopGetCurrent(), runLoopSource, .commonModes)
+        CGEvent.tapEnable(tap: eventTap, enable: true)
         
-        var eh: EventHandlerRef?
-        InstallEventHandler(GetApplicationEventTarget(), handler, 1, [eventType], nil, &eh)
-        self.eventHandler = eh
-        
-        var hkRef: EventHotKeyRef?
-        let status = RegisterEventHotKey(keyCode,
-                                         modifiers,
-                                         hotKeyID,
-                                         GetApplicationEventTarget(),
-                                         OptionBits(0),
-                                         &hkRef)
-        if status == noErr {
-            self.hotKeyRef = hkRef
-        }
+        print("Registered system-wide hotkey monitor")
     }
     
     func unregister() {
-        if let hotKeyRef { UnregisterEventHotKey(hotKeyRef) }
-        if let eventHandler { RemoveEventHandler(eventHandler) }
-        hotKeyRef = nil
-        eventHandler = nil
+        if let eventTap = eventTap {
+            CGEvent.tapEnable(tap: eventTap, enable: false)
+            
+            if let runLoopSource = runLoopSource {
+                CFRunLoopRemoveSource(CFRunLoopGetCurrent(), runLoopSource, .commonModes)
+                self.runLoopSource = nil
+            }
+            
+            self.eventTap = nil
+            print("Unregistered hotkey monitor")
+        }
     }
     
+    private func handleCGEvent(_ event: CGEvent) -> Bool {
+        let keyCode = event.getIntegerValueField(.keyboardEventKeycode)
+        let flags = event.flags
+        
+        // Check for Cmd+Shift+2
+        guard keyCode == 19,  // Key code for '2'
+              flags.contains(.maskCommand),
+              flags.contains(.maskShift) else {
+            return false // Don't consume the event
+        }
+        
+        guard !isCurrentlyCapturing else { return true }
+        
+        print("System-wide hotkey detected: Cmd+Shift+2")
+        
+        DispatchQueue.main.async { [weak self] in
+            self?.handleSnapHotkey()
+        }
+        
+        return true // Consume the event
+    }
+    
+    private var isCurrentlyCapturing = false
+    
     private func handleSnapHotkey() {
-        // Close all app windows before starting selection
+        guard !isCurrentlyCapturing else { return }
+        isCurrentlyCapturing = true
+        
+        print("Starting screen capture...")
+        
         WindowManager.shared.closeAllAppWindows()
         
-        SelectionWindowManager.shared.present(onComplete: { rect in
-            Task {
-                if let img = await self.captureScreenshot(rect: rect) {
+        SelectionWindowManager.shared.present(onComplete: { [weak self] rect in
+            Task { [weak self] in
+                defer {
+                    DispatchQueue.main.async { [weak self] in
+                        self?.isCurrentlyCapturing = false
+                    }
+                }
+                
+                if let img = await self?.captureScreenshot(rect: rect) {
                     if let savedURL = ImageSaver.saveImage(img) {
                         DispatchQueue.main.async {
-                            // Create a new window with the captured image
                             WindowManager.shared.loadImageIntoWindow(url: savedURL, shouldActivate: true)
                         }
                     }
                 }
             }
         })
+        
+        SelectionWindowManager.shared.onCancel = { [weak self] in
+            self?.isCurrentlyCapturing = false
+        }
     }
     
-    // Keep existing capture methods unchanged
     func captureScreenshot(rect selectedGlobalRect: CGRect) async -> NSImage? {
         guard let bestScreen = bestScreenForSelection(selectedGlobalRect) else { return nil }
         let screenFramePts = bestScreen.frame
@@ -649,21 +652,7 @@ final class GlobalHotKeyManager {
         }
         return best?.screen
     }
-    
-    
 }
-
-private extension String {
-    var fourCC: UInt32 {
-        var result: UInt32 = 0
-        for char in utf16.prefix(4) {
-            result = (result << 8) + UInt32(char)
-        }
-        return result
-    }
-}
-
-
 
 private extension CGRect {
     var area: CGFloat { max(0, width) * max(0, height) }

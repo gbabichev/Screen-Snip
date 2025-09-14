@@ -60,6 +60,8 @@ enum SaveFormat: String, CaseIterable, Identifiable {
 }
 
 struct ContentView: View {
+    @Environment(\.openWindow) private var openWindow  // Add this line
+
     
     @State private var currentGeometrySize: CGSize = CGSize(width: 800, height: 600)
     
@@ -775,6 +777,9 @@ struct ContentView: View {
         }
         .onDisappear {
             if let keyMonitor { NSEvent.removeMonitor(keyMonitor); self.keyMonitor = nil }
+        }
+        .onReceive(NotificationCenter.default.publisher(for: .openNewWindow)) { _ in
+            openWindow(id: "main")
         }
         .onReceive(notificationStream) { note in
             handleAppNotification(note)
@@ -4232,8 +4237,9 @@ final class SelectionWindowManager {
     private var panels: [NSPanel] = []
     private var keyMonitor: Any?
     
+    var onCancel: (() -> Void)?
+    
     func present(onComplete: @escaping (CGRect) -> Void) {
-        // Prevent re-entrancy
         guard panels.isEmpty else { return }
         
         for screen in NSScreen.screens {
@@ -4254,7 +4260,7 @@ final class SelectionWindowManager {
             panel.hidesOnDeactivate = false
             panel.hasShadow = false
             panel.isExcludedFromWindowsMenu = true
-            panel.setFrame(frame, display: false) // ensure the window sits at the global screen frame
+            panel.setFrame(frame, display: false)
             
             let root = SelectionOverlay(
                 windowOrigin: frame.origin,
@@ -4263,7 +4269,7 @@ final class SelectionWindowManager {
                     self.dismiss()
                 },
                 onCancel: {
-                    self.dismiss()
+                    self.handleCancellation()
                 }
             )
                 .ignoresSafeArea()
@@ -4273,18 +4279,21 @@ final class SelectionWindowManager {
             panels.append(panel)
         }
         
-        // Activate the app so non-activating panels on all displays accept events
         NSApp.activate(ignoringOtherApps: true)
         
-        // ESC to cancel selection (all panels)
         keyMonitor = NSEvent.addLocalMonitorForEvents(matching: .keyDown) { [weak self] event in
             guard let self else { return event }
-            if event.keyCode == 53 { // ESC
-                self.dismiss()
-                return nil // consume event
+            if event.keyCode == 53 {
+                self.handleCancellation()
+                return nil
             }
             return event
         }
+    }
+    
+    private func handleCancellation() {
+        onCancel?()
+        dismiss()
     }
     
     func dismiss() {
@@ -4296,6 +4305,7 @@ final class SelectionWindowManager {
             NSEvent.removeMonitor(keyMonitor)
             self.keyMonitor = nil
         }
+        onCancel = nil
     }
 }
 
