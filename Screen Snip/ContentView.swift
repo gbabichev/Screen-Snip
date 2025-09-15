@@ -1231,9 +1231,31 @@ struct ContentView: View {
             case .success(let urls):
                 guard let url = urls.first else { return }
                 if url.hasDirectoryPath {
-                    // Folder chosen
-                    DispatchQueue.main.async {
+                    // Start accessing the security-scoped resource
+                    guard url.startAccessingSecurityScopedResource() else {
+                        print("Failed to access security-scoped resource")
+                        return
+                    }
+                    
+                    do {
+                        // Create and store a security-scoped bookmark
+                        let bookmarkData = try url.bookmarkData(
+                            options: .withSecurityScope,
+                            includingResourceValuesForKeys: nil,
+                            relativeTo: nil
+                        )
+                        
+                        // Store the bookmark data instead of just the path
+                        UserDefaults.standard.set(bookmarkData, forKey: "saveDirectoryBookmark")
                         saveDirectoryPath = url.path
+                        
+                    } catch {
+                        print("Failed to create bookmark: \(error)")
+                        url.stopAccessingSecurityScopedResource()
+                        return
+                    }
+                    
+                    DispatchQueue.main.async {
                         loadExistingSnips()
                     }
                 } else {
@@ -1264,6 +1286,9 @@ struct ContentView: View {
     }
     
     // MARK: - Helpers
+    
+    
+    
     
     // MARK: - Notification Handlers
     
@@ -3283,26 +3308,40 @@ struct ContentView: View {
     
     // MARK: - Snips Persistence
     
-    //    /// Directory where we store PNG Snips.
-    //    private func SnipsDirectory() -> URL? {
-    //        let fm = FileManager.default
-    //        if let pics = fm.urls(for: .picturesDirectory, in: .userDomainMask).first {
-    //            let dir = pics.appendingPathComponent("screenshotG Snips", isDirectory: true)
-    //            if !fm.fileExists(atPath: dir.path) {
-    //                do { try fm.createDirectory(at: dir, withIntermediateDirectories: true) } catch { return nil }
-    //            }
-    //            return dir
-    //        }
-    //        return nil
-    //    }
-    
     private func SnipsDirectory() -> URL? {
-        // If the user has chosen a custom destination, use it
+        // If the user has chosen a custom destination, resolve from bookmark
         if !saveDirectoryPath.isEmpty {
-            let custom = URL(fileURLWithPath: saveDirectoryPath, isDirectory: true)
-            return custom
+            if let bookmarkData = UserDefaults.standard.data(forKey: "saveDirectoryBookmark") {
+                do {
+                    var isStale = false
+                    let url = try URL(
+                        resolvingBookmarkData: bookmarkData,
+                        options: .withSecurityScope,
+                        relativeTo: nil,
+                        bookmarkDataIsStale: &isStale
+                    )
+                    
+                    guard url.startAccessingSecurityScopedResource() else {
+                        print("Failed to access security-scoped resource")
+                        return defaultSnipsDirectory()
+                    }
+                    
+                    // Store a reference to stop accessing later if needed
+                    // You might want to manage this lifecycle better
+                    return url
+                    
+                } catch {
+                    print("Failed to resolve bookmark: \(error)")
+                    // Fall back to default directory
+                    return defaultSnipsDirectory()
+                }
+            }
         }
-        // Default: ~/Pictures/Screen Snip
+        
+        return defaultSnipsDirectory()
+    }
+
+    private func defaultSnipsDirectory() -> URL? {
         let fm = FileManager.default
         if let pictures = fm.urls(for: .picturesDirectory, in: .userDomainMask).first {
             let dir = pictures.appendingPathComponent("Screen Snip", isDirectory: true)
@@ -3313,7 +3352,6 @@ struct ContentView: View {
         }
         return nil
     }
-    
     
     private var currentImage: NSImage? {
         guard let url = selectedSnipURL else { return nil }
