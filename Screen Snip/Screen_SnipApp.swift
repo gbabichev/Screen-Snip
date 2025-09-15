@@ -249,6 +249,30 @@ struct Screen_SnipApp: App {
                 
                 Divider()
             }
+            
+            CommandGroup(replacing: .help) {
+                Button {
+                    // Open help URL - replace with your actual help URL
+                    if let url = URL(string: "https://github.com/gbabichev/Screen-Snip") {
+                        NSWorkspace.shared.open(url)
+                    }
+                } label: {
+                    Label("Help", systemImage: "questionmark.circle")
+                }
+                
+                Button {
+                    // Show privacy policy alert
+                    let alert = NSAlert()
+                    alert.messageText = "Privacy Policy"
+                    alert.informativeText = "No data leaves your device ever - I don't touch it / know about it / care about it. It's yours."
+                    alert.alertStyle = .informational
+                    alert.addButton(withTitle: "OK")
+                    alert.runModal()
+                } label: {
+                    Label("Privacy Policy", systemImage: "hand.raised.circle")
+                }
+            }
+            
         }
     }
 }
@@ -266,7 +290,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     
     func applicationDidFinishLaunching(_ notification: Notification) {
         
-        checkAccessibilityPermissions()
+        checkPermissions()
         
         // Register hotkey after app is fully launched (only if we have permissions)
         if isAccessibilityEnabled() {
@@ -275,14 +299,18 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         
         // Opens a window on launch.
         WindowManager.shared.ensureMainWindow()
-
-        
     }
     
-    private func checkAccessibilityPermissions() {
-        if !isAccessibilityEnabled() {
+    private func checkPermissions() {
+        let hasAccessibility = isAccessibilityEnabled()
+        let hasScreenRecording = isScreenRecordingEnabled()
+        
+        if !hasAccessibility || !hasScreenRecording {
             DispatchQueue.main.async {
-                self.showAccessibilityPermissionAlert()
+                self.showPermissionsAlert(
+                    needsAccessibility: !hasAccessibility,
+                    needsScreenRecording: !hasScreenRecording
+                )
             }
         }
     }
@@ -291,6 +319,114 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         return AXIsProcessTrusted()
     }
     
+    private func isScreenRecordingEnabled() -> Bool {
+        // Check if we can capture screen content
+        if #available(macOS 11.0, *) {
+            return CGPreflightScreenCaptureAccess()
+        } else {
+            // For older macOS versions, we can't easily check this
+            // Return true and let the user discover when they try to use it
+            return true
+        }
+    }
+    
+    private func showPermissionsAlert(needsAccessibility: Bool, needsScreenRecording: Bool) {
+        let alert = NSAlert()
+        
+        var missingPermissions: [String] = []
+        if needsAccessibility {
+            missingPermissions.append("Accessibility")
+        }
+        if needsScreenRecording {
+            missingPermissions.append("Screen Recording")
+        }
+        
+        let permissionList = missingPermissions.joined(separator: " and ")
+        
+        alert.messageText = "\(permissionList) Permission\(missingPermissions.count > 1 ? "s" : "") Required"
+        
+        var informativeText = "Screen Snip needs the following permissions to work properly:\n\n"
+        
+        if needsAccessibility {
+            informativeText += "• Accessibility: Required to capture screenshots with the global hotkey (⌘⇧2)\n"
+        }
+        
+        if needsScreenRecording {
+            informativeText += "• Screen Recording: Required to capture screen content\n"
+        }
+        
+        informativeText += "\nPlease grant these permissions in System Preferences > Privacy & Security."
+        
+        alert.informativeText = informativeText
+        alert.alertStyle = .informational
+        alert.addButton(withTitle: "Open System Preferences")
+        alert.addButton(withTitle: "Continue with Limited Features")
+        
+        let response = alert.runModal()
+        
+        if response == .alertFirstButtonReturn {
+            openPrivacyPreferences(needsAccessibility: needsAccessibility, needsScreenRecording: needsScreenRecording)
+            
+            // Show a follow-up dialog
+            DispatchQueue.main.asyncAfter(deadline: .now() + 1.0) {
+                self.showPermissionFollowUpAlert(
+                    needsAccessibility: needsAccessibility,
+                    needsScreenRecording: needsScreenRecording
+                )
+            }
+        }
+    }
+    
+    private func openPrivacyPreferences(needsAccessibility: Bool, needsScreenRecording: Bool) {
+        // Try to open the most relevant preference pane
+        var urlString: String
+        
+        if needsAccessibility && needsScreenRecording {
+            // If both are needed, open the main Privacy & Security pane
+            urlString = "x-apple.systempreferences:com.apple.preference.security"
+        } else if needsAccessibility {
+            urlString = "x-apple.systempreferences:com.apple.preference.security?Privacy_Accessibility"
+        } else {
+            urlString = "x-apple.systempreferences:com.apple.preference.security?Privacy_ScreenCapture"
+        }
+        
+        if let url = URL(string: urlString) {
+            NSWorkspace.shared.open(url)
+        }
+    }
+    
+    private func showPermissionFollowUpAlert(needsAccessibility: Bool, needsScreenRecording: Bool) {
+        let alert = NSAlert()
+        alert.messageText = "Grant Permissions and Restart"
+        
+        var instructionText = "After enabling the required permissions for Screen Snip:\n\n"
+        
+        if needsAccessibility {
+            instructionText += "1. Go to Privacy & Security > Accessibility\n"
+            instructionText += "2. Enable Screen Snip in the list\n"
+        }
+        
+        if needsScreenRecording {
+            if needsAccessibility {
+                instructionText += "3. Go to Privacy & Security > Screen Recording\n"
+                instructionText += "4. Enable Screen Snip in the list\n"
+                instructionText += "\n5. Restart Screen Snip for all features to work properly."
+            } else {
+                instructionText += "1. Go to Privacy & Security > Screen Recording\n"
+                instructionText += "2. Enable Screen Snip in the list\n"
+                instructionText += "\n3. Restart Screen Snip for all features to work properly."
+            }
+        } else {
+            instructionText += "\n3. Restart Screen Snip for the hotkey to work properly."
+        }
+        
+        alert.informativeText = instructionText
+        alert.alertStyle = .informational
+        alert.addButton(withTitle: "OK")
+        alert.runModal()
+    }
+    
+    // Keep your existing methods below
     private func showAccessibilityPermissionAlert() {
         let alert = NSAlert()
         alert.messageText = "Accessibility Permission Required"
@@ -393,6 +529,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         }
     }
 }
+
 
 // Simplified window manager - let SwiftUI handle the window lifecycle
 final class WindowManager {
