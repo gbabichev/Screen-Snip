@@ -453,9 +453,7 @@ final class WindowManager {
         window.isMovableByWindowBackground = false
         window.tabbingMode = .disallowed
         window.isReleasedWhenClosed = false
-        window.contentMinSize = NSSize(width: 900, height: 600)
         
-        // Create ContentView - THIS IS THE KEY PART
         let contentView = ContentView()
         window.contentViewController = NSHostingController(rootView: contentView)
         
