@@ -120,7 +120,7 @@ struct ContentView: View {
     @State private var cropHandle: Handle = .none
     @State private var cropDragStart: CGPoint? = nil
     @State private var cropOriginalRect: CGRect? = nil
-    @State private var strokeWidth: CGFloat = 3
+    @AppStorage("strokeWidth") private var strokeWidth: Double = 3
     @AppStorage("lineColor") private var lineColorRaw: String = "#000000FF"
     private var lineColor: NSColor {
         get { NSColor(hexRGBA: lineColorRaw) ?? .black }
@@ -428,11 +428,9 @@ struct ContentView: View {
                                             case .highlighter:
                                                 Rectangle().path(in: r).fill(Color(nsColor: highlighterColor))
                                             case .oval:
-                                                if imageDisplayMode != "fit" {
-                                                    Ellipse().path(in: r)
-                                                        .stroke(Color(nsColor: rectColor).opacity(0.8),
-                                                                style: StrokeStyle(lineWidth: strokeWidth, dash: [6,4]))
-                                                }
+                                                Ellipse().path(in: r)
+                                                    .stroke(Color(nsColor: ovalColor).opacity(0.8),
+                                                            style: StrokeStyle(lineWidth: strokeWidth, dash: [6,4]))
                                             case .line:
                                                 EmptyView()
                                             default:

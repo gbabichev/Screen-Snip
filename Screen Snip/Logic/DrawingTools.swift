@@ -158,7 +158,11 @@ struct OvalObject: @MainActor DrawableObject {
     static func == (lhs: OvalObject, rhs: OvalObject) -> Bool {
         lhs.id == rhs.id && lhs.rect == rhs.rect && lhs.width == rhs.width && lhs.color == rhs.color
     }
-        
+
+    func drawPath(in _: CGSize) -> Path {
+        return Ellipse().path(in: rect)
+    }
+    
     func hitTest(_ p: CGPoint) -> Bool {
         // Ellipse hit test: normalize point into ellipse space and check if inside
         let rx = rect.width / 2.0

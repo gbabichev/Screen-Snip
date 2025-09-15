@@ -316,8 +316,6 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         // Debug: show basic launch context
         let args = ProcessInfo.processInfo.arguments
         let env  = ProcessInfo.processInfo.environment
-        print("🚀 Main app bundle: \(Bundle.main.bundlePath)")
-        print("🚀 Main app launched with args=\(args)")
         if let flag = env["LAUNCHED_AT_LOGIN"] { print("🚀 Env[LAUNCHED_AT_LOGIN]=\(flag)") }
 
         checkPermissions()
@@ -332,7 +330,6 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         if launchedViaAppGroup {
             // consume the one-shot signal so subsequent manual launches behave normally
             defaults?.removeObject(forKey: kLaunchedByHelperKey)
-            print("✅ Detected helper launch via App Group (")
         }
 
         // Secondary (dev) fallbacks in case you still launch with args/env from Xcode
@@ -343,9 +340,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
 
         if !launchedAtLogin {
             WindowManager.shared.ensureMainWindow()
-        } else {
-            print("🚫 Suppressing initial window (launched at login)")
-        }
+        } 
     }
     
     private func checkPermissions() {
