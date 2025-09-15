@@ -1231,12 +1231,12 @@ struct ContentView: View {
             }
             
             // Capture Region button (always available)
-            ToolbarItem(placement: .primaryAction) {
-                Button(action: startSelection) {
-                    Label("Capture Region", systemImage: "camera.viewfinder")
-                }
-                .keyboardShortcut("2", modifiers: [.command, .shift])
-            }
+//            ToolbarItem(placement: .primaryAction) {
+//                Button() {
+//                    Label("Capture Region", systemImage: "camera.viewfinder")
+//                }
+//                .keyboardShortcut("2", modifiers: [.command, .shift])
+//            }
         }
         .fileImporter(
             isPresented: Binding(
@@ -1753,32 +1753,32 @@ struct ContentView: View {
         return c
     }
     
-    private func startSelection() {
-        WindowManager.shared.closeAllAppWindows()
-        
-        SelectionWindowManager.shared.present(onComplete: { rect in
-            Task {
-                // Use the same capture method as the hotkey to avoid duplication
-                if let img = await GlobalHotKeyManager.shared.captureScreenshot(rect: rect) {
-                    if let savedURL = ImageSaver.saveImage(img, to: SnipsDirectory()) {
-                        DispatchQueue.main.async {
-                            // Handle the ContentView-specific cleanup that was in saveSnipToDisk
-                            self.insertSnipURL(savedURL)  // Add to gallery
-                            
-                            // Clear any retained image references
-                            self.selectedImageSize = nil
-                            // Limit undo stack growth
-                            if self.undoStack.count > 5 { self.undoStack.removeFirst(self.undoStack.count - 5) }
-                            if self.redoStack.count > 5 { self.redoStack.removeFirst(self.redoStack.count - 5) }
-                            
-                            WindowManager.shared.loadImageIntoWindow(url: savedURL, shouldActivate: true)
-                        }
-                    }
-                    // img goes out of scope and gets deallocated immediately
-                }
-            }
-        })
-    }
+//    private func startSelection() {
+//        WindowManager.shared.closeAllAppWindows()
+//        
+//        SelectionWindowManager.shared.present(onComplete: { rect in
+//            Task {
+//                // Use the same capture method as the hotkey to avoid duplication
+//                if let img = await GlobalHotKeyManager.shared.captureScreenshot(rect: rect) {
+//                    if let savedURL = ImageSaver.saveImage(img, to: SnipsDirectory()) {
+//                        DispatchQueue.main.async {
+//                            // Handle the ContentView-specific cleanup that was in saveSnipToDisk
+//                            self.insertSnipURL(savedURL)  // Add to gallery
+//                            
+//                            // Clear any retained image references
+//                            self.selectedImageSize = nil
+//                            // Limit undo stack growth
+//                            if self.undoStack.count > 5 { self.undoStack.removeFirst(self.undoStack.count - 5) }
+//                            if self.redoStack.count > 5 { self.redoStack.removeFirst(self.redoStack.count - 5) }
+//                            
+//                            WindowManager.shared.loadImageIntoWindow(url: savedURL, shouldActivate: true)
+//                        }
+//                    }
+//                    // img goes out of scope and gets deallocated immediately
+//                }
+//            }
+//        })
+//    }
     
 
     

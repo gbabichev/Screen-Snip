@@ -16,6 +16,7 @@ import Combine
 
 struct SelectionOverlay: View {
     let windowOrigin: CGPoint
+    let capturedImage: CGImage?
     let onComplete: (CGRect) -> Void
     let onCancel: () -> Void
     
@@ -25,6 +26,15 @@ struct SelectionOverlay: View {
     var body: some View {
         GeometryReader { geo in
             ZStack {
+                // Display the captured static image as background
+                if let capturedImage = capturedImage {
+                    Image(capturedImage, scale: 1.0, label: Text("Captured Screen"))
+                        .resizable()
+                        .aspectRatio(contentMode: .fill)
+                        .frame(width: geo.size.width, height: geo.size.height)
+                        .clipped()
+                }
+                
                 // Create the dimmed overlay with a cut-out
                 if let rect = selectionRect() {
                     // Overlay that covers everything except the selection
@@ -53,7 +63,6 @@ struct SelectionOverlay: View {
             .contentShape(Rectangle())
             .gesture(dragGesture(in: geo))
             .onTapGesture(count: 2) {
-                // Handle double-tap cancellation
                 onCancel()
             }
         }
@@ -62,47 +71,81 @@ struct SelectionOverlay: View {
     private func dragGesture(in geo: GeometryProxy) -> some Gesture {
         DragGesture(minimumDistance: 0)
             .onChanged { value in
-                // Keep local coordinates for correct on-screen rendering
-                if startPoint == nil { startPoint = value.startLocation }
+                if startPoint == nil {
+                    startPoint = value.startLocation
+                    print("Selection started at local: \(value.startLocation)")
+                }
                 currentPoint = value.location
             }
             .onEnded { value in
-                // Convert both endpoints to global screen coords for capture math
                 let gStart = globalPoint(from: value.startLocation, in: geo)
-                let gEnd   = globalPoint(from: value.location, in: geo)
+                let gEnd = globalPoint(from: value.location, in: geo)
+                
+                print("Selection ended:")
+                print("  Start local: \(value.startLocation) -> global: \(gStart)")
+                print("  End local: \(value.location) -> global: \(gEnd)")
+                print("  Window origin: \(windowOrigin)")
+                print("  Geo size: \(geo.size)")
+                
                 let rect = buildRect(from: gStart, to: gEnd)
                 startPoint = nil
                 currentPoint = nil
+                
                 if let rect, rect.width > 2, rect.height > 2 {
+                    print("  Final selection rect: \(rect)")
                     onComplete(rect)
                 } else {
+                    print("  Selection too small, canceling")
                     onCancel()
                 }
             }
     }
     
     private func globalPoint(from local: CGPoint, in geo: GeometryProxy) -> CGPoint {
-        // SwiftUI local coordinates are top-left–origin with Y down.
-        // Global screen coordinates are bottom-left–origin with Y up.
-        return CGPoint(
-            x: windowOrigin.x + local.x,
-            y: windowOrigin.y + (geo.size.height - local.y)
-        )
+        // CRITICAL FIX: Handle coordinate system properly for multi-monitor
+        
+        // The windowOrigin is the NSWindow's frame origin, which uses AppKit coordinates
+        // (bottom-left origin with Y going up)
+        
+        // SwiftUI local coordinates have origin at top-left with Y going down
+        // We need to convert SwiftUI local -> AppKit global
+        
+        let globalX = windowOrigin.x + local.x
+        let globalY = windowOrigin.y + (geo.size.height - local.y)
+        
+        let result = CGPoint(x: globalX, y: globalY)
+        
+        // Debug logging
+        print("Coordinate conversion:")
+        print("  Local: \(local)")
+        print("  Window origin: \(windowOrigin)")
+        print("  Geo size: \(geo.size)")
+        print("  Global result: \(result)")
+        
+        return result
     }
     
     private func selectionRect() -> CGRect? {
         guard let s = startPoint, let c = currentPoint else { return nil }
-        return CGRect(x: min(s.x, c.x), y: min(s.y, c.y), width: abs(s.x - c.x), height: abs(s.y - c.y))
+        return CGRect(
+            x: min(s.x, c.x),
+            y: min(s.y, c.y),
+            width: abs(s.x - c.x),
+            height: abs(s.y - c.y)
+        )
     }
     
     private func buildRect(from start: CGPoint?, to end: CGPoint) -> CGRect? {
         guard let start else { return nil }
-        return CGRect(x: min(start.x, end.x),
-                      y: min(start.y, end.y),
-                      width: abs(start.x - end.x),
-                      height: abs(start.y - end.y))
+        return CGRect(
+            x: min(start.x, end.x),
+            y: min(start.y, end.y),
+            width: abs(start.x - end.x),
+            height: abs(start.y - end.y)
+        )
     }
 }
+
 
 final class ScreenCapturer: NSObject, SCStreamOutput {
     static let shared = ScreenCapturer()
@@ -243,6 +286,7 @@ final class SelectionWindowManager {
     
     var onCancel: (() -> Void)?
     
+    // Original method for backward compatibility (not used in new flow)
     func present(onComplete: @escaping (CGRect) -> Void) {
         guard panels.isEmpty else { return }
         
@@ -268,6 +312,7 @@ final class SelectionWindowManager {
             
             let root = SelectionOverlay(
                 windowOrigin: frame.origin,
+                capturedImage: nil,  // No captured image for old method
                 onComplete: { rect in
                     onComplete(rect)
                     self.dismiss()
@@ -295,6 +340,75 @@ final class SelectionWindowManager {
         }
     }
     
+    func presentWithCapturedScreens(
+        capturedScreens: [(screenInfo: GlobalHotKeyManager.ScreenInfo, cgImage: CGImage)],
+        onComplete: @escaping (CGRect) -> Void
+    ) {
+        guard panels.isEmpty else { return }
+        
+        print("=== Setting up selection windows ===")
+        
+        for (screenInfo, cgImage) in capturedScreens {
+            let frame = screenInfo.frame
+            print("Creating selection window for screen \(screenInfo.index):")
+            print("  Frame: \(frame)")
+            print("  Scale: \(screenInfo.backingScaleFactor)")
+            print("  Image size: \(cgImage.width)x\(cgImage.height)")
+            
+            let panel = NSPanel(contentRect: frame,
+                                styleMask: [.borderless, .nonactivatingPanel],
+                                backing: .buffered,
+                                defer: false)
+            panel.level = .screenSaver
+            panel.backgroundColor = .black
+            panel.isOpaque = true
+            panel.ignoresMouseEvents = false
+            panel.isMovable = false
+            panel.collectionBehavior = [.canJoinAllSpaces, .fullScreenAuxiliary]
+            panel.titleVisibility = .hidden
+            panel.titlebarAppearsTransparent = true
+            panel.acceptsMouseMovedEvents = true
+            panel.hidesOnDeactivate = false
+            panel.hasShadow = false
+            panel.isExcludedFromWindowsMenu = true
+            panel.setFrame(frame, display: false)
+            
+            let root = SelectionOverlay(
+                windowOrigin: frame.origin,
+                capturedImage: cgImage,
+                onComplete: { rect in
+                    print("Selection completed with rect: \(rect)")
+                    onComplete(rect)
+                    self.dismiss()
+                },
+                onCancel: {
+                    print("Selection canceled")
+                    self.handleCancellation()
+                }
+            )
+                .ignoresSafeArea()
+            
+            panel.contentView = NSHostingView(rootView: root)
+            panel.makeKeyAndOrderFront(nil)
+            panels.append(panel)
+            
+            print("  Window created and displayed")
+        }
+        
+        NSApp.activate(ignoringOtherApps: true)
+        
+        keyMonitor = NSEvent.addLocalMonitorForEvents(matching: .keyDown) { [weak self] event in
+            guard let self else { return event }
+            if event.keyCode == 53 {
+                self.handleCancellation()
+                return nil
+            }
+            return event
+        }
+        
+        print("Selection windows ready")
+    }
+    
     private func handleCancellation() {
         onCancel?()
         dismiss()
@@ -312,8 +426,3 @@ final class SelectionWindowManager {
         onCancel = nil
     }
 }
-
-
-
-
-
