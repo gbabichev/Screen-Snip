@@ -227,7 +227,7 @@ struct ImageSaver {
         return CGImageDestinationFinalize(destination)
     }
     
-    static func imageData(from image: NSImage, format: String, quality: Double) -> Data? {
+    nonisolated static func imageData(from image: NSImage, format: String, quality: Double) -> Data? {
         guard let bestRep = image.representations
             .compactMap({ $0 as? NSBitmapImageRep })
             .max(by: { $0.pixelsWide * $0.pixelsHigh < $1.pixelsWide * $1.pixelsHigh }) else { return nil }

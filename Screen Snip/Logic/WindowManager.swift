@@ -8,6 +8,7 @@
 import SwiftUI
 
 // Simplified window manager - let SwiftUI handle the window lifecycle
+@MainActor
 final class WindowManager {
     static let shared = WindowManager()
     
@@ -80,7 +81,9 @@ final class WindowManager {
             object: window,
             queue: .main
         ) { [weak self] _ in
-            self?.mainWindowController = nil
+            Task { @MainActor in
+                self?.mainWindowController = nil
+            }
         }
         
         // Store reference
