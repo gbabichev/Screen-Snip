@@ -63,6 +63,9 @@ struct ContentView: View {
     @Environment(\.openWindow) private var openWindow  // Add this line
 
     
+    @State private var showingFileExporter = false
+    @State private var exportImage: NSImage? = nil
+    
     @State private var currentGeometrySize: CGSize = CGSize(width: 800, height: 600)
     
     
@@ -164,16 +167,16 @@ struct ContentView: View {
     
     @AppStorage("textFontSize") private var textFontSize: Double = 18
     
-    @AppStorage("textColor") private var textColorRaw: String = "#FFFFFFFF"
+    @AppStorage("textColor") private var textColorRaw: String = "#000000FF"
     private var textColor: NSColor {
-        get { NSColor(hexRGBA: textColorRaw) ?? .white }
+        get { NSColor(hexRGBA: textColorRaw) ?? .black }
         set { textColorRaw = newValue.toHexRGBA() }
     }
     private var textColorBinding: Binding<NSColor> {
         Binding(get: { textColor }, set: { textColorRaw = $0.toHexRGBA() })
     }
     
-    @AppStorage("textBGEnabled") private var textBGEnabled: Bool = true
+    @AppStorage("textBGEnabled") private var textBGEnabled: Bool = false
 
     
     @AppStorage("textBGColor") private var textBGColorRaw: String = "#00000099"
@@ -196,7 +199,7 @@ struct ContentView: View {
     
     @State private var badgeCount: Int = 0
     
-    @AppStorage("highlighterColor") private var highlighterColorRaw: String = "#FFFF59FF"
+    @AppStorage("highlighterColor") private var highlighterColorRaw: String = NSColor.systemYellow.withAlphaComponent(0.35).toHexRGBA()
     private var highlighterColor: NSColor {
         get { NSColor(hexRGBA: highlighterColorRaw) ?? NSColor.systemYellow.withAlphaComponent(0.35) }
         set { highlighterColorRaw = newValue.toHexRGBA() }
@@ -1282,6 +1285,29 @@ struct ContentView: View {
                 print("Selection canceled/failed: \(error)")
             }
         }
+        .fileExporter(
+            isPresented: $showingFileExporter,
+            document: exportImage.map { ImageDocument(image: $0) },
+            contentType: preferredSaveFormat.utType,
+            defaultFilename: {
+                if let sel = selectedSnipURL {
+                    return sel.lastPathComponent
+                } else {
+                    return ImageSaver.generateFilename(for: preferredSaveFormat.rawValue)
+                }
+            }(),
+            onCompletion: { result in
+                switch result {
+                case .success(let url):
+                    selectedSnipURL = url
+                    refreshGalleryAfterSaving(to: url)
+                    reloadCurrentImage()
+                case .failure(let error):
+                    print("Export failed: \(error)")
+                }
+                exportImage = nil
+            }
+        )
     }
     
     // MARK: - Helpers
@@ -2966,8 +2992,8 @@ struct ContentView: View {
             if let url = selectedSnipURL {
                 // Write the flattened image back to the same file
                 if ImageSaver.writeImage(flattened, to: url, format: preferredSaveFormat.rawValue, quality: saveQuality) {
-                    refreshGalleryAfterSaving(to: url)
                     reloadCurrentImage()
+                    thumbnailRefreshTrigger = UUID()
                 }
             } else {
                 saveAsCurrent()
@@ -2981,24 +3007,8 @@ struct ContentView: View {
         pushUndoSnipshot()
         if let flattened = rasterize(base: img, objects: objects) {
             objects.removeAll()
-            let panel = NSSavePanel()
-            panel.allowedContentTypes = [preferredSaveFormat.utType]
-            panel.canCreateDirectories = true
-            panel.isExtensionHidden = false
-            if let sel = selectedSnipURL {
-                panel.directoryURL = sel.deletingLastPathComponent()
-                panel.nameFieldStringValue = sel.lastPathComponent
-            } else if let dir = SnipsDirectory() {
-                panel.directoryURL = dir
-                panel.nameFieldStringValue = ImageSaver.generateFilename(for: preferredSaveFormat.rawValue)
-            }
-            if panel.runModal() == .OK, let url = panel.url {
-                if ImageSaver.writeImage(flattened, to: url, format: preferredSaveFormat.rawValue, quality: saveQuality) {
-                    selectedSnipURL = url
-                    refreshGalleryAfterSaving(to: url)
-                    reloadCurrentImage()
-                }
-            }
+            exportImage = flattened
+            showingFileExporter = true
         }
     }
     
@@ -3632,7 +3642,41 @@ private struct SelectionOverlay: View {
     }
 }
 
-
+struct ImageDocument: FileDocument {
+    static var readableContentTypes: [UTType] = [.png, .jpeg, .heic]
+    static var writableContentTypes: [UTType] = [.png, .jpeg, .heic]
+    
+    let image: NSImage
+    
+    init(image: NSImage) {
+        self.image = image
+    }
+    
+    init(configuration: ReadConfiguration) throws {
+        guard let data = configuration.file.regularFileContents,
+              let image = NSImage(data: data) else {
+            throw CocoaError(.fileReadCorruptFile)
+        }
+        self.image = image
+    }
+    
+    func fileWrapper(configuration: WriteConfiguration) throws -> FileWrapper {
+        // Get the preferred format from ContentView's settings
+        let format: String
+        let quality: Double
+        
+        // Access UserDefaults directly since we can't access ContentView's @AppStorage here
+        let savedFormat = UserDefaults.standard.string(forKey: "preferredSaveFormat") ?? "png"
+        format = savedFormat
+        quality = UserDefaults.standard.double(forKey: "saveQuality")
+        
+        guard let data = ImageSaver.imageData(from: image, format: format, quality: quality) else {
+            throw CocoaError(.fileWriteUnknown)
+        }
+        
+        return FileWrapper(regularFileWithContents: data)
+    }
+}
 
 
 /// Creates a cut-out effect by punching a clear rectangle in an opaque layer.

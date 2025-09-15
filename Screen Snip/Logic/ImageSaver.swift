@@ -226,4 +226,26 @@ struct ImageSaver {
         CGImageDestinationAddImage(destination, cgImage, properties as CFDictionary)
         return CGImageDestinationFinalize(destination)
     }
+    
+    static func imageData(from image: NSImage, format: String, quality: Double) -> Data? {
+        guard let bestRep = image.representations
+            .compactMap({ $0 as? NSBitmapImageRep })
+            .max(by: { $0.pixelsWide * $0.pixelsHigh < $1.pixelsWide * $1.pixelsHigh }) else { return nil }
+        
+        switch format.lowercased() {
+        case "png":
+            return bestRep.representation(using: .png, properties: [:])
+        case "jpeg", "jpg":
+            return bestRep.representation(using: .jpeg, properties: [.compressionFactor: quality])
+        case "heic":
+            if let heicType = NSBitmapImageRep.FileType(rawValue: 10) {
+                return bestRep.representation(using: heicType, properties: [.compressionFactor: quality])
+            } else {
+                // Fallback to JPEG if HEIC type is not available
+                return bestRep.representation(using: .jpeg, properties: [.compressionFactor: quality])
+            }        default:
+            return bestRep.representation(using: .png, properties: [:])
+        }
+    }
+    
 }
