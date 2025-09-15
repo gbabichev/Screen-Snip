@@ -84,10 +84,10 @@ struct ContentView: View {
     @AppStorage("hideDockIcon") private var hideDockIcon: Bool = false
     @AppStorage("saveQuality") private var saveQuality: Double = 0.9
     @AppStorage("saveDirectoryPath") private var saveDirectoryPath: String = ""
-    @AppStorage("downsampleToNonRetinaClipboard") private var downsampleToNonRetinaClipboard: Bool = false
+    @AppStorage("downsampleToNonRetinaClipboard") private var downsampleToNonRetinaClipboard: Bool = true
     @AppStorage("downsampleToNonRetinaForSave") private var downsampleToNonRetinaForSave: Bool = false
-    @AppStorage("imageDisplayMode") private var imageDisplayMode: String = "actual" // "actual" or "fit"
-    @AppStorage("saveOnCopy") private var saveOnCopy: Bool = true
+    @AppStorage("imageDisplayMode") private var imageDisplayMode: String = "fit" // "actual" or "fit"
+    @AppStorage("saveOnCopy") private var saveOnCopy: Bool = false
     
     
     private enum ImporterKind { case image, folder }
@@ -606,12 +606,6 @@ struct ContentView: View {
                                         height: 90,
                                         refreshTrigger: thumbnailRefreshTrigger
                                     )
-                                    
-                                    Text(url.lastPathComponent)
-                                        .lineLimit(1)
-                                        .font(.caption2)
-                                        .foregroundStyle(.secondary)
-                                        .frame(width: 140)
                                 }
                                 .contentShape(Rectangle())
                                 .onTapGesture {
@@ -808,9 +802,13 @@ struct ContentView: View {
                                     .truncationMode(.middle)
                                     .foregroundStyle(.secondary)
                                 Spacer()
-                                Button("Change…") { activeImporter = .folder }
+                                Button("Change...") { activeImporter = .folder }
                                 if !saveDirectoryPath.isEmpty {
-                                    Button("Reset") { saveDirectoryPath = ""; loadExistingSnips() }
+                                    Button {
+                                        resetSaveDirectoryToDefault()
+                                    } label: {
+                                        Image(systemName: "arrow.counterclockwise")
+                                    }
                                 }
                             }
                         }
@@ -1915,6 +1913,16 @@ struct ContentView: View {
     }
     
     // MARK: - Save / Save As
+    
+    // Reset the custom save folder back to the default Pictures/Screen Snip directory.
+    private func resetSaveDirectoryToDefault() {
+        // Remove any previously stored security-scoped bookmark + path
+        UserDefaults.standard.removeObject(forKey: "saveDirectoryBookmark")
+        saveDirectoryPath = ""
+        // Ensure the default exists and refresh the visible list
+        _ = defaultSnipsDirectory()
+        loadExistingSnips()
+    }
     
     /// Save As… — prompts for a destination, updates gallery if under Snips folder.
     private func saveAsCurrent() {
