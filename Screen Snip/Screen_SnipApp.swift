@@ -57,10 +57,11 @@ struct Screen_SnipApp: App {
     }
 
     var body: some Scene {
+        // Remove Settings scene entirely - no Settings menu item
+        // Use an empty WindowGroup that we'll never show - all windows handled by WindowManager
         
-        Settings {
-            EmptyView()
-        }
+        Group {}
+        .handlesExternalEvents(matching: Set(arrayLiteral: "never-match"))
         .onChange(of: hideDockIcon) { _,newValue in
             applyActivationPolicy(newValue)
         }
@@ -70,8 +71,18 @@ struct Screen_SnipApp: App {
                 Button {
                     appDelegate.showAboutWindow()
                 } label: {
-                    Label("About", systemImage: "info.circle")
+                    Label("About Screen Snip", systemImage: "info.circle")
                 }
+                
+                Divider()
+                
+                Button {
+                    NSApplication.shared.terminate(nil)
+                } label: {
+                    Label("Quit Screen Snip", systemImage: "power")
+                }
+                .keyboardShortcut("q", modifiers: .command)
+                
             }
             
             CommandGroup(after: .newItem) {
@@ -286,7 +297,6 @@ struct Screen_SnipApp: App {
                     Label("Privacy Policy", systemImage: "hand.raised.circle")
                 }
             }
-            
         }
     }
 }

@@ -66,7 +66,14 @@ struct ContentView: View {
     // MARK: - Vars
     @Environment(\.openWindow) private var openWindow  // Add this line
 
-    
+    @State private var activeSecurityScopedURL: URL? = nil
+    private func endActiveSecurityScope() {
+        if let u = activeSecurityScopedURL {
+            u.stopAccessingSecurityScopedResource()
+            activeSecurityScopedURL = nil
+        }
+    }
+
     @State private var showingFileExporter = false
     @State private var exportImage: NSImage? = nil
     
@@ -824,7 +831,7 @@ struct ContentView: View {
                         Text("Save Format").bold()
                         Picker(selection: $preferredSaveFormatRaw, label: Image(systemName: "photo")) {
                             Text("PNG").tag(SaveFormat.png.rawValue)
-                            Text("JPEG").tag(SaveFormat.jpeg.rawValue)
+                            Text("JPG").tag(SaveFormat.jpeg.rawValue)
                             Text("HEIC").tag(SaveFormat.heic.rawValue)
                         }
                         .pickerStyle(.segmented)
@@ -855,13 +862,6 @@ struct ContentView: View {
                                 .toggleStyle(.switch)
                                 .disabled(downsampleToNonRetinaForSave && saveOnCopy)
                         }
-                        
-                        Divider()
-                        
-                        SettingsRow("Hide Dock Icon", subtitle: "App will continue to run in background.") {
-                            Toggle("", isOn: $hideDockIcon)
-                                .toggleStyle(.switch)
-                        }
                         SettingsRow("Fit image to window", subtitle: "Enabled : Fill Full Window.\nDisabled: Show True Size.") {
                             Toggle("", isOn: Binding(
                                 get: { imageDisplayMode == "fit" },
@@ -869,6 +869,14 @@ struct ContentView: View {
                             ))
                             .toggleStyle(.switch)
                         }
+                        
+                        Divider()
+                        
+                        SettingsRow("Hide Dock Icon", subtitle: "App will continue to run in background.") {
+                            Toggle("", isOn: $hideDockIcon)
+                                .toggleStyle(.switch)
+                        }
+
                         SettingsRow("Start on Logon", subtitle: "App will open when you logon.") {
                             Toggle("Launch at Login", isOn: $logonChecked)
                                 .toggleStyle(.switch)
@@ -1243,37 +1251,45 @@ struct ContentView: View {
             switch result {
             case .success(let urls):
                 guard let url = urls.first else { return }
+
                 if url.hasDirectoryPath {
-                    // Start accessing the security-scoped resource
+                    // ——— Directory chosen: start scope and persist bookmark for the folder ———
                     guard url.startAccessingSecurityScopedResource() else {
-                        print("Failed to access security-scoped resource")
+                        print("[Sandbox] Failed to start scope for folder: \(url.path)")
                         return
                     }
-                    
                     do {
-                        // Create and store a security-scoped bookmark
                         let bookmarkData = try url.bookmarkData(
                             options: .withSecurityScope,
                             includingResourceValuesForKeys: nil,
                             relativeTo: nil
                         )
-                        
-                        // Store the bookmark data instead of just the path
                         UserDefaults.standard.set(bookmarkData, forKey: "saveDirectoryBookmark")
                         saveDirectoryPath = url.path
-                        
                     } catch {
-                        print("Failed to create bookmark: \(error)")
+                        print("[Sandbox] Failed to create folder bookmark: \(error)")
                         url.stopAccessingSecurityScopedResource()
                         return
                     }
-                    
                     DispatchQueue.main.async {
                         loadExistingSnips()
                     }
                 } else {
-                    // Image chosen
+                    // ——— Image file chosen: start scope and (optionally) persist bookmark for reopen ———
+                    let gotScope = url.startAccessingSecurityScopedResource()
+                    if !gotScope {
+                        print("[Sandbox] Failed to start scope for file: \(url.path)")
+                    }
+
+                    // Persist a bookmark so future reopen flows can resolve with scope if needed
+                    if let data = try? url.bookmarkData(options: .withSecurityScope,
+                                                        includingResourceValuesForKeys: nil,
+                                                        relativeTo: nil) {
+                        UserDefaults.standard.set(data, forKey: "lastOpenedImageBookmark")
+                    }
+
                     DispatchQueue.main.async {
+                        // Clear editing state and load the picked image
                         undoStack.removeAll()
                         redoStack.removeAll()
                         selectedSnipURL = url
@@ -1292,6 +1308,7 @@ struct ContentView: View {
                         }
                     }
                 }
+
             case .failure(let error):
                 print("Selection canceled/failed: \(error)")
             }

@@ -1,6 +1,6 @@
 <div align="center">
 
-# Screen Snap
+# Screen Snip
 
 <picture>
   <source srcset="Documentation/icon-dark.png" media="(prefers-color-scheme: dark)">
@@ -11,16 +11,113 @@
 
 A small yet powerful **macOS app** for taking & editing screenshots!
 
-Inspired by Greenshot on Windows - the goal is to make a tiny app that can do the basics and a little more. 
+Inspired by Greenshot on Windows - the goal is to make a tiny app that can do the basics and look great while doing it. 
 
 </div>
 
-## Work in Progress
-- Start on Login.
+## 🖥️ Screenshots 
+
+<p align="center">
+    <a href="Documentation/App2.png"><img src="Documentation/App2.png" width="45%"></a>
+</p>
+
+## 🖥️ Features, Tools, and Settings
+
+### Features
+- Take screenshots!
+  - With a global hotkey even when the app is in the background. 
+- Open Images for editing. 
+  - Native "Open With" integration in Finder. 
+- Copy to Clipboard / Save / Save As. 
+
+
+### Tools
+| Tool       | Shortcut   | Notes              |
+|:---------------|:--------:|-------------------:|
+| Take Screenshot              | ⌘ + ⇧ + 2     | Command + Shift + 2       |
+| Pointer Tool                 | ⌘ + 1         | Moves objects around      |
+| Pen Tool                     | ⌘ + 2         | Draw lines. |
+| Arrow Tool                   | ⌘ + 3         | Draw lines with arrows.|
+| Highlighter                  | ⌘ + 4         | Highlights. |
+| Rectangle Tool               | ⌘ + 5         | Draw squres / rectangles |
+| Oval Tool                    | ⌘ + 6         | Draw circles / ovals |
+| Badge Tool                   | ⌘ + 7         | Incremental Numbers |
+| Text Tool                    | ⌘ + 8         | Insert text. Colored backgrounds optional.  |
+| Crop Tool                    | ⌘ + 9         | Crops. |
+| Reset Zoom                   | ⌘ + 0         |  |
+| Zoom In                      | ⌘ + +         |  |
+| Zoom Out                     | ⌘ + -         |  |
+
+
+### ⚙️ Settings
+
+These settings are customizable by you. 
+- File Save Destination
+- Save Format
+  - PNG
+  - JPG (With Quality Slider)
+  - HEIC (With Quality Slider)
+- Downsample Retina Screenshots 
+  - If you take a screenshot on a Retina or High-DPI display, it will downsample it to 1x immediately. 
+- Automatically Save on Copy
+  - When you take a screenshot, it can automatically save to disk. 
+- Downsample Retina Screenshots for Copy
+  - If a High-DPI screenshot exists, we can automatically downsample it to 1x for easier & quicker sharing. 
+- Fit Images to Window
+  - You can view your snips in "actual" size, or enhance them to take the full window size. 
+- Hide Dock Icon
+  - Since the app runs in the background, you may not want a visible dock icon constantly. 
+- Start on Logon
+  - Start the app when logging into your Mac. 
 
 
 
-### Completed 
+
+
+## 🔍 Troubleshooting
+
+
+
+## 🖥️ Install & Minimum Requirements
+
+- macOS 26.0 or later  
+- Apple Silicon & Intel (Not tested on Intel)
+- ~20 MB free disk space  
+
+
+### ⚙️ Installation
+
+(when released) Download from Releases. It's signed & notarized!
+
+### ⚙️ Build it yourself!
+
+Clone the repo and build with Xcode:
+
+<!-- ```bash
+git clone https://github.com/gbabichev/thumbnailer.git
+cd thumbnailer
+open thumbnailer.xcodeproj
+``` -->
+
+## Known Issues
+- Zooming doesn't track your cursor. 
+
+## 📝 Changelog
+
+### 1.0 
+- Not released yet. Build yourself to follow along!
+
+## 📄 License
+
+MIT — free for personal and commercial use. 
+
+## Progress
+<details>
+<summary>Work in Progress</summary>
+</details>
+<details>
+<summary>Completed</summary> 
+
 - <del>Undo & Redo
 - <del>Add Text fields with font colors, sizes, and background fill.
    - Click onto text area to adjust it. Not spwan new text boxes.
@@ -68,60 +165,5 @@ Inspired by Greenshot on Windows - the goal is to make a tiny app that can do th
 - <del>Fix crop, text, badge after reworking the canvas. 
 - <del>Rework settings UI
 - <del>Add Right click Open With menu. 
-
-
-### Stretch Goals 
-- User adjustable hotkey for taking a snap. 
-
-
-## 🖥️ Screenshots 
-
-<!-- <p align="center">
-    <a href="Documentation/App1.png"><img src="Documentation/App1.png" width="45%"></a>
-    <a href="Documentation/App2.png"><img src="Documentation/App2.png" width="45%"></a>
-</p> -->
-
-## 🖥️ Tools
-
-
-
-
-
-
-
-## 🔍 Troubleshooting
-
-
-
-## 🖥️ Install & Minimum Requirements
-
-- macOS 26.0 or later  
-- Apple Silicon & Intel (Not tested on Intel)
-- ~20 MB free disk space  
-
-
-### ⚙️ Installation
-
-(when released) Download from Releases. It's signed & notarized!
-
-### ⚙️ Build it yourself!
-
-Clone the repo and build with Xcode:
-
-<!-- ```bash
-git clone https://github.com/gbabichev/thumbnailer.git
-cd thumbnailer
-open thumbnailer.xcodeproj
-``` -->
-
-## Known Issues
-- Zooming doesn't track your cursor. 
-
-## 📝 Changelog
-
-### 1.0 
-- Not released yet. Build yourself to follow along!
-
-## 📄 License
-
-MIT — free for personal and commercial use. 
+- <del>Start on Login.
+</details>
