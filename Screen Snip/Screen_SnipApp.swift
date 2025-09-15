@@ -1,8 +1,5 @@
 import SwiftUI
-import ScreenCaptureKit
-import UniformTypeIdentifiers
 import Combine
-import Cocoa
 
 enum ToolKind: String {
     case pointer
@@ -60,6 +57,15 @@ struct Screen_SnipApp: App {
             applyActivationPolicy(newValue)
         }
         .commands {
+            
+            CommandGroup(replacing: .appInfo) {
+                Button {
+                    appDelegate.showAboutWindow()
+                } label: {
+                    Label("About", systemImage: "info.circle")
+                }
+            }
+            
             CommandGroup(after: .newItem) {
                 Button {
                     NotificationCenter.default.post(
@@ -375,6 +381,9 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
                 )
             }
         }
+        
+        
+        
     }
     
     private func openPrivacyPreferences(needsAccessibility: Bool, needsScreenRecording: Bool) {
@@ -528,317 +537,25 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             }
         }
     }
-}
-
-
-// Simplified window manager - let SwiftUI handle the window lifecycle
-final class WindowManager {
-    static let shared = WindowManager()
     
-    private var mainWindowController: NSWindowController?
-    private let windowFrameAutosaveName = "MainEditorWindow"
-    
-    private init() {}
-    
-    func closeAllAppWindows() {
-        for window in NSApp.windows {
-            if window.isVisible &&
-               !window.isMiniaturized &&
-               window.canBecomeKey &&
-               !window.isSheet {
-                
-                window.close()
-            }
-        }
-    }
-    
-    func ensureMainWindow() {
-        // If we already have a valid window, just bring it forward
-        if let controller = mainWindowController,
-           let window = controller.window,
-           !window.isSheet {
-            
-            if window.isMiniaturized {
-                window.deminiaturize(nil)
-            }
-            
-            window.makeKeyAndOrderFront(nil)
-            window.orderFrontRegardless()
-            NSApp.activate(ignoringOtherApps: true)
-            return
-        }
-        
-        // Create new window
-        createMainWindow()
-    }
-    
-    private func createMainWindow(shouldActivate: Bool = true) {
-        // Clean up existing window
-        if let controller = mainWindowController {
-            controller.window?.close()
-            mainWindowController = nil
-        }
-        
-        let window = NSWindow(
-            contentRect: NSRect(x: 0, y: 0, width: 1000, height: 700),
-            styleMask: [.titled, .closable, .miniaturizable, .resizable, .fullSizeContentView],
-            backing: .buffered,
-            defer: false
-        )
-        
-        window.titlebarAppearsTransparent = true
-        window.isMovableByWindowBackground = false
-        window.tabbingMode = .disallowed
+    // MARK: - About View
+    @objc func showAboutWindow() {
+        let aboutView = AboutView() // Your SwiftUI view
+        let hostingController = NSHostingController(rootView: aboutView)
+        let window = NSWindow(contentViewController: hostingController)
+        window.title = "About"
+        window.setContentSize(NSSize(width: 400, height: 400))
+        window.styleMask = [.titled, .closable]
         window.isReleasedWhenClosed = false
-        
-        let contentView = ContentView()
-        window.contentViewController = NSHostingController(rootView: contentView)
-        
-        // Create and configure window controller
-        let controller = NSWindowController(window: window)
-        controller.windowFrameAutosaveName = windowFrameAutosaveName
-        
-        // Set up close notification to clean up our reference
-        NotificationCenter.default.addObserver(
-            forName: NSWindow.willCloseNotification,
-            object: window,
-            queue: .main
-        ) { [weak self] _ in
-            self?.mainWindowController = nil
-        }
-        
-        // Store reference
-        mainWindowController = controller
-        
-        if shouldActivate {
-            window.center()
-            controller.showWindow(nil)
-            NSApp.activate(ignoringOtherApps: true)
-        } else {
-            window.center()
-            window.orderFront(nil)
-        }
+        window.makeKeyAndOrderFront(nil)
+        window.titlebarAppearsTransparent = true
+        window.titleVisibility = .hidden
+        NSApp.activate(ignoringOtherApps: true)
     }
     
-    func loadImageIntoWindow(url: URL, shouldActivate: Bool = true) {
-        // Always ensure we have a window first
-        ensureMainWindow()
-        
-        let userInfo: [String: Any] = [
-            "url": url,
-            "shouldActivate": shouldActivate
-        ]
-        
-        // Send notification immediately - now there's a ContentView to receive it
-        NotificationCenter.default.post(
-            name: Notification.Name("com.georgebabichev.screenSnip.beginSnipFromIntent"),
-            object: nil,
-            userInfo: userInfo
-        )
-    }
-    
-    func hasVisibleWindow() -> Bool {
-        guard let controller = mainWindowController,
-              let window = controller.window else { return false }
-        
-        return window.isVisible && !window.isMiniaturized
-    }
 }
 
 
-final class GlobalHotKeyManager {
-    static let shared = GlobalHotKeyManager()
-    
-    private var eventTap: CFMachPort?
-    private var runLoopSource: CFRunLoopSource?
-    
-    private init() {}
-    
-    func registerSnipHotKey() {
-        unregister()
-        
-        guard AXIsProcessTrusted() else {
-            print("Accessibility permissions not granted. Cannot register hotkey.")
-            return
-        }
-        
-        // Request accessibility permissions if needed
-        guard AXIsProcessTrusted() else {
-            print("Accessibility permissions not granted. Cannot register hotkey.")
-            return
-        }
-        
-        // Create event tap for system-wide key monitoring
-        let eventMask = (1 << CGEventType.keyDown.rawValue)
-        
-        eventTap = CGEvent.tapCreate(
-            tap: .cgSessionEventTap,
-            place: .headInsertEventTap,
-            options: .defaultTap,
-            eventsOfInterest: CGEventMask(eventMask),
-            callback: { (proxy, type, event, refcon) -> Unmanaged<CGEvent>? in
-                guard let refcon = refcon else { return Unmanaged.passUnretained(event) }
-                
-                let manager = Unmanaged<GlobalHotKeyManager>.fromOpaque(refcon).takeUnretainedValue()
-                
-                if manager.handleCGEvent(event) {
-                    // Consume the event
-                    return nil
-                } else {
-                    // Pass the event through
-                    return Unmanaged.passUnretained(event)
-                }
-            },
-            userInfo: Unmanaged.passUnretained(self).toOpaque()
-        )
-        
-        guard let eventTap = eventTap else {
-            print("Failed to create event tap")
-            return
-        }
-        
-        runLoopSource = CFMachPortCreateRunLoopSource(kCFAllocatorDefault, eventTap, 0)
-        CFRunLoopAddSource(CFRunLoopGetCurrent(), runLoopSource, .commonModes)
-        CGEvent.tapEnable(tap: eventTap, enable: true)
-        
-        print("Registered system-wide hotkey monitor")
-    }
-    
-    func unregister() {
-        if let eventTap = eventTap {
-            CGEvent.tapEnable(tap: eventTap, enable: false)
-            
-            if let runLoopSource = runLoopSource {
-                CFRunLoopRemoveSource(CFRunLoopGetCurrent(), runLoopSource, .commonModes)
-                self.runLoopSource = nil
-            }
-            
-            self.eventTap = nil
-            print("Unregistered hotkey monitor")
-        }
-    }
-    
-    private func handleCGEvent(_ event: CGEvent) -> Bool {
-        let keyCode = event.getIntegerValueField(.keyboardEventKeycode)
-        let flags = event.flags
-        
-        // Check for Cmd+Shift+2
-        guard keyCode == 19,  // Key code for '2'
-              flags.contains(.maskCommand),
-              flags.contains(.maskShift) else {
-            return false // Don't consume the event
-        }
-        
-        guard !isCurrentlyCapturing else { return true }
-        
-        print("System-wide hotkey detected: Cmd+Shift+2")
-        
-        DispatchQueue.main.async { [weak self] in
-            self?.handleSnipHotkey()
-        }
-        
-        return true // Consume the event
-    }
-    
-    private var isCurrentlyCapturing = false
-    
-    private func handleSnipHotkey() {
-        guard !isCurrentlyCapturing else { return }
-        isCurrentlyCapturing = true
-        
-        print("Starting screen capture...")
-        
-        WindowManager.shared.closeAllAppWindows()
-        
-        SelectionWindowManager.shared.present(onComplete: { [weak self] rect in
-            Task { [weak self] in
-                defer {
-                    DispatchQueue.main.async { [weak self] in
-                        self?.isCurrentlyCapturing = false
-                    }
-                }
-                
-                if let img = await self?.captureScreenshot(rect: rect) {
-                    if let savedURL = ImageSaver.saveImage(img) {
-                        DispatchQueue.main.async {
-                            WindowManager.shared.loadImageIntoWindow(url: savedURL, shouldActivate: true)
-                        }
-                    }
-                }
-            }
-        })
-        
-        SelectionWindowManager.shared.onCancel = { [weak self] in
-            self?.isCurrentlyCapturing = false
-        }
-    }
-    
-    func captureScreenshot(rect selectedGlobalRect: CGRect) async -> NSImage? {
-        guard let bestScreen = bestScreenForSelection(selectedGlobalRect) else { return nil }
-        let screenFramePts = bestScreen.frame
-        let intersectPts = selectedGlobalRect.intersection(screenFramePts)
-        if intersectPts.isNull || intersectPts.isEmpty { return nil }
-        
-        guard let cgIDNum = bestScreen.deviceDescription[NSDeviceDescriptionKey("NSScreenNumber")] as? NSNumber else { return nil }
-        let cgID = CGDirectDisplayID(truncating: cgIDNum)
-        
-        do {
-            let content = try await SCShareableContent.current
-            guard let scDisplay = content.displays.first(where: { $0.displayID == cgID }) else { return nil }
-            
-            let scale = bestScreen.backingScaleFactor
-            let pxPerPtX = scale
-            let pxPerPtY = scale
-            
-            let filter = SCContentFilter(display: scDisplay, excludingWindows: [])
-            guard let fullCG = await ScreenCapturer.shared.captureImage(using: filter, display: scDisplay) else { return nil }
-            
-            let cropPx = cropRectPixels(intersectPts,
-                                        withinScreenFramePts: screenFramePts,
-                                        imageSizePx: CGSize(width: fullCG.width, height: fullCG.height),
-                                        scaleX: pxPerPtX,
-                                        scaleY: pxPerPtY)
-            
-            let clamped = CGRect(x: max(0, cropPx.origin.x),
-                                 y: max(0, cropPx.origin.y),
-                                 width: min(cropPx.width, CGFloat(fullCG.width) - max(0, cropPx.origin.x)),
-                                 height: min(cropPx.height, CGFloat(fullCG.height) - max(0, cropPx.origin.y)))
-            guard clamped.width > 1, clamped.height > 1 else { return nil }
-            
-            guard let cropped = fullCG.cropping(to: clamped) else { return nil }
-            
-            let rep = NSBitmapImageRep(cgImage: cropped)
-            let pointSize = CGSize(width: CGFloat(cropped.width) / pxPerPtX, height: CGFloat(cropped.height) / pxPerPtY)
-            rep.size = pointSize
-            
-            let nsImage = NSImage(size: pointSize)
-            nsImage.addRepresentation(rep)
-            return nsImage
-        } catch {
-            return nil
-        }
-    }
-    
-    private func cropRectPixels(_ selectionPts: CGRect, withinScreenFramePts screenPts: CGRect, imageSizePx: CGSize, scaleX: CGFloat, scaleY: CGFloat) -> CGRect {
-        let localXPts = selectionPts.origin.x - screenPts.origin.x
-        let localYPts = selectionPts.origin.y - screenPts.origin.y
-        let widthPx  = selectionPts.size.width * scaleX
-        let heightPx = selectionPts.size.height * scaleY
-        let xPx = localXPts * scaleX
-        let yPx = imageSizePx.height - (localYPts * scaleY + heightPx)
-        return CGRect(x: xPx.rounded(.down), y: yPx.rounded(.down), width: widthPx.rounded(.down), height: heightPx.rounded(.down))
-    }
-    
-    private func bestScreenForSelection(_ selection: CGRect) -> NSScreen? {
-        var best: (screen: NSScreen, area: CGFloat)?
-        for s in NSScreen.screens {
-            let a = selection.intersection(s.frame).area
-            if a > (best?.area ?? 0) { best = (s, a) }
-        }
-        return best?.screen
-    }
-}
 
-private extension CGRect {
-    var area: CGFloat { max(0, width) * max(0, height) }
-}
+
+
