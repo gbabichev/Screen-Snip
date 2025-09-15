@@ -26,7 +26,6 @@ private func containingMainAppURL() -> URL? {
 @MainActor
 class LoginItemHelperApp: NSObject, NSApplicationDelegate {
     func applicationDidFinishLaunching(_ notification: Notification) {
-        print("🔧 Helper: Starting launch process")
         
         let mainAppBundleID = "com.georgebabichev.Screen-Snip"
         
@@ -36,25 +35,16 @@ class LoginItemHelperApp: NSObject, NSApplicationDelegate {
         if let defaults = UserDefaults(suiteName: kAppGroupID) {
             defaults.set(true, forKey: kLaunchedByHelperKey)
             defaults.synchronize()
-            print("🔧 Helper: Wrote App Group flag: \(kLaunchedByHelperKey)=true in \(kAppGroupID)")
-        } else {
-            print("⚠️ Helper: Could not access App Group defaults for \(kAppGroupID). Check entitlements.")
         }
-
         // Prefer the containing app (Debug/Test builds) and fall back to installed app by bundle ID
         let resolvedMainAppURL = containingMainAppURL() ?? NSWorkspace.shared.urlForApplication(withBundleIdentifier: mainAppBundleID)
 
         guard !NSWorkspace.shared.runningApplications.contains(where: { $0.bundleIdentifier == mainAppBundleID }),
               let mainAppURL = resolvedMainAppURL else {
-            print("🔧 Helper: Main app is already running or can't be found, terminating helper")
             NSApp.terminate(nil)
             return
         }
 
-        print("🔧 Helper: Resolved main app bundle path: \(mainAppURL.path)")
-        print("🔧 Helper: Launching main app at: \(mainAppURL)")
-        print("🔧 Helper: Launching without CLI args/env; using App Group flag.")
-        
         // Launch the main app
         NSWorkspace.shared.openApplication(at: mainAppURL, configuration: config) { app, error in
             if let error = error {
@@ -66,7 +56,6 @@ class LoginItemHelperApp: NSObject, NSApplicationDelegate {
             }
             
             Task { @MainActor in
-                print("🔧 Helper: Terminating helper app")
                 NSApp.terminate(nil)
             }
         }
@@ -74,7 +63,6 @@ class LoginItemHelperApp: NSObject, NSApplicationDelegate {
         // Failsafe termination
         DispatchQueue.main.asyncAfter(deadline: .now() + 3.0) { // Increased to 3 seconds
             Task { @MainActor in
-                print("🔧 Helper: Failsafe termination triggered")
                 NSApp.terminate(nil)
             }
         }

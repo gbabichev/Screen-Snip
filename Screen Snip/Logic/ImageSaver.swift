@@ -1,7 +1,10 @@
-import Foundation
+import SwiftUI
 import AppKit
+@preconcurrency import ScreenCaptureKit
+import VideoToolbox
 import UniformTypeIdentifiers
 import ImageIO
+import Combine
 
 // MARK: - Centralized Image Saving
 struct ImageSaver {
@@ -248,4 +251,34 @@ struct ImageSaver {
         }
     }
     
+}
+
+struct ImageDocument: FileDocument {
+    nonisolated(unsafe) static var readableContentTypes: [UTType] = [.png, .jpeg, .heic]
+    nonisolated(unsafe) static var writableContentTypes: [UTType] = [.png, .jpeg, .heic]
+    
+    let image: NSImage
+    
+    init(image: NSImage) {
+        self.image = image
+    }
+    
+    init(configuration: ReadConfiguration) throws {
+        guard let data = configuration.file.regularFileContents,
+              let image = NSImage(data: data) else {
+            throw CocoaError(.fileReadCorruptFile)
+        }
+        self.image = image
+    }
+    
+    func fileWrapper(configuration: WriteConfiguration) throws -> FileWrapper {
+        let format = UserDefaults.standard.string(forKey: "preferredSaveFormat") ?? "png"
+        let quality = UserDefaults.standard.double(forKey: "saveQuality")
+        
+        guard let data = ImageSaver.imageData(from: image, format: format, quality: quality) else {
+            throw CocoaError(.fileWriteUnknown)
+        }
+        
+        return FileWrapper(regularFileWithContents: data)
+    }
 }

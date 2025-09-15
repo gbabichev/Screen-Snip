@@ -115,11 +115,5 @@ final class WindowManager {
             userInfo: userInfo
         )
     }
-    
-    func hasVisibleWindow() -> Bool {
-        guard let controller = mainWindowController,
-              let window = controller.window else { return false }
-        
-        return window.isVisible && !window.isMiniaturized
-    }
 }
+

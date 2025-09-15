@@ -466,39 +466,6 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         alert.runModal()
     }
     
-    // Keep your existing methods below
-    private func showAccessibilityPermissionAlert() {
-        let alert = NSAlert()
-        alert.messageText = "Accessibility Permission Required"
-        alert.informativeText = "Screen Snip needs accessibility permissions to capture screenshots with the global hotkey (⌘⇧2). Please grant permission in System Preferences > Privacy & Security > Accessibility."
-        alert.alertStyle = .informational
-        alert.addButton(withTitle: "Open System Preferences")
-        alert.addButton(withTitle: "Continue Without Hotkey")
-        
-        let response = alert.runModal()
-        
-        if response == .alertFirstButtonReturn {
-            // Open System Preferences to Privacy & Security > Accessibility
-            if let url = URL(string: "x-apple.systempreferences:com.apple.preference.security?Privacy_Accessibility") {
-                NSWorkspace.shared.open(url)
-            }
-            
-            // Show a follow-up dialog
-            DispatchQueue.main.asyncAfter(deadline: .now() + 1.0) {
-                self.showPermissionFollowUpAlert()
-            }
-        }
-    }
-    
-    private func showPermissionFollowUpAlert() {
-        let followUpAlert = NSAlert()
-        followUpAlert.messageText = "Grant Permission and Restart"
-        followUpAlert.informativeText = "After enabling accessibility permissions for Screen Snip, please restart the app for the hotkey to work."
-        followUpAlert.alertStyle = .informational
-        followUpAlert.addButton(withTitle: "OK")
-        followUpAlert.runModal()
-    }
-    
     func applicationShouldTerminateAfterLastWindowClosed(_ sender: NSApplication) -> Bool {
         return false
     }
