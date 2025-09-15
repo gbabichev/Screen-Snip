@@ -144,10 +144,10 @@ struct GalleryView: View {
     private func extractDateString(from url: URL) -> String {
         let filename = url.deletingPathExtension().lastPathComponent
         
-        // Try to extract date from GSnip_YYYYMMDD_HHMMSS_xxx format
-        if filename.hasPrefix("GSnip_"),
-           let dateRange = filename.range(of: "GSnip_"),
-           filename.count >= "GSnip_YYYYMMDD".count {
+        // Try to extract date from Snip_YYYYMMDD_HHMMSS_xxx format
+        if filename.hasPrefix("Snip_"),
+           let dateRange = filename.range(of: "Snip_"),
+           filename.count >= "Snip_YYYYMMDD".count {
             let afterPrefix = filename[dateRange.upperBound...]
             let dateString = String(afterPrefix.prefix(8)) // YYYYMMDD
             
@@ -174,8 +174,8 @@ struct GalleryView: View {
     private func extractTimeString(from url: URL) -> String {
         let filename = url.deletingPathExtension().lastPathComponent
         
-        // Try to extract time from GSnip_YYYYMMDD_HHMMSS_xxx format
-        if filename.hasPrefix("GSnip_") {
+        // Try to extract time from Snip_YYYYMMDD_HHMMSS_xxx format
+        if filename.hasPrefix("Snip_") {
             let components = filename.components(separatedBy: "_")
             if components.count >= 3 {
                 return components[2] // HHMMSS

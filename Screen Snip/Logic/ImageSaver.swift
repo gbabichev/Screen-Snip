@@ -9,7 +9,7 @@ struct ImageSaver {
     private static func generateFilename(fileExtension: String) -> String {
         let formatter = DateFormatter()
         formatter.dateFormat = "yyyyMMdd_HHmmss_SSS"
-        return "GSnip_\(formatter.string(from: Date())).\(fileExtension)"
+        return "Snip_\(formatter.string(from: Date())).\(fileExtension)"
     }
     
     static func saveImage(_ image: NSImage, to directory: URL? = nil) -> URL? {
