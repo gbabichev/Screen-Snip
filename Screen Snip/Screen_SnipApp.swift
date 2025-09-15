@@ -1,5 +1,13 @@
+
 import SwiftUI
 import Combine
+import os.log
+
+// MARK: - App Group constants
+private let kAppGroupID = "group.com.georgebabichev.Screen-Snip" // must match both targets' entitlements
+private let kLaunchedByHelperKey = "launchedByHelper"
+
+
 
 enum ToolKind: String {
     case pointer
@@ -295,16 +303,39 @@ private func applyActivationPolicy(_ hide: Bool) {
 final class AppDelegate: NSObject, NSApplicationDelegate {
     
     func applicationDidFinishLaunching(_ notification: Notification) {
-        
+        // Debug: show basic launch context
+        let args = ProcessInfo.processInfo.arguments
+        let env  = ProcessInfo.processInfo.environment
+        print("🚀 Main app bundle: \(Bundle.main.bundlePath)")
+        print("🚀 Main app launched with args=\(args)")
+        if let flag = env["LAUNCHED_AT_LOGIN"] { print("🚀 Env[LAUNCHED_AT_LOGIN]=\(flag)") }
+
         checkPermissions()
-        
-        // Register hotkey after app is fully launched (only if we have permissions)
+
         if isAccessibilityEnabled() {
             GlobalHotKeyManager.shared.registerSnipHotKey()
         }
-        
-        // Opens a window on launch.
-        WindowManager.shared.ensureMainWindow()
+
+        // Primary and reliable signal: App Group flag set by the helper
+        let defaults = UserDefaults(suiteName: kAppGroupID)
+        let launchedViaAppGroup = defaults?.bool(forKey: kLaunchedByHelperKey) ?? false
+        if launchedViaAppGroup {
+            // consume the one-shot signal so subsequent manual launches behave normally
+            defaults?.removeObject(forKey: kLaunchedByHelperKey)
+            print("✅ Detected helper launch via App Group (")
+        }
+
+        // Secondary (dev) fallbacks in case you still launch with args/env from Xcode
+        let launchedViaArg = args.contains("--launched-at-login")
+        let launchedViaEnv = env["LAUNCHED_AT_LOGIN"] == "1"
+
+        let launchedAtLogin = launchedViaAppGroup || launchedViaArg || launchedViaEnv
+
+        if !launchedAtLogin {
+            WindowManager.shared.ensureMainWindow()
+        } else {
+            print("🚫 Suppressing initial window (launched at login)")
+        }
     }
     
     private func checkPermissions() {
@@ -498,29 +529,52 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     }
     
     private func handleOpenFiles(_ urls: [URL]) {
+        print("🔍 handleOpenFiles called with \(urls.count) URLs:")
+        for (index, url) in urls.enumerated() {
+            print("  [\(index)] \(url.absoluteString)")
+            print("      - isFileURL: \(url.isFileURL)")
+            print("      - path: \(url.path)")
+            print("      - pathExtension: '\(url.pathExtension)'")
+        }
+        
         let supportedExtensions: Set<String> = ["png", "jpg", "jpeg", "heic", "heif", "gif", "tiff", "tif", "webp"]
         let imageURLs = urls.filter { url in
-            guard url.isFileURL else { return false }
+            // First check if it's a file URL
+            guard url.isFileURL else {
+                print("  - Filtered out non-file URL: \(url.absoluteString)")
+                return false
+            }
+            
+            // Filter out paths that look like launch arguments or app container paths
+            let path = url.path
+            if path.contains("/Library/Containers/") && (path.hasSuffix("/YES") || path.hasSuffix("/NO")) {
+                print("  - Filtered out launch argument artifact: \(path)")
+                return false
+            }
+            
+            // Check if the file actually exists
+            guard FileManager.default.fileExists(atPath: path) else {
+                print("  - Filtered out non-existent file: \(path)")
+                return false
+            }
+            
+            // Check if it has a supported extension
             let ext = url.pathExtension.lowercased()
-            return supportedExtensions.contains(ext)
+            let isSupported = supportedExtensions.contains(ext)
+            if !isSupported {
+                print("  - Filtered out unsupported extension '\(ext)' for: \(url.lastPathComponent)")
+            }
+            return isSupported
         }
         
         guard !imageURLs.isEmpty else {
-            DispatchQueue.main.async {
-                let alert = NSAlert()
-                alert.messageText = "Unsupported File Type"
-                alert.informativeText = "Screen Snip can only open image files (PNG, JPEG, HEIC, GIF, TIFF, WebP)."
-                alert.alertStyle = .warning
-                alert.addButton(withTitle: "OK")
-                alert.runModal()
-            }
-            return
+            print("⚠️ No valid image URLs found - not showing alert")
+            return // Don't show alert for non-existent files or launch artifacts
         }
         
         let firstImage = imageURLs[0]
         
         DispatchQueue.main.async {
-            // Send notification to load the image
             let userInfo: [String: Any] = [
                 "url": firstImage,
                 "shouldActivate": true

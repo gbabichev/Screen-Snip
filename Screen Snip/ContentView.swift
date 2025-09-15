@@ -8,6 +8,7 @@ import VideoToolbox
 import UniformTypeIdentifiers
 import ImageIO
 import Combine
+import ServiceManagement
 
 // MARK: - NSColor Hex Conversion Helper (no RawRepresentable conformance)
 extension NSColor {
@@ -60,6 +61,15 @@ enum SaveFormat: String, CaseIterable, Identifiable {
 }
 
 struct ContentView: View {
+    
+    // MARK: - Launch On Logon
+    private static let loginHelperIdentifier = "com.georgebabichev.ScreenSnipHelper"
+    @State private var logonChecked: Bool = {
+        let loginService = SMAppService.loginItem(identifier: loginHelperIdentifier)
+        return loginService.status == .enabled   // True if login item is currently enabled
+    }()
+    
+    // MARK: - Vars
     @Environment(\.openWindow) private var openWindow  // Add this line
 
     
@@ -865,6 +875,13 @@ struct ContentView: View {
                             ))
                             .toggleStyle(.switch)
                         }
+                        SettingsRow("Start on Logon", subtitle: "App will open when you logon.") {
+                            Toggle("Launch at Login", isOn: $logonChecked)
+                                .toggleStyle(.switch)
+                                .onChange(of: logonChecked) {
+                                    toggleLaunchAtLogin(logonChecked)
+                                }
+                        }
                         
                         
                         
@@ -1310,8 +1327,35 @@ struct ContentView: View {
         )
     }
     
-    // MARK: - Helpers
-    
+    // MARK: - Launch On Logon Helpers
+    // Handles enabling or disabling the login helper at login
+    private func toggleLaunchAtLogin(_ enabled: Bool) {
+        // Create a reference to the login item service using the static identifier
+        let loginService = SMAppService.loginItem(identifier: Self.loginHelperIdentifier)
+        do {
+            if enabled {
+                // If enabled, try to register the login helper so it launches at login
+                try loginService.register()
+            } else {
+                // If disabled, try to unregister it
+                try loginService.unregister()
+            }
+        } catch {
+            // If anything fails, show a user-facing alert dialog with error info
+            showErrorAlert(message: "Failed to update Login Item.", info: error.localizedDescription)
+        }
+    }
+
+    // Utility to show an error alert dialog to the user
+    private func showErrorAlert(message: String, info: String? = nil) {
+        let alert = NSAlert()                  // Create a new alert
+        alert.messageText = message            // Set the main alert message
+        if let info = info {                   // Optionally set additional error details
+            alert.informativeText = info
+        }
+        alert.alertStyle = .warning            // Set alert style (yellow exclamation)
+        alert.runModal()                       // Display the alert as a modal dialog
+    }
     
     
     
