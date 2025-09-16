@@ -1267,12 +1267,13 @@ struct ContentView: View {
             }
             
             // Capture Region button (always available)
-//            ToolbarItem(placement: .primaryAction) {
-//                Button() {
-//                    Label("Capture Region", systemImage: "camera.viewfinder")
-//                }
-//                .keyboardShortcut("2", modifiers: [.command, .shift])
-//            }
+            ToolbarItem(placement: .primaryAction) {
+                Button {
+                    GlobalHotKeyManager.shared.triggerCapture()
+                } label: {
+                    Label("Capture Region", systemImage: "camera.viewfinder")
+                }
+            }
         }
         .fileImporter(
             isPresented: Binding(

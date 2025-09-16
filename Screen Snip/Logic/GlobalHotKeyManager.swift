@@ -223,6 +223,10 @@ final class GlobalHotKeyManager {
     
     // MARK: - Helper Functions
     
+    public func triggerCapture() {
+        handleSnipHotkey()
+    }
+    
     private func captureAllScreensImmediately() async -> [(screenInfo: ScreenInfo, cgImage: CGImage)] {
         var results: [(screenInfo: ScreenInfo, cgImage: CGImage)] = []
         
