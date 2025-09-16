@@ -1,19 +1,21 @@
 {
   "fill" : {
-    "linear-gradient" : [
-      "extended-srgb:0.00000,0.53333,1.00000,1.00000",
-      "display-p3:0.18305,0.42370,0.79447,1.00000"
-    ]
+    "solid" : "extended-srgb:0.00000,0.53333,1.00000,1.00000"
   },
   "groups" : [
     {
-      "blur-material" : null,
       "layers" : [
         {
-          "fill" : "none",
-          "glass" : true,
-          "image-name" : "ScreenSnap.png",
-          "name" : "ScreenSnap"
+          "glass" : false,
+          "image-name" : "ScreenSnip.png",
+          "name" : "ScreenSnip",
+          "position" : {
+            "scale" : 1.15,
+            "translation-in-points" : [
+              0,
+              15
+            ]
+          }
         }
       ],
       "shadow" : {

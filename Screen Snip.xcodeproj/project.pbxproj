@@ -29,17 +29,10 @@
 /* End PBXFileReference section */
 
 /* Begin PBXFileSystemSynchronizedBuildFileExceptionSet section */
-		FF39010B2E7858C9008A104E /* Exceptions for "ScreenSnipHelper" folder in "Screen Snip" target */ = {
+		FF8156232E78EFC8009FBAF4 /* Exceptions for "Screen Snip" folder in "ScreenSnipHelper" target */ = {
 			isa = PBXFileSystemSynchronizedBuildFileExceptionSet;
 			membershipExceptions = (
-				Assets/ScreenSnipHelper.icon,
-			);
-			target = FF30F8E62E6F929000F72D09 /* Screen Snip */;
-		};
-		FF39010C2E7858C9008A104E /* Exceptions for "ScreenSnipHelper" folder in "ScreenSnipHelper" target */ = {
-			isa = PBXFileSystemSynchronizedBuildFileExceptionSet;
-			membershipExceptions = (
-				Assets/ScreenSnipHelper.icon,
+				Assets/ScreenSnip.icon,
 			);
 			target = FF3900FF2E7858C1008A104E /* ScreenSnipHelper */;
 		};
@@ -48,15 +41,14 @@
 /* Begin PBXFileSystemSynchronizedRootGroup section */
 		FF30F8E92E6F929000F72D09 /* Screen Snip */ = {
 			isa = PBXFileSystemSynchronizedRootGroup;
+			exceptions = (
+				FF8156232E78EFC8009FBAF4 /* Exceptions for "Screen Snip" folder in "ScreenSnipHelper" target */,
+			);
 			path = "Screen Snip";
 			sourceTree = "<group>";
 		};
 		FF3901012E7858C1008A104E /* ScreenSnipHelper */ = {
 			isa = PBXFileSystemSynchronizedRootGroup;
-			exceptions = (
-				FF39010B2E7858C9008A104E /* Exceptions for "ScreenSnipHelper" folder in "Screen Snip" target */,
-				FF39010C2E7858C9008A104E /* Exceptions for "ScreenSnipHelper" folder in "ScreenSnipHelper" target */,
-			);
 			path = ScreenSnipHelper;
 			sourceTree = "<group>";
 		};
@@ -434,7 +426,7 @@
 		FF3901092E7858C2008A104E /* Debug */ = {
 			isa = XCBuildConfiguration;
 			buildSettings = {
-				ASSETCATALOG_COMPILER_APPICON_NAME = ScreenSnipHelper;
+				ASSETCATALOG_COMPILER_APPICON_NAME = ScreenSnip;
 				ASSETCATALOG_COMPILER_GLOBAL_ACCENT_COLOR_NAME = AccentColor;
 				CODE_SIGN_ENTITLEMENTS = ScreenSnipHelper/ScreenSnipHelper.entitlements;
 				CODE_SIGN_STYLE = Automatic;
@@ -479,7 +471,7 @@
 		FF39010A2E7858C2008A104E /* Release */ = {
 			isa = XCBuildConfiguration;
 			buildSettings = {
-				ASSETCATALOG_COMPILER_APPICON_NAME = ScreenSnipHelper;
+				ASSETCATALOG_COMPILER_APPICON_NAME = ScreenSnip;
 				ASSETCATALOG_COMPILER_GLOBAL_ACCENT_COLOR_NAME = AccentColor;
 				CODE_SIGN_ENTITLEMENTS = ScreenSnipHelper/ScreenSnipHelper.entitlements;
 				CODE_SIGN_STYLE = Automatic;
