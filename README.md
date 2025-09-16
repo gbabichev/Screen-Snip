@@ -15,15 +15,14 @@ Inspired by Greenshot on Windows - the goal is to make a tiny app that can do th
 
 </div>
 
-## 🖥️ Screenshots 
-
 <p align="center">
-    <a href="Documentation/App1.png"><img src="Documentation/App1.png" width="45%"></a>
+    <a href="Documentation/App1.png"><img src="Documentation/App1.png" width="35%"></a>
 </p>
 
 ## 🖥️ Features, Tools, and Settings
 
 ### Features
+
 - Take screenshots!
   - With a global hotkey even when the app is in the background. 
 - Multi monitor support. 
@@ -31,6 +30,7 @@ Inspired by Greenshot on Windows - the goal is to make a tiny app that can do th
 - Open Images for editing. 
   - Native "Open With" integration in Finder. 
 - Copy to Clipboard / Save / Save As. 
+- Undo / redo!
 - Pinch to zoom / Double tap to zoom / cmd + scroll wheel to zoom. 
 - Snip Gallery to view snips by date. 
 - Liquid Glass first design. 
@@ -39,24 +39,25 @@ Inspired by Greenshot on Windows - the goal is to make a tiny app that can do th
 
 
 ### Tools
+
 | Tool       | Shortcut   | Notes              |
 |:---------------|:--------:|-------------------:|
-| Take Screenshot              | ⌘ + ⇧ + 2     | Command + Shift + 2       |
-| Pointer Tool                 | ⌘ + 1         | Moves objects around      |
-| Pen Tool                     | ⌘ + 2         | Draw lines. |
-| Arrow Tool                   | ⌘ + 3         | Draw lines with arrows.|
-| Highlighter                  | ⌘ + 4         | Highlights. |
-| Rectangle Tool               | ⌘ + 5         | Draw squres / rectangles |
-| Oval Tool                    | ⌘ + 6         | Draw circles / ovals |
-| Badge Tool                   | ⌘ + 7         | Incremental Numbers |
-| Text Tool                    | ⌘ + 8         | Insert text. Colored backgrounds optional.  |
-| Crop Tool                    | ⌘ + 9         | Crops. |
-| Reset Zoom                   | ⌘ + 0         |  |
-| Zoom In                      | ⌘ + +         |  |
-| Zoom Out                     | ⌘ + -         |  |
+| Take Screenshot              | ⌘ , ⇧ , 2     | Command + Shift + 2       |
+| Pointer Tool                 | ⌘ , 1         | Moves objects around      |
+| Pen Tool                     | ⌘ , 2         | Draw lines. |
+| Arrow Tool                   | ⌘ , 3         | Draw lines with arrows.|
+| Highlighter                  | ⌘ , 4         | Highlights. |
+| Rectangle Tool               | ⌘ , 5         | Draw squres / rectangles |
+| Oval Tool                    | ⌘ , 6         | Draw circles / ovals |
+| Badge Tool                   | ⌘ , 7         | Incremental Numbers |
+| Text Tool                    | ⌘ , 8         | Insert text. Colored backgrounds optional.  |
+| Crop Tool                    | ⌘ , 9         | Crops. |
+| Reset Zoom                   | ⌘ , 0         |  |
+| Zoom In                      | ⌘ , +         |  |
+| Zoom Out                     | ⌘ , -         |  |
 
 
-### ⚙️ Settings
+### Settings
 
 These settings are customizable by you. 
 - File Save Destination
