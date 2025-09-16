@@ -298,6 +298,7 @@ final class GlobalHotKeyManager {
         return bestMatch.map { (screenInfo: $0.screenInfo, cgImage: $0.cgImage, intersection: $0.intersection) }
     }
     
+
     private func extractRegion(_ selectedGlobalRect: CGRect, from match: (screenInfo: ScreenInfo, cgImage: CGImage, intersection: CGRect)) -> NSImage? {
         let (screenInfo, cgImage, intersectionRect) = match
         let screenFrame = screenInfo.frame
@@ -357,23 +358,36 @@ final class GlobalHotKeyManager {
         
         print("Cropped image size: \(croppedCGImage.width)x\(croppedCGImage.height)")
         
-        // Apply downsample setting here - affects final NSImage size only
+        // Apply downsample setting here - affects both pixel data AND final NSImage size
         let finalPointSize: CGSize
         let finalCGImage: CGImage
         
         if !downsampleToNonRetina {
-            // Downsample to 1x resolution
+            // Keep full resolution: 2x pixels displayed at 1x point size = crisp
             finalPointSize = CGSize(
                 width: clampedRect.width / screenScale,
                 height: clampedRect.height / screenScale
             )
             finalCGImage = croppedCGImage
-            print("Downsampling to 1x: NSImage point size = \(finalPointSize)")
+            print("Keeping full resolution: \(croppedCGImage.width)x\(croppedCGImage.height) pixels at \(finalPointSize) points = crisp")
         } else {
-            // Keep full resolution - NSImage point size equals pixel size
-            finalPointSize = CGSize(width: clampedRect.width, height: clampedRect.height)
-            finalCGImage = croppedCGImage
-            print("Keeping full resolution: NSImage point size = \(finalPointSize)")
+            // Actually downsample: reduce both pixel data AND point size
+            let targetPointSize = CGSize(
+                width: clampedRect.width / screenScale,
+                height: clampedRect.height / screenScale
+            )
+            
+            // Create downsampled CGImage with fewer actual pixels
+            if let downsampledImage = createDownsampledImage(from: croppedCGImage, to: targetPointSize) {
+                finalCGImage = downsampledImage
+                finalPointSize = targetPointSize
+                print("Downsampled to 1x: \(downsampledImage.width)x\(downsampledImage.height) pixels at \(finalPointSize) points = smaller file")
+            } else {
+                // Fallback if downsampling fails
+                finalCGImage = croppedCGImage
+                finalPointSize = targetPointSize
+                print("Downsampling failed, falling back to original pixels")
+            }
         }
         
         let rep = NSBitmapImageRep(cgImage: finalCGImage)
@@ -385,10 +399,34 @@ final class GlobalHotKeyManager {
         return nsImage
     }
     
+    private func createDownsampledImage(from sourceImage: CGImage, to targetPointSize: CGSize) -> CGImage? {
+        let colorSpace = sourceImage.colorSpace ?? CGColorSpace(name: CGColorSpace.sRGB)!
+        
+        // Create context with the target pixel dimensions (1x resolution)
+        guard let context = CGContext(
+            data: nil,
+            width: Int(targetPointSize.width),
+            height: Int(targetPointSize.height),
+            bitsPerComponent: 8,
+            bytesPerRow: 0,
+            space: colorSpace,
+            bitmapInfo: CGImageAlphaInfo.premultipliedFirst.rawValue
+        ) else {
+            print("Failed to create downsampling context")
+            return nil
+        }
+        
+        // Use high-quality interpolation for best results when scaling down
+        context.interpolationQuality = .high
+        context.draw(sourceImage, in: CGRect(origin: .zero, size: targetPointSize))
+        
+        return context.makeImage()
+    }
     
     
     
 }
+
 
 
 
