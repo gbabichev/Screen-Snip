@@ -80,7 +80,7 @@ enum CaptureMode: String, CaseIterable {
 struct ContentView: View {
     
     // MARK: - Launch On Logon
-    private static let loginHelperIdentifier = "com.georgebabichev.ScreenSnipHelper"
+    private static let loginHelperIdentifier = "com.georgebabichev.Screen-Snip-Helper"
     @State private var logonChecked: Bool = {
         let loginService = SMAppService.loginItem(identifier: loginHelperIdentifier)
         return loginService.status == .enabled   // True if login item is currently enabled

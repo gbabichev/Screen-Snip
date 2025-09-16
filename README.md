@@ -18,7 +18,7 @@ Inspired by Greenshot on Windows - the goal is to make a tiny app that can do th
 ## 🖥️ Screenshots 
 
 <p align="center">
-    <a href="Documentation/App2.png"><img src="Documentation/App2.png" width="45%"></a>
+    <a href="Documentation/App1.png"><img src="Documentation/App1.png" width="45%"></a>
 </p>
 
 ## 🖥️ Features, Tools, and Settings
@@ -26,9 +26,16 @@ Inspired by Greenshot on Windows - the goal is to make a tiny app that can do th
 ### Features
 - Take screenshots!
   - With a global hotkey even when the app is in the background. 
+- Multi monitor support. 
+- Retina display ready. 
 - Open Images for editing. 
   - Native "Open With" integration in Finder. 
 - Copy to Clipboard / Save / Save As. 
+- Pinch to zoom / Double tap to zoom / cmd + scroll wheel to zoom. 
+- Snip Gallery to view snips by date. 
+- Liquid Glass first design. 
+- Privacy focused - no network access or data collection - your snips are purely yours. 
+
 
 
 ### Tools
@@ -71,13 +78,6 @@ These settings are customizable by you.
   - Start the app when logging into your Mac. 
 
 
-
-
-
-## 🔍 Troubleshooting
-
-
-
 ## 🖥️ Install & Minimum Requirements
 
 - macOS 26.0 or later  
@@ -93,19 +93,16 @@ These settings are customizable by you.
 
 Clone the repo and build with Xcode:
 
-<!-- ```bash
-git clone https://github.com/gbabichev/thumbnailer.git
-cd thumbnailer
-open thumbnailer.xcodeproj
-``` -->
-
-## Known Issues
-- Zooming doesn't track your cursor. 
+```bash
+git clone https://github.com/gbabichev/Screen-Snip.git
+cd Screen-Snip
+open "Screen Snip.xcodeproj"
+```
 
 ## 📝 Changelog
 
 ### 1.0 
-- Not released yet. Build yourself to follow along!
+- Initial Release. 
 
 ## 📄 License
 
