@@ -1,7 +1,5 @@
 <div align="center">
 
-# Screen Snip
-
 <picture>
   <source srcset="Documentation/icon-dark.png" media="(prefers-color-scheme: dark)">
   <source srcset="Documentation/icon-light.png" media="(prefers-color-scheme: light)">
