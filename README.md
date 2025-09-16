@@ -107,6 +107,9 @@ open "Screen Snip.xcodeproj"
 
 MIT — free for personal and commercial use. 
 
+## Privacy
+<a href="Documentation/PrivacyPolicy.html">Privacy Policy</a>
+
 ## Progress
 <details>
 <summary>Work in Progress</summary>
