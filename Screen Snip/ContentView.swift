@@ -54,6 +54,29 @@ enum SaveFormat: String, CaseIterable, Identifiable {
 
 }
 
+enum CaptureMode: String, CaseIterable {
+    case captureWithWindows = "captureWithWindows"
+    case captureWithoutWindows = "captureWithoutWindows"
+    
+    var displayName: String {
+        switch self {
+        case .captureWithWindows:
+            return "Capture what I see"
+        case .captureWithoutWindows:
+            return "Capture clean desktop"
+        }
+    }
+    
+    var description: String {
+        switch self {
+        case .captureWithWindows:
+            return "Captures exactly what you see on screen when you press the hotkey"
+        case .captureWithoutWindows:
+            return "Hides app windows first, then captures a clean desktop view"
+        }
+    }
+}
+
 struct ContentView: View {
     
     // MARK: - Launch On Logon
@@ -76,6 +99,12 @@ struct ContentView: View {
 
     @State private var showingFileExporter = false
     @State private var exportImage: NSImage? = nil
+    
+    @AppStorage("captureMode") private var captureModeRaw: String = CaptureMode.captureWithWindows.rawValue
+    private var captureMode: CaptureMode {
+        get { CaptureMode(rawValue: captureModeRaw) ?? .captureWithWindows }
+        set { captureModeRaw = newValue.rawValue }
+    }
     
     @State private var currentGeometrySize: CGSize = CGSize(width: 800, height: 600)
     
@@ -860,6 +889,15 @@ struct ContentView: View {
                                 .toggleStyle(.switch)
                                 .disabled(downsampleToNonRetinaForSave && saveOnCopy)
                         }
+                        
+                        SettingsRow("Capture clean desktop", subtitle: "Hides app windows first, then captures a clean desktop view.\nDisabled: Captures exactly what you see on screen.") {
+                            Toggle("", isOn: Binding(
+                                get: { captureModeRaw == CaptureMode.captureWithoutWindows.rawValue },
+                                set: { captureModeRaw = $0 ? CaptureMode.captureWithoutWindows.rawValue : CaptureMode.captureWithWindows.rawValue }
+                            ))
+                            .toggleStyle(.switch)
+                        }
+                        
                         SettingsRow("Fit image to window", subtitle: "Enabled : Fill Full Window.\nDisabled: Show True Size.") {
                             Toggle("", isOn: Binding(
                                 get: { imageDisplayMode == "fit" },
@@ -875,15 +913,13 @@ struct ContentView: View {
                                 .toggleStyle(.switch)
                         }
 
-                        SettingsRow("Start on Logon", subtitle: "App will open when you logon.") {
-                            Toggle("Launch at Login", isOn: $logonChecked)
+                        SettingsRow("Launch at Login", subtitle: "App will open when you logon.") {
+                            Toggle("", isOn: $logonChecked)
                                 .toggleStyle(.switch)
                                 .onChange(of: logonChecked) {
                                     toggleLaunchAtLogin(logonChecked)
                                 }
                         }
-                        
-                        
                         
                     }
                     .padding(16)

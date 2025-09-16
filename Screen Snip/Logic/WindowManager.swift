@@ -115,5 +115,20 @@ final class WindowManager {
             userInfo: userInfo
         )
     }
+    
+    func closeAllAppWindowsAsync() async {
+        await MainActor.run {
+            self.closeAllAppWindows()
+        }
+        
+        // Wait for window close animations to complete
+        // Adjust timing based on your actual window close animation duration
+        try? await Task.sleep(nanoseconds: 300_000_000) // 0.3 seconds
+        
+        // Optional: Add verification that windows are actually closed
+        await MainActor.run {
+            print("Window close animation should be complete")
+        }
+    }
 }
 

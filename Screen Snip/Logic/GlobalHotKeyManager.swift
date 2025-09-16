@@ -122,45 +122,95 @@ final class GlobalHotKeyManager {
         
         print("Starting screen capture...")
         
-        WindowManager.shared.closeAllAppWindows()
+        // Get user preference for capture mode
+        let captureModeRaw = UserDefaults.standard.string(forKey: "captureMode") ?? "captureWithWindows"
+        let captureMode = CaptureMode(rawValue: captureModeRaw) ?? .captureWithWindows
         
-        // STEP 1: Capture all screens IMMEDIATELY
-        Task { [weak self] in
-            guard let self = self else { return }
-            
-            // Capture all screens right now, before showing selection UI
-            let screenshots = await self.captureAllScreensImmediately()
-            
-            await MainActor.run {
-                self.capturedScreens = screenshots
-                
-                // STEP 2: Show selection overlay displaying the captured static images
-                SelectionWindowManager.shared.presentWithCapturedScreens(
-                    capturedScreens: screenshots,
-                    onComplete: { [weak self] rect in
-                        // STEP 3: Extract selection from pre-captured screens
-                        if let result = self?.extractSelectionFromCapturedScreens(rect: rect) {
-                            if let savedURL = ImageSaver.saveImage(result) {
-                                DispatchQueue.main.async {
-                                    WindowManager.shared.loadImageIntoWindow(url: savedURL, shouldActivate: true)
-                                }
-                            }
-                        }
-                        
-                        DispatchQueue.main.async { [weak self] in
-                            self?.isCurrentlyCapturing = false
-                            self?.capturedScreens.removeAll() // Clean up memory
-                        }
-                    }
-                )
-            }
+        print("Using capture mode: \(captureMode.displayName)")
+        
+        switch captureMode {
+        case .captureWithWindows:
+            handleCaptureWithWindows()
+        case .captureWithoutWindows:
+            handleCaptureWithoutWindows()
         }
         
+        // Set up cancel handler (same for both modes)
         SelectionWindowManager.shared.onCancel = { [weak self] in
             self?.isCurrentlyCapturing = false
             self?.capturedScreens.removeAll()
         }
     }
+
+    // MARK: - Capture Mode Implementations
+
+    // Option 3: Capture with windows visible (what user sees)
+    private func handleCaptureWithWindows() {
+        Task { [weak self] in
+            guard let self = self else { return }
+            
+            // STEP 1: Capture all screens FIRST (with windows visible - this is what user sees)
+            let screenshots = await self.captureAllScreensImmediately()
+            
+            await MainActor.run {
+                // STEP 2: Now close windows for clean selection UI
+                WindowManager.shared.closeAllAppWindows()
+                
+                // Store the captured screens
+                self.capturedScreens = screenshots
+                
+                // STEP 3: Show selection overlay
+                self.presentSelectionUI(with: screenshots)
+            }
+        }
+    }
+
+    // Option 2: Capture without windows (clean desktop)
+    private func handleCaptureWithoutWindows() {
+        Task { [weak self] in
+            guard let self = self else { return }
+            
+            // STEP 1: Wait for windows to actually close completely
+            await WindowManager.shared.closeAllAppWindowsAsync()
+            
+            // STEP 2: Now capture with windows definitely closed
+            let screenshots = await self.captureAllScreensImmediately()
+            
+            await MainActor.run {
+                self.capturedScreens = screenshots
+                
+                // STEP 3: Show selection overlay
+                self.presentSelectionUI(with: screenshots)
+            }
+        }
+    }
+
+    // MARK: - Shared Selection UI Logic
+
+    private func presentSelectionUI(with screenshots: [(screenInfo: ScreenInfo, cgImage: CGImage)]) {
+        SelectionWindowManager.shared.presentWithCapturedScreens(
+            capturedScreens: screenshots,
+            onComplete: { [weak self] rect in
+                // Extract selection from pre-captured screens
+                if let result = self?.extractSelectionFromCapturedScreens(rect: rect) {
+                    if let savedURL = ImageSaver.saveImage(result) {
+                        DispatchQueue.main.async {
+                            WindowManager.shared.loadImageIntoWindow(url: savedURL, shouldActivate: true)
+                        }
+                    }
+                }
+                
+                DispatchQueue.main.async { [weak self] in
+                    self?.isCurrentlyCapturing = false
+                    self?.capturedScreens.removeAll()
+                }
+            }
+        )
+    }
+
+
+    
+    
     
     // Extract selection from already-captured screens (synchronous since data is already in memory)
     private func extractSelectionFromCapturedScreens(rect selectedGlobalRect: CGRect) -> NSImage? {
@@ -227,7 +277,7 @@ final class GlobalHotKeyManager {
                     // Try to find corresponding NSScreen by matching dimensions or position
                     let matchingNSScreen = NSScreen.screens.first { screen in
                         // Convert SCDisplay dimensions to points (accounting for potential scaling)
-                        let scDisplayBounds = CGRect(x: 0, y: 0, width: scDisplay.width, height: scDisplay.height)
+                        _ = CGRect(x: 0, y: 0, width: scDisplay.width, height: scDisplay.height)
                         let screenBounds = screen.frame
                         
                         // Check if dimensions are close (allowing for scaling differences)
@@ -307,6 +357,7 @@ final class GlobalHotKeyManager {
         // Get the app's scaling preference (only affects final output, not coordinate calculation)
         let downsampleToNonRetina = UserDefaults.standard.bool(forKey: "downsampleToNonRetinaForSave")
         
+        #if DEBUG
         print("=== Extract Region Debug ===")
         print("Selected global rect: \(selectedGlobalRect)")
         print("Screen frame: \(screenFrame)")
@@ -314,7 +365,7 @@ final class GlobalHotKeyManager {
         print("Intersection rect: \(intersectionRect)")
         print("CGImage size: \(cgImage.width)x\(cgImage.height)")
         print("Downsample setting: \(downsampleToNonRetina)")
-        
+#endif // DEBUG
         // Convert from global coordinates to screen-local coordinates (in points)
         let localRect = CGRect(
             x: intersectionRect.origin.x - screenFrame.origin.x,
@@ -426,9 +477,6 @@ final class GlobalHotKeyManager {
     
     
 }
-
-
-
 
 private final class SingleDisplayCapturer: NSObject, SCStreamOutput {
     private var captureResult: CGImage?
