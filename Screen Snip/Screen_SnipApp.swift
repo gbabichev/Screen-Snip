@@ -80,7 +80,24 @@ private func applyActivationPolicy(_ hide: Bool) {
     }
 }
 
-final class AppDelegate: NSObject, NSApplicationDelegate {
+// MARK: - AppDelegate Changes (in Screen_SnipApp.swift)
+
+// MARK: - AppDelegate Changes (in Screen_SnipApp.swift)
+
+final class AppDelegate: NSObject, NSApplicationDelegate, ObservableObject {
+    
+    // Add singleton access
+    static var shared: AppDelegate!
+    
+    // Add these properties for permissions tracking
+    @Published var needsAccessibilityPermission = false
+    @Published var needsScreenRecordingPermission = false
+    @Published var showPermissionsView = false
+    
+    override init() {
+        super.init()
+        AppDelegate.shared = self // Set the singleton reference
+    }
     
     func applicationDidFinishLaunching(_ notification: Notification) {
         // Debug: show basic launch context
@@ -88,8 +105,10 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         let env  = ProcessInfo.processInfo.environment
         if let flag = env["LAUNCHED_AT_LOGIN"] { print("🚀 Env[LAUNCHED_AT_LOGIN]=\(flag)") }
 
+        // Check permissions first
         checkPermissions()
 
+        // Register hotkey only if we have accessibility permission
         if isAccessibilityEnabled() {
             GlobalHotKeyManager.shared.registerSnipHotKey()
         }
@@ -110,21 +129,57 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
 
         if !launchedAtLogin {
             WindowManager.shared.ensureMainWindow()
-        } 
+            
+            // AUTO-SHOW permissions if missing and not launched at login
+            DispatchQueue.main.asyncAfter(deadline: .now() + 0.5) {
+                self.showPermissionsIfNeeded()
+            }
+        }
+    }
+    
+    // NEW: Auto-show permissions when needed
+    private func showPermissionsIfNeeded() {
+        let hasAccessibility = isAccessibilityEnabled()
+        let hasScreenRecording = isScreenRecordingEnabled()
+        
+        // Only show if we're missing permissions and not already showing
+        if (!hasAccessibility || !hasScreenRecording) && !showPermissionsView {
+            print("⚠️ Auto-showing permissions view - Missing: Accessibility: \(!hasAccessibility), Screen Recording: \(!hasScreenRecording)")
+            showPermissionsView = true
+        }
     }
     
     private func checkPermissions() {
         let hasAccessibility = isAccessibilityEnabled()
         let hasScreenRecording = isScreenRecordingEnabled()
         
-        if !hasAccessibility || !hasScreenRecording {
-            DispatchQueue.main.async {
-                self.showPermissionsAlert(
-                    needsAccessibility: !hasAccessibility,
-                    needsScreenRecording: !hasScreenRecording
-                )
-            }
+        needsAccessibilityPermission = !hasAccessibility
+        needsScreenRecordingPermission = !hasScreenRecording
+        
+        if (!hasAccessibility || !hasScreenRecording) {
+            print("⚠️ Missing permissions - Accessibility: \(!hasAccessibility), Screen Recording: \(!hasScreenRecording)")
         }
+    }
+    
+    // Add this method to refresh permission status
+    func refreshPermissionStatus() {
+        let hasAccessibility = isAccessibilityEnabled()
+        let hasScreenRecording = isScreenRecordingEnabled()
+        
+        needsAccessibilityPermission = !hasAccessibility
+        needsScreenRecordingPermission = !hasScreenRecording
+        
+        // If permissions are now granted, register hotkey and hide permissions view
+        if hasAccessibility && hasScreenRecording {
+            GlobalHotKeyManager.shared.registerSnipHotKey()
+            showPermissionsView = false
+        }
+    }
+    
+    // Add this method to show permissions view programmatically
+    func showPermissions() {
+        refreshPermissionStatus()
+        showPermissionsView = true
     }
     
     private func isAccessibilityEnabled() -> Bool {
@@ -142,110 +197,28 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         }
     }
     
-    private func showPermissionsAlert(needsAccessibility: Bool, needsScreenRecording: Bool) {
-        let alert = NSAlert()
-        
-        var missingPermissions: [String] = []
-        if needsAccessibility {
-            missingPermissions.append("Accessibility")
-        }
-        if needsScreenRecording {
-            missingPermissions.append("Screen Recording")
-        }
-        
-        let permissionList = missingPermissions.joined(separator: " and ")
-        
-        alert.messageText = "\(permissionList) Permission\(missingPermissions.count > 1 ? "s" : "") Required"
-        
-        var informativeText = "Screen Snip needs the following permissions to work properly:\n\n"
-        
-        if needsAccessibility {
-            informativeText += "• Accessibility: Required to capture screenshots with the global hotkey (⌘⇧2)\n"
-        }
-        
-        if needsScreenRecording {
-            informativeText += "• Screen Recording: Required to capture screen content\n"
-        }
-        
-        informativeText += "\nPlease grant these permissions in System Preferences > Privacy & Security."
-        
-        alert.informativeText = informativeText
-        alert.alertStyle = .informational
-        alert.addButton(withTitle: "Open System Preferences")
-        alert.addButton(withTitle: "Continue with Limited Features")
-        
-        let response = alert.runModal()
-        
-        if response == .alertFirstButtonReturn {
-            openPrivacyPreferences(needsAccessibility: needsAccessibility, needsScreenRecording: needsScreenRecording)
-            
-            // Show a follow-up dialog
-            DispatchQueue.main.asyncAfter(deadline: .now() + 1.0) {
-                self.showPermissionFollowUpAlert(
-                    needsAccessibility: needsAccessibility,
-                    needsScreenRecording: needsScreenRecording
-                )
-            }
-        }
-        
-        
-        
-    }
-    
-    private func openPrivacyPreferences(needsAccessibility: Bool, needsScreenRecording: Bool) {
-        // Try to open the most relevant preference pane
-        var urlString: String
-        
-        if needsAccessibility && needsScreenRecording {
-            // If both are needed, open the main Privacy & Security pane
-            urlString = "x-apple.systempreferences:com.apple.preference.security"
-        } else if needsAccessibility {
-            urlString = "x-apple.systempreferences:com.apple.preference.security?Privacy_Accessibility"
-        } else {
-            urlString = "x-apple.systempreferences:com.apple.preference.security?Privacy_ScreenCapture"
-        }
-        
-        if let url = URL(string: urlString) {
-            NSWorkspace.shared.open(url)
-        }
-    }
-    
-    private func showPermissionFollowUpAlert(needsAccessibility: Bool, needsScreenRecording: Bool) {
-        let alert = NSAlert()
-        alert.messageText = "Grant Permissions and Restart"
-        
-        var instructionText = "After enabling the required permissions for Screen Snip:\n\n"
-        
-        if needsAccessibility {
-            instructionText += "1. Go to Privacy & Security > Accessibility\n"
-            instructionText += "2. Enable Screen Snip in the list\n"
-        }
-        
-        if needsScreenRecording {
-            if needsAccessibility {
-                instructionText += "3. Go to Privacy & Security > Screen Recording\n"
-                instructionText += "4. Enable Screen Snip in the list\n"
-                instructionText += "\n5. Restart Screen Snip for all features to work properly."
-            } else {
-                instructionText += "1. Go to Privacy & Security > Screen Recording\n"
-                instructionText += "2. Enable Screen Snip in the list\n"
-                instructionText += "\n3. Restart Screen Snip for all features to work properly."
-            }
-        } else {
-            instructionText += "\n3. Restart Screen Snip for the hotkey to work properly."
-        }
-        
-        alert.informativeText = instructionText
-        alert.alertStyle = .informational
-        alert.addButton(withTitle: "OK")
-        alert.runModal()
-    }
-    
     func applicationShouldTerminateAfterLastWindowClosed(_ sender: NSApplication) -> Bool {
         return false
     }
 
     func applicationDidBecomeActive(_ notification: Notification) {
+        // Store previous permission state
+        let previousAccessibility = !needsAccessibilityPermission
+        let previousScreenRecording = !needsScreenRecordingPermission
+        
+        // Refresh permissions when app becomes active (user might have changed settings)
+        refreshPermissionStatus()
+        
+        // If permissions were just granted, close the permissions view
+        let nowHasAccessibility = !needsAccessibilityPermission
+        let nowHasScreenRecording = !needsScreenRecordingPermission
+        
+        if (!previousAccessibility && nowHasAccessibility) || (!previousScreenRecording && nowHasScreenRecording) {
+            if nowHasAccessibility && nowHasScreenRecording {
+                showPermissionsView = false
+            }
+        }
+        
         GlobalHotKeyManager.shared.registerSnipHotKey()
     }
 
@@ -271,7 +244,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     }
     
     private func handleOpenFiles(_ urls: [URL]) {
-        print("🔍 handleOpenFiles called with \(urls.count) URLs:")
+        print("📂 handleOpenFiles called with \(urls.count) URLs:")
         for (index, url) in urls.enumerated() {
             print("  [\(index)] \(url.absoluteString)")
             print("      - isFileURL: \(url.isFileURL)")
@@ -348,10 +321,6 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         window.titleVisibility = .hidden
         NSApp.activate(ignoringOtherApps: true)
     }
-    
 }
-
-
-
 
 

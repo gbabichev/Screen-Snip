@@ -113,7 +113,11 @@ MIT — free for personal and commercial use.
 ## Progress
 <details>
 <summary>Work in Progress</summary>
+- Redesign permissions UI. 
+- Redesign screen / mouse UI during screenshots. 
+- Add "Help" section with support contact info. 
 </details>
+
 <details>
 <summary>Completed</summary> 
 

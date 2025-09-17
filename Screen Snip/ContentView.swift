@@ -79,6 +79,13 @@ enum CaptureMode: String, CaseIterable {
 
 struct ContentView: View {
     
+    @ObservedObject private var appDelegate = AppDelegate.shared
+    
+    private var hasPermissionIssues: Bool {
+        appDelegate.needsAccessibilityPermission || appDelegate.needsScreenRecordingPermission
+    }
+    
+    
     // MARK: - Launch On Logon
     private static let loginHelperIdentifier = "com.georgebabichev.Screen-Snip-Helper"
     @State private var logonChecked: Bool = {
@@ -1266,6 +1273,46 @@ struct ContentView: View {
                 }
             }
             
+            // Permissions Button
+//            ToolbarItem(placement: .primaryAction) {
+//                HStack(spacing: 8) {
+//                    // Show warning button if permissions are missing
+//                    if hasPermissionIssues {
+//                        Button {
+//                            showPermissions = true
+//                        } label: {
+//                            Image(systemName: "exclamationmark.triangle.fill")
+//                                .foregroundColor(.orange)
+//                                .help("Missing permissions required for Screen Snip")
+//                        }
+//                        .buttonStyle(.plain)
+//                    }
+//                    
+//                    // Existing capture button
+//                    Button {
+//                        GlobalHotKeyManager.shared.triggerCapture()
+//                    } label: {
+//                        Label("Capture Region", systemImage: "camera.viewfinder")
+//                    }
+//                }
+//            }
+            if hasPermissionIssues {
+                ToolbarItem(placement: .primaryAction) {
+                    Button {
+                        appDelegate.showPermissionsView = true
+                    } label: {
+                        Image(systemName: "exclamationmark.triangle.fill")
+                            .foregroundColor(.orange)
+                            .help("Missing permissions required for Screen Snip")
+                    }
+                }
+                
+                
+                
+
+            }
+
+            
             // Capture Region button (always available)
             ToolbarItem(placement: .primaryAction) {
                 Button {
@@ -1275,6 +1322,21 @@ struct ContentView: View {
                 }
             }
         }
+        .sheet(isPresented: $appDelegate.showPermissionsView) {
+             PermissionsView(
+                 needsAccessibility: appDelegate.needsAccessibilityPermission,
+                 needsScreenRecording: appDelegate.needsScreenRecordingPermission,
+                 onOpenPreferences: {
+                     openPrivacyPreferences(
+                         needsAccessibility: appDelegate.needsAccessibilityPermission,
+                         needsScreenRecording: appDelegate.needsScreenRecordingPermission
+                     )
+                 },
+                 onContinue: {
+                     appDelegate.showPermissionsView = false
+                 }
+             )
+         }
         .fileImporter(
             isPresented: Binding(
                 get: { activeImporter != nil },
@@ -1373,6 +1435,32 @@ struct ContentView: View {
         )
     }
     
+    private func openPrivacyPreferences(needsAccessibility: Bool, needsScreenRecording: Bool) {
+        // Try to open the most relevant preference pane
+        var urlString: String
+        
+        if needsAccessibility && needsScreenRecording {
+            // If both are needed, open the main Privacy & Security pane
+            urlString = "x-apple.systempreferences:com.apple.preference.security"
+        } else if needsAccessibility {
+            urlString = "x-apple.systempreferences:com.apple.preference.security?Privacy_Accessibility"
+        } else {
+            urlString = "x-apple.systempreferences:com.apple.preference.security?Privacy_ScreenCapture"
+        }
+        
+        if let url = URL(string: urlString) {
+            NSWorkspace.shared.open(url)
+        }
+        
+        // Close the permissions sheet
+        appDelegate.showPermissionsView = false
+        
+        // Schedule a permission refresh for when user returns
+        DispatchQueue.main.asyncAfter(deadline: .now() + 2.0) {
+            appDelegate.refreshPermissionStatus()
+        }
+    }
+    
     // MARK: - Launch On Logon Helpers
     // Handles enabling or disabling the login helper at login
     private func toggleLaunchAtLogin(_ enabled: Bool) {
@@ -1412,6 +1500,7 @@ struct ContentView: View {
         let nc = NotificationCenter.default
         return Publishers.MergeMany([
             nc.publisher(for: Notification.Name("com.georgebabichev.screenSnip.beginSnipFromIntent")),
+            nc.publisher(for: Notification.Name("showPermissionsView")),
             nc.publisher(for: .selectTool),
             nc.publisher(for: .openImageFile),
             nc.publisher(for: .copyToClipboard),
@@ -1431,6 +1520,9 @@ struct ContentView: View {
         switch note.name {
         case Notification.Name("com.georgebabichev.screenSnip.beginSnipFromIntent"):
             onBeginSnipFromIntent(note)
+            
+        case Notification.Name("showPermissionsView"): // Add this case
+            appDelegate.showPermissionsView = false
             
         case .selectTool:
             onSelectToolNotification(note)
