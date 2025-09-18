@@ -22,6 +22,7 @@ struct SelectionOverlay: View {
     
     @State private var startPoint: CGPoint? = nil
     @State private var currentPoint: CGPoint? = nil
+    @State private var customCursor: NSCursor?
     
     var body: some View {
         GeometryReader { geo in
@@ -38,7 +39,7 @@ struct SelectionOverlay: View {
                 // Create the dimmed overlay with a cut-out
                 if let rect = selectionRect() {
                     // Overlay that covers everything except the selection
-                    Color.black.opacity(0.3)
+                    Color.black.opacity(0.4) // Slightly darker for more contrast
                         .mask(
                             Rectangle()
                                 .overlay(
@@ -49,15 +50,53 @@ struct SelectionOverlay: View {
                                 )
                         )
                     
-                    // Selection border
+                    // Enhanced selection border with animation
                     Rectangle()
-                        .stroke(Color.blue, lineWidth: 2)
+                        .stroke(Color.white, lineWidth: 3) // White border for better visibility
                         .frame(width: rect.width, height: rect.height)
                         .position(x: rect.midX, y: rect.midY)
-                        .shadow(color: .black.opacity(0.5), radius: 1, x: 0, y: 0)
+                        .overlay(
+                            // Animated dashed border inside
+                            Rectangle()
+                                .stroke(Color.blue, style: StrokeStyle(lineWidth: 1, dash: [5, 5]))
+                                .frame(width: rect.width, height: rect.height)
+                                .position(x: rect.midX, y: rect.midY)
+                        )
+                        .shadow(color: .black.opacity(0.8), radius: 2, x: 0, y: 0)
+                    
+                    // Selection size indicator
+                    if rect.width > 50 && rect.height > 50 {
+                        VStack(spacing: 2) {
+                            Text("\(Int(rect.width)) × \(Int(rect.height))")
+                                .font(.system(.caption, design: .monospaced))
+                                .foregroundColor(.white)
+                                .padding(.horizontal, 8)
+                                .padding(.vertical, 4)
+                                .background(Color.black.opacity(0.7))
+                                .cornerRadius(4)
+                        }
+                        .position(x: rect.midX, y: rect.minY - 20)
+                    }
                 } else {
                     // Initial overlay before dragging starts
-                    Color.black.opacity(0.1)
+                    Color.black.opacity(0.2)
+                    
+                    // Instructions overlay
+                    VStack(spacing: 8) {
+                        Image(systemName: "camera.viewfinder")
+                            .font(.system(size: 32))
+                            .foregroundColor(.white)
+                        Text("Drag to select area")
+                            .font(.headline)
+                            .foregroundColor(.white)
+                        Text("Double-click to cancel")
+                            .font(.caption)
+                            .foregroundColor(.white.opacity(0.8))
+                    }
+                    .padding(20)
+                    .background(Color.black.opacity(0.7))
+                    .cornerRadius(12)
+                    .position(x: geo.size.width / 2, y: geo.size.height / 2)
                 }
             }
             .contentShape(Rectangle())
@@ -65,7 +104,58 @@ struct SelectionOverlay: View {
             .onTapGesture(count: 2) {
                 onCancel()
             }
+            .onAppear {
+                setupCustomCursor()
+            }
+            .onDisappear {
+                restoreDefaultCursor()
+            }
         }
+    }
+    
+    // MARK: - Custom Cursor Setup
+    
+    private func setupCustomCursor() {
+        // Create a large orange crosshair cursor (4x larger = 128x128)
+        let cursorImage = NSImage(size: NSSize(width: 128, height: 128))
+        cursorImage.lockFocus()
+        
+        // Draw crosshair in orange
+        let ctx = NSGraphicsContext.current?.cgContext
+        ctx?.setStrokeColor(NSColor.systemOrange.cgColor)
+        ctx?.setLineWidth(8) // Thicker lines for visibility
+        
+        // Horizontal line (center, with gaps for the center circle)
+        ctx?.move(to: CGPoint(x: 16, y: 64))
+        ctx?.addLine(to: CGPoint(x: 48, y: 64))
+        ctx?.move(to: CGPoint(x: 80, y: 64))
+        ctx?.addLine(to: CGPoint(x: 112, y: 64))
+        
+        // Vertical line (center, with gaps for the center circle)
+        ctx?.move(to: CGPoint(x: 64, y: 16))
+        ctx?.addLine(to: CGPoint(x: 64, y: 48))
+        ctx?.move(to: CGPoint(x: 64, y: 80))
+        ctx?.addLine(to: CGPoint(x: 64, y: 112))
+        
+        ctx?.strokePath()
+        
+        // Add a larger center circle
+        ctx?.setFillColor(NSColor.systemOrange.cgColor)
+        ctx?.fillEllipse(in: CGRect(x: 56, y: 56, width: 16, height: 16))
+        
+        // Add a white border to the center circle for better visibility
+        ctx?.setStrokeColor(NSColor.white.cgColor)
+        ctx?.setLineWidth(2)
+        ctx?.strokeEllipse(in: CGRect(x: 56, y: 56, width: 16, height: 16))
+        
+        cursorImage.unlockFocus()
+        
+        customCursor = NSCursor(image: cursorImage, hotSpot: NSPoint(x: 64, y: 64))
+        customCursor?.push()
+    }
+    
+    private func restoreDefaultCursor() {
+        NSCursor.pop()
     }
     
     private func dragGesture(in geo: GeometryProxy) -> some Gesture {
@@ -426,3 +516,5 @@ final class SelectionWindowManager {
         onCancel = nil
     }
 }
+
+
