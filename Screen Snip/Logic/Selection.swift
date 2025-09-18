@@ -13,6 +13,105 @@ import UniformTypeIdentifiers
 import ImageIO
 import Combine
 
+// MARK: - Global Cursor Manager (NEW)
+@MainActor
+class CursorManager {
+    static let shared = CursorManager()
+    private var cursorStack: [NSCursor] = []
+    private var cursorTimer: Timer?
+    private var customCursor: NSCursor?
+    
+    private init() {}
+    
+    func setCustomCrosshairCursor() {
+        // Always ensure we're on the main thread
+        DispatchQueue.main.async {
+            // Create cursor if needed
+            if self.customCursor == nil {
+                // Create a large orange crosshair cursor (4x larger = 128x128)
+                let cursorImage = NSImage(size: NSSize(width: 128, height: 128))
+                cursorImage.lockFocus()
+                
+                // Draw crosshair in orange
+                if let ctx = NSGraphicsContext.current?.cgContext {
+                    ctx.setStrokeColor(NSColor.systemOrange.cgColor)
+                    ctx.setLineWidth(8) // Thicker lines for visibility
+                    
+                    // Horizontal line (center, with gaps for the center circle)
+                    ctx.move(to: CGPoint(x: 16, y: 64))
+                    ctx.addLine(to: CGPoint(x: 48, y: 64))
+                    ctx.move(to: CGPoint(x: 80, y: 64))
+                    ctx.addLine(to: CGPoint(x: 112, y: 64))
+                    
+                    // Vertical line (center, with gaps for the center circle)
+                    ctx.move(to: CGPoint(x: 64, y: 16))
+                    ctx.addLine(to: CGPoint(x: 64, y: 48))
+                    ctx.move(to: CGPoint(x: 64, y: 80))
+                    ctx.addLine(to: CGPoint(x: 64, y: 112))
+                    
+                    ctx.strokePath()
+                    
+                    // Add a larger center circle
+                    ctx.setFillColor(NSColor.systemOrange.cgColor)
+                    ctx.fillEllipse(in: CGRect(x: 56, y: 56, width: 16, height: 16))
+                    
+                    // Add a white border to the center circle for better visibility
+                    ctx.setStrokeColor(NSColor.white.cgColor)
+                    ctx.setLineWidth(2)
+                    ctx.strokeEllipse(in: CGRect(x: 56, y: 56, width: 16, height: 16))
+                }
+                
+                cursorImage.unlockFocus()
+                
+                self.customCursor = NSCursor(image: cursorImage, hotSpot: NSPoint(x: 64, y: 64))
+            }
+            
+            // Set the cursor immediately
+            self.customCursor?.set()
+            
+            // Start a timer to keep enforcing the cursor every 100ms
+            self.cursorTimer?.invalidate()
+            self.cursorTimer = Timer.scheduledTimer(withTimeInterval: 0.1, repeats: true) { _ in
+                // Only set cursor if it's not already our custom cursor
+                if NSCursor.current != self.customCursor {
+                    self.customCursor?.set()
+                }
+            }
+            
+            print("Custom crosshair cursor set with enforcement timer")
+        }
+    }
+    
+    func restoreOriginalCursor() {
+        DispatchQueue.main.async {
+            // Stop the enforcement timer
+            self.cursorTimer?.invalidate()
+            self.cursorTimer = nil
+            
+            // Restore arrow cursor
+            NSCursor.arrow.set()
+            
+            print("Cursor restored and timer stopped")
+        }
+    }
+    
+    // Force restore - use this when selection is cancelled/completed
+    func forceRestoreCursor() {
+        DispatchQueue.main.async {
+            // Stop the enforcement timer immediately
+            self.cursorTimer?.invalidate()
+            self.cursorTimer = nil
+            
+            // Clear our references
+            self.cursorStack.removeAll()
+            
+            // Force arrow cursor
+            NSCursor.arrow.set()
+            
+            print("Cursor force restored to arrow and timer stopped")
+        }
+    }
+}
 
 struct SelectionOverlay: View {
     let windowOrigin: CGPoint
@@ -22,7 +121,6 @@ struct SelectionOverlay: View {
     
     @State private var startPoint: CGPoint? = nil
     @State private var currentPoint: CGPoint? = nil
-    @State private var customCursor: NSCursor?
     
     var body: some View {
         GeometryReader { geo in
@@ -102,60 +200,12 @@ struct SelectionOverlay: View {
             .contentShape(Rectangle())
             .gesture(dragGesture(in: geo))
             .onTapGesture(count: 2) {
+                // FIXED: Ensure cursor is restored on cancel
+                CursorManager.shared.forceRestoreCursor()
                 onCancel()
             }
-            .onAppear {
-                setupCustomCursor()
-            }
-            .onDisappear {
-                restoreDefaultCursor()
-            }
+            // REMOVED: onAppear and onDisappear cursor management - now handled at window level
         }
-    }
-    
-    // MARK: - Custom Cursor Setup
-    
-    private func setupCustomCursor() {
-        // Create a large orange crosshair cursor (4x larger = 128x128)
-        let cursorImage = NSImage(size: NSSize(width: 128, height: 128))
-        cursorImage.lockFocus()
-        
-        // Draw crosshair in orange
-        let ctx = NSGraphicsContext.current?.cgContext
-        ctx?.setStrokeColor(NSColor.systemOrange.cgColor)
-        ctx?.setLineWidth(8) // Thicker lines for visibility
-        
-        // Horizontal line (center, with gaps for the center circle)
-        ctx?.move(to: CGPoint(x: 16, y: 64))
-        ctx?.addLine(to: CGPoint(x: 48, y: 64))
-        ctx?.move(to: CGPoint(x: 80, y: 64))
-        ctx?.addLine(to: CGPoint(x: 112, y: 64))
-        
-        // Vertical line (center, with gaps for the center circle)
-        ctx?.move(to: CGPoint(x: 64, y: 16))
-        ctx?.addLine(to: CGPoint(x: 64, y: 48))
-        ctx?.move(to: CGPoint(x: 64, y: 80))
-        ctx?.addLine(to: CGPoint(x: 64, y: 112))
-        
-        ctx?.strokePath()
-        
-        // Add a larger center circle
-        ctx?.setFillColor(NSColor.systemOrange.cgColor)
-        ctx?.fillEllipse(in: CGRect(x: 56, y: 56, width: 16, height: 16))
-        
-        // Add a white border to the center circle for better visibility
-        ctx?.setStrokeColor(NSColor.white.cgColor)
-        ctx?.setLineWidth(2)
-        ctx?.strokeEllipse(in: CGRect(x: 56, y: 56, width: 16, height: 16))
-        
-        cursorImage.unlockFocus()
-        
-        customCursor = NSCursor(image: cursorImage, hotSpot: NSPoint(x: 64, y: 64))
-        customCursor?.push()
-    }
-    
-    private func restoreDefaultCursor() {
-        NSCursor.pop()
     }
     
     private func dragGesture(in geo: GeometryProxy) -> some Gesture {
@@ -180,6 +230,9 @@ struct SelectionOverlay: View {
                 let rect = buildRect(from: gStart, to: gEnd)
                 startPoint = nil
                 currentPoint = nil
+                
+                // FIXED: Always restore cursor when selection completes or fails
+                CursorManager.shared.forceRestoreCursor()
                 
                 if let rect, rect.width > 2, rect.height > 2 {
                     print("  Final selection rect: \(rect)")
@@ -236,7 +289,169 @@ struct SelectionOverlay: View {
     }
 }
 
+// MARK: - SelectionWindowManager Updates
+final class SelectionWindowManager {
+    static let shared = SelectionWindowManager()
+    private var panels: [NSPanel] = []
+    private var keyMonitor: Any?
+    
+    var onCancel: (() -> Void)?
+    
+    // Original method for backward compatibility (not used in new flow)
+    func present(onComplete: @escaping (CGRect) -> Void) {
+        guard panels.isEmpty else { return }
+        
+        // FIXED: Set cursor immediately when creating selection windows
+        CursorManager.shared.setCustomCrosshairCursor()
+        
+        for screen in NSScreen.screens {
+            let frame = screen.frame
+            let panel = NSPanel(contentRect: frame,
+                                styleMask: [.borderless, .nonactivatingPanel],
+                                backing: .buffered,
+                                defer: false)
+            panel.level = .screenSaver
+            panel.backgroundColor = .clear
+            panel.isOpaque = false
+            panel.ignoresMouseEvents = false
+            panel.isMovable = false
+            panel.collectionBehavior = [.canJoinAllSpaces, .fullScreenAuxiliary]
+            panel.titleVisibility = .hidden
+            panel.titlebarAppearsTransparent = true
+            panel.acceptsMouseMovedEvents = true
+            panel.hidesOnDeactivate = false
+            panel.hasShadow = false
+            panel.isExcludedFromWindowsMenu = true
+            panel.setFrame(frame, display: false)
+            
+            let root = SelectionOverlay(
+                windowOrigin: frame.origin,
+                capturedImage: nil,  // No captured image for old method
+                onComplete: { rect in
+                    onComplete(rect)
+                    self.dismiss()
+                },
+                onCancel: {
+                    self.handleCancellation()
+                }
+            )
+                .ignoresSafeArea()
+            
+            panel.contentView = NSHostingView(rootView: root)
+            panel.makeKeyAndOrderFront(nil)
+            panels.append(panel)
+        }
+        
+        NSApp.activate(ignoringOtherApps: true)
+        
+        keyMonitor = NSEvent.addLocalMonitorForEvents(matching: .keyDown) { [weak self] event in
+            guard let self else { return event }
+            if event.keyCode == 53 {
+                self.handleCancellation()
+                return nil
+            }
+            return event
+        }
+    }
+    
+    func presentWithCapturedScreens(
+        capturedScreens: [(screenInfo: GlobalHotKeyManager.ScreenInfo, cgImage: CGImage)],
+        onComplete: @escaping (CGRect) -> Void
+    ) {
+        guard panels.isEmpty else { return }
+        
+        print("=== Setting up selection windows ===")
+        
+        for (screenInfo, cgImage) in capturedScreens {
+            let frame = screenInfo.frame
+            print("Creating selection window for screen \(screenInfo.index):")
+            print("  Frame: \(frame)")
+            print("  Scale: \(screenInfo.backingScaleFactor)")
+            print("  Image size: \(cgImage.width)x\(cgImage.height)")
+            
+            let panel = NSPanel(contentRect: frame,
+                                styleMask: [.borderless, .nonactivatingPanel],
+                                backing: .buffered,
+                                defer: false)
+            panel.level = .screenSaver
+            panel.backgroundColor = .black
+            panel.isOpaque = true
+            panel.ignoresMouseEvents = false
+            panel.isMovable = false
+            panel.collectionBehavior = [.canJoinAllSpaces, .fullScreenAuxiliary]
+            panel.titleVisibility = .hidden
+            panel.titlebarAppearsTransparent = true
+            panel.acceptsMouseMovedEvents = true
+            panel.hidesOnDeactivate = false
+            panel.hasShadow = false
+            panel.isExcludedFromWindowsMenu = true
+            panel.setFrame(frame, display: false)
+            
+            let root = SelectionOverlay(
+                windowOrigin: frame.origin,
+                capturedImage: cgImage,
+                onComplete: { rect in
+                    print("Selection completed with rect: \(rect)")
+                    onComplete(rect)
+                    self.dismiss()
+                },
+                onCancel: {
+                    print("Selection canceled")
+                    self.handleCancellation()
+                }
+            )
+                .ignoresSafeArea()
+            
+            panel.contentView = NSHostingView(rootView: root)
+            panel.makeKeyAndOrderFront(nil)
+            panels.append(panel)
+            
+            print("  Window created and displayed")
+        }
+        
+        NSApp.activate(ignoringOtherApps: true)
+        
+        // FIXED: Set cursor after windows are created and displayed, with a small delay
+        DispatchQueue.main.asyncAfter(deadline: .now() + 0.1) {
+            CursorManager.shared.setCustomCrosshairCursor()
+        }
+        
+        keyMonitor = NSEvent.addLocalMonitorForEvents(matching: .keyDown) { [weak self] event in
+            guard let self else { return event }
+            if event.keyCode == 53 { // Escape key
+                self.handleCancellation()
+                return nil
+            }
+            return event
+        }
+        
+        print("Selection windows ready")
+    }
+    
+    private func handleCancellation() {
+        // FIXED: Ensure cursor is restored on cancellation
+        CursorManager.shared.forceRestoreCursor()
+        onCancel?()
+        dismiss()
+    }
+    
+    func dismiss() {
+        // FIXED: Force restore cursor when dismissing selection windows
+        CursorManager.shared.forceRestoreCursor()
+        
+        for p in panels {
+            p.orderOut(nil)
+        }
+        panels.removeAll()
+        if let keyMonitor {
+            NSEvent.removeMonitor(keyMonitor)
+            self.keyMonitor = nil
+        }
+        onCancel = nil
+    }
+}
 
+// Rest of the file remains the same...
 final class ScreenCapturer: NSObject, SCStreamOutput {
     static let shared = ScreenCapturer()
     
@@ -368,153 +583,3 @@ final class ScreenCapturer: NSObject, SCStreamOutput {
         }
     }
 }
-
-final class SelectionWindowManager {
-    static let shared = SelectionWindowManager()
-    private var panels: [NSPanel] = []
-    private var keyMonitor: Any?
-    
-    var onCancel: (() -> Void)?
-    
-    // Original method for backward compatibility (not used in new flow)
-    func present(onComplete: @escaping (CGRect) -> Void) {
-        guard panels.isEmpty else { return }
-        
-        for screen in NSScreen.screens {
-            let frame = screen.frame
-            let panel = NSPanel(contentRect: frame,
-                                styleMask: [.borderless, .nonactivatingPanel],
-                                backing: .buffered,
-                                defer: false)
-            panel.level = .screenSaver
-            panel.backgroundColor = .clear
-            panel.isOpaque = false
-            panel.ignoresMouseEvents = false
-            panel.isMovable = false
-            panel.collectionBehavior = [.canJoinAllSpaces, .fullScreenAuxiliary]
-            panel.titleVisibility = .hidden
-            panel.titlebarAppearsTransparent = true
-            panel.acceptsMouseMovedEvents = true
-            panel.hidesOnDeactivate = false
-            panel.hasShadow = false
-            panel.isExcludedFromWindowsMenu = true
-            panel.setFrame(frame, display: false)
-            
-            let root = SelectionOverlay(
-                windowOrigin: frame.origin,
-                capturedImage: nil,  // No captured image for old method
-                onComplete: { rect in
-                    onComplete(rect)
-                    self.dismiss()
-                },
-                onCancel: {
-                    self.handleCancellation()
-                }
-            )
-                .ignoresSafeArea()
-            
-            panel.contentView = NSHostingView(rootView: root)
-            panel.makeKeyAndOrderFront(nil)
-            panels.append(panel)
-        }
-        
-        NSApp.activate(ignoringOtherApps: true)
-        
-        keyMonitor = NSEvent.addLocalMonitorForEvents(matching: .keyDown) { [weak self] event in
-            guard let self else { return event }
-            if event.keyCode == 53 {
-                self.handleCancellation()
-                return nil
-            }
-            return event
-        }
-    }
-    
-    func presentWithCapturedScreens(
-        capturedScreens: [(screenInfo: GlobalHotKeyManager.ScreenInfo, cgImage: CGImage)],
-        onComplete: @escaping (CGRect) -> Void
-    ) {
-        guard panels.isEmpty else { return }
-        
-        print("=== Setting up selection windows ===")
-        
-        for (screenInfo, cgImage) in capturedScreens {
-            let frame = screenInfo.frame
-            print("Creating selection window for screen \(screenInfo.index):")
-            print("  Frame: \(frame)")
-            print("  Scale: \(screenInfo.backingScaleFactor)")
-            print("  Image size: \(cgImage.width)x\(cgImage.height)")
-            
-            let panel = NSPanel(contentRect: frame,
-                                styleMask: [.borderless, .nonactivatingPanel],
-                                backing: .buffered,
-                                defer: false)
-            panel.level = .screenSaver
-            panel.backgroundColor = .black
-            panel.isOpaque = true
-            panel.ignoresMouseEvents = false
-            panel.isMovable = false
-            panel.collectionBehavior = [.canJoinAllSpaces, .fullScreenAuxiliary]
-            panel.titleVisibility = .hidden
-            panel.titlebarAppearsTransparent = true
-            panel.acceptsMouseMovedEvents = true
-            panel.hidesOnDeactivate = false
-            panel.hasShadow = false
-            panel.isExcludedFromWindowsMenu = true
-            panel.setFrame(frame, display: false)
-            
-            let root = SelectionOverlay(
-                windowOrigin: frame.origin,
-                capturedImage: cgImage,
-                onComplete: { rect in
-                    print("Selection completed with rect: \(rect)")
-                    onComplete(rect)
-                    self.dismiss()
-                },
-                onCancel: {
-                    print("Selection canceled")
-                    self.handleCancellation()
-                }
-            )
-                .ignoresSafeArea()
-            
-            panel.contentView = NSHostingView(rootView: root)
-            panel.makeKeyAndOrderFront(nil)
-            panels.append(panel)
-            
-            print("  Window created and displayed")
-        }
-        
-        NSApp.activate(ignoringOtherApps: true)
-        
-        keyMonitor = NSEvent.addLocalMonitorForEvents(matching: .keyDown) { [weak self] event in
-            guard let self else { return event }
-            if event.keyCode == 53 {
-                self.handleCancellation()
-                return nil
-            }
-            return event
-        }
-        
-        print("Selection windows ready")
-    }
-    
-    private func handleCancellation() {
-        onCancel?()
-        dismiss()
-    }
-    
-    func dismiss() {
-        for p in panels {
-            p.orderOut(nil)
-        }
-        panels.removeAll()
-        if let keyMonitor {
-            NSEvent.removeMonitor(keyMonitor)
-            self.keyMonitor = nil
-        }
-        onCancel = nil
-    }
-}
-
-
