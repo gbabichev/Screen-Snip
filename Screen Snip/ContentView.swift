@@ -599,7 +599,7 @@ struct ContentView: View {
                     .padding(20)
             }
         }
-        .frame(minWidth: 1200, minHeight: 400)
+        //.frame(minWidth: 1200, minHeight: 400)
         .safeAreaInset(edge: .bottom) {
             if !SnipURLs.isEmpty {
                 VStack(alignment: .leading, spacing: 6) {
