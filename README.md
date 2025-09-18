@@ -100,6 +100,12 @@ open "Screen Snip.xcodeproj"
 
 ## 📝 Changelog
 
+### 1.0.2 
+- Resolved regression with "Open With Screen Snip" not working in Finder. 
+
+### 1.0.1
+- Improved permissions UI when launching app. 
+
 ### 1.0 
 - Initial Release. 
 

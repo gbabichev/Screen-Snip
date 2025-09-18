@@ -268,7 +268,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, ObservableObject {
     }
     
     private func handleOpenFiles(_ urls: [URL]) {
-        print("📂 handleOpenFiles called with \(urls.count) URLs:")
+        print("🗂 handleOpenFiles called with \(urls.count) URLs:")
         for (index, url) in urls.enumerated() {
             print("  [\(index)] \(url.absoluteString)")
             print("      - isFileURL: \(url.isFileURL)")
@@ -284,9 +284,13 @@ final class AppDelegate: NSObject, NSApplicationDelegate, ObservableObject {
                 return false
             }
             
-            // Filter out paths that look like launch arguments or app container paths
             let path = url.path
-            if path.contains("/Library/Containers/") && (path.hasSuffix("/YES") || path.hasSuffix("/NO")) {
+            
+            // More specific filtering for launch arguments - only filter if it's clearly a launch artifact
+            // Look for very specific patterns that indicate launch arguments, not just any container path
+            if path.contains("/Library/Containers/") &&
+               (path.hasSuffix("/YES") || path.hasSuffix("/NO")) &&
+               !supportedExtensions.contains(url.pathExtension.lowercased()) {
                 print("  - Filtered out launch argument artifact: \(path)")
                 return false
             }
@@ -302,31 +306,40 @@ final class AppDelegate: NSObject, NSApplicationDelegate, ObservableObject {
             let isSupported = supportedExtensions.contains(ext)
             if !isSupported {
                 print("  - Filtered out unsupported extension '\(ext)' for: \(url.lastPathComponent)")
+            } else {
+                print("  - ✅ Valid image file: \(url.lastPathComponent)")
             }
             return isSupported
         }
         
         guard !imageURLs.isEmpty else {
-            print("⚠️ No valid image URLs found - not showing alert")
-            return // Don't show alert for non-existent files or launch artifacts
+            print("⚠️ No valid image URLs found")
+            return
         }
         
         let firstImage = imageURLs[0]
+        print("📸 Opening image: \(firstImage.path)")
         
         DispatchQueue.main.async {
-            let userInfo: [String: Any] = [
-                "url": firstImage,
-                "shouldActivate": true
-            ]
+            // Ensure we have a main window first
+            WindowManager.shared.ensureMainWindow()
             
-            NotificationCenter.default.post(
-                name: Notification.Name("com.georgebabichev.screenSnip.beginSnipFromIntent"),
-                object: nil,
-                userInfo: userInfo
-            )
-            
-            if imageURLs.count > 1 {
-                print("Multiple images selected. Currently opening the first one: \(firstImage.lastPathComponent)")
+            // Small delay to ensure window is ready
+            DispatchQueue.main.asyncAfter(deadline: .now() + 0.1) {
+                let userInfo: [String: Any] = [
+                    "url": firstImage,
+                    "shouldActivate": true
+                ]
+                
+                NotificationCenter.default.post(
+                    name: Notification.Name("com.georgebabichev.screenSnip.beginSnipFromIntent"),
+                    object: nil,
+                    userInfo: userInfo
+                )
+                
+                if imageURLs.count > 1 {
+                    print("📚 Multiple images selected. Currently opening the first one: \(firstImage.lastPathComponent)")
+                }
             }
         }
     }
