@@ -225,7 +225,7 @@ struct AppCommands: Commands {
         CommandGroup(replacing: .help) {
             Button {
                 // Open help URL - replace with your actual help URL
-                if let url = URL(string: "https://github.com/gbabichev/Screen-Snip") {
+                if let url = URL(string: "https://gbabichev.github.io/Screen-Snip/Support.html") {
                     NSWorkspace.shared.open(url)
                 }
             } label: {

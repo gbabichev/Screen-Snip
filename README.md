@@ -110,12 +110,13 @@ MIT — free for personal and commercial use.
 ## Privacy
 <a href="Documentation/PrivacyPolicy.html">Privacy Policy</a>
 
+## Support 
+<a href="Documentation/Support.html">Support</a>
+
 ## Progress
 <details>
 <summary>Work in Progress</summary>
-- Redesign permissions UI. 
-- Redesign screen / mouse UI during screenshots. 
-- Add "Help" section with support contact info. 
+
 </details>
 
 <details>
@@ -169,4 +170,7 @@ MIT — free for personal and commercial use.
 - <del>Rework settings UI
 - <del>Add Right click Open With menu. 
 - <del>Start on Login.
+- <del>Redesign permissions UI. 
+- <del>Redesign screen / mouse UI during screenshots. 
+- <del>Add "Help" section with support contact info. 
 </details>
