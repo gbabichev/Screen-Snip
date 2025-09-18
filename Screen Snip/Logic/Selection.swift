@@ -14,6 +14,7 @@ import ImageIO
 import Combine
 
 // MARK: - Global Cursor Manager (NEW)
+// MARK: - Global Cursor Manager (FIXED)
 @MainActor
 class CursorManager {
     static let shared = CursorManager()
@@ -24,92 +25,90 @@ class CursorManager {
     private init() {}
     
     func setCustomCrosshairCursor() {
-        // Always ensure we're on the main thread
-        DispatchQueue.main.async {
-            // Create cursor if needed
-            if self.customCursor == nil {
-                // Create a large orange crosshair cursor (4x larger = 128x128)
-                let cursorImage = NSImage(size: NSSize(width: 128, height: 128))
-                cursorImage.lockFocus()
+        // Create cursor if needed
+        if self.customCursor == nil {
+            // Create a large orange crosshair cursor (4x larger = 128x128)
+            let cursorImage = NSImage(size: NSSize(width: 128, height: 128))
+            cursorImage.lockFocus()
+            
+            // Draw crosshair in orange
+            if let ctx = NSGraphicsContext.current?.cgContext {
+                ctx.setStrokeColor(NSColor.systemOrange.cgColor)
+                ctx.setLineWidth(8) // Thicker lines for visibility
                 
-                // Draw crosshair in orange
-                if let ctx = NSGraphicsContext.current?.cgContext {
-                    ctx.setStrokeColor(NSColor.systemOrange.cgColor)
-                    ctx.setLineWidth(8) // Thicker lines for visibility
-                    
-                    // Horizontal line (center, with gaps for the center circle)
-                    ctx.move(to: CGPoint(x: 16, y: 64))
-                    ctx.addLine(to: CGPoint(x: 48, y: 64))
-                    ctx.move(to: CGPoint(x: 80, y: 64))
-                    ctx.addLine(to: CGPoint(x: 112, y: 64))
-                    
-                    // Vertical line (center, with gaps for the center circle)
-                    ctx.move(to: CGPoint(x: 64, y: 16))
-                    ctx.addLine(to: CGPoint(x: 64, y: 48))
-                    ctx.move(to: CGPoint(x: 64, y: 80))
-                    ctx.addLine(to: CGPoint(x: 64, y: 112))
-                    
-                    ctx.strokePath()
-                    
-                    // Add a larger center circle
-                    ctx.setFillColor(NSColor.systemOrange.cgColor)
-                    ctx.fillEllipse(in: CGRect(x: 56, y: 56, width: 16, height: 16))
-                    
-                    // Add a white border to the center circle for better visibility
-                    ctx.setStrokeColor(NSColor.white.cgColor)
-                    ctx.setLineWidth(2)
-                    ctx.strokeEllipse(in: CGRect(x: 56, y: 56, width: 16, height: 16))
-                }
+                // Horizontal line (center, with gaps for the center circle)
+                ctx.move(to: CGPoint(x: 16, y: 64))
+                ctx.addLine(to: CGPoint(x: 48, y: 64))
+                ctx.move(to: CGPoint(x: 80, y: 64))
+                ctx.addLine(to: CGPoint(x: 112, y: 64))
                 
-                cursorImage.unlockFocus()
+                // Vertical line (center, with gaps for the center circle)
+                ctx.move(to: CGPoint(x: 64, y: 16))
+                ctx.addLine(to: CGPoint(x: 64, y: 48))
+                ctx.move(to: CGPoint(x: 64, y: 80))
+                ctx.addLine(to: CGPoint(x: 64, y: 112))
                 
-                self.customCursor = NSCursor(image: cursorImage, hotSpot: NSPoint(x: 64, y: 64))
+                ctx.strokePath()
+                
+                // Add a larger center circle
+                ctx.setFillColor(NSColor.systemOrange.cgColor)
+                ctx.fillEllipse(in: CGRect(x: 56, y: 56, width: 16, height: 16))
+                
+                // Add a white border to the center circle for better visibility
+                ctx.setStrokeColor(NSColor.white.cgColor)
+                ctx.setLineWidth(2)
+                ctx.strokeEllipse(in: CGRect(x: 56, y: 56, width: 16, height: 16))
             }
             
-            // Set the cursor immediately
-            self.customCursor?.set()
+            cursorImage.unlockFocus()
             
-            // Start a timer to keep enforcing the cursor every 100ms
-            self.cursorTimer?.invalidate()
-            self.cursorTimer = Timer.scheduledTimer(withTimeInterval: 0.1, repeats: true) { _ in
-                // Only set cursor if it's not already our custom cursor
-                if NSCursor.current != self.customCursor {
-                    self.customCursor?.set()
-                }
-            }
-            
-            print("Custom crosshair cursor set with enforcement timer")
+            self.customCursor = NSCursor(image: cursorImage, hotSpot: NSPoint(x: 64, y: 64))
         }
+        
+        // Set the cursor immediately
+        self.customCursor?.set()
+        
+        // Start a timer to keep enforcing the cursor every 100ms
+        self.cursorTimer?.invalidate()
+        self.cursorTimer = Timer.scheduledTimer(withTimeInterval: 0.1, repeats: true) { _ in
+            Task { @MainActor in
+                // Access the cursor manager's cursor from within the MainActor context
+                guard let cursor = CursorManager.shared.customCursor else { return }
+                
+                // Only set cursor if it's not already our custom cursor
+                if NSCursor.current != cursor {
+                    cursor.set()
+                }
+            }
+        }
+        
+        print("Custom crosshair cursor set with enforcement timer")
     }
     
     func restoreOriginalCursor() {
-        DispatchQueue.main.async {
-            // Stop the enforcement timer
-            self.cursorTimer?.invalidate()
-            self.cursorTimer = nil
-            
-            // Restore arrow cursor
-            NSCursor.arrow.set()
-            
-            print("Cursor restored and timer stopped")
-        }
+        // Stop the enforcement timer
+        self.cursorTimer?.invalidate()
+        self.cursorTimer = nil
+        
+        // Restore arrow cursor
+        NSCursor.arrow.set()
+        
+        print("Cursor restored and timer stopped")
     }
     
     // Force restore - use this when selection is cancelled/completed
     func forceRestoreCursor() {
-        DispatchQueue.main.async {
-            // Stop the enforcement timer immediately
-            self.cursorTimer?.invalidate()
-            self.cursorTimer = nil
-            
-            // Clear our references
-            self.cursorStack.removeAll()
-            
-            // Force arrow cursor
-            NSCursor.arrow.set()
-            
-            print("Cursor force restored to arrow and timer stopped")
-        }
+        // Stop the enforcement timer immediately
+        self.cursorTimer?.invalidate()
+        self.cursorTimer = nil
+        
+        // Clear our references
+        self.cursorStack.removeAll()
+        
+        // Force arrow cursor
+        NSCursor.arrow.set()
+        
+        print("Cursor force restored to arrow and timer stopped")
     }
 }
 
@@ -187,7 +186,7 @@ struct SelectionOverlay: View {
                         Text("Drag to select area")
                             .font(.headline)
                             .foregroundColor(.white)
-                        Text("Double-click to cancel")
+                        Text("Single-click or Esc to cancel")
                             .font(.caption)
                             .foregroundColor(.white.opacity(0.8))
                     }

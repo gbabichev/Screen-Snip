@@ -100,6 +100,10 @@ open "Screen Snip.xcodeproj"
 
 ## 📝 Changelog
 
+### 1.0.3
+- Resolved issue with screen cursor not always displaying properly. 
+- Optimized window close/reopen behavior during certain captures. 
+
 ### 1.0.2 
 - Resolved regression with "Open With Screen Snip" not working in Finder. 
 
@@ -179,4 +183,7 @@ MIT — free for personal and commercial use.
 - <del>Redesign permissions UI. 
 - <del>Redesign screen / mouse UI during screenshots. 
 - <del>Add "Help" section with support contact info. 
+- <del>Fixed cursor not always displaying correctly during capture.
+- <del>Added better UI for screen capture. 
+- <del>Optimized window closing/opening behavior. 
 </details>
