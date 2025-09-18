@@ -1273,29 +1273,6 @@ struct ContentView: View {
                 }
             }
             
-            // Permissions Button
-//            ToolbarItem(placement: .primaryAction) {
-//                HStack(spacing: 8) {
-//                    // Show warning button if permissions are missing
-//                    if hasPermissionIssues {
-//                        Button {
-//                            showPermissions = true
-//                        } label: {
-//                            Image(systemName: "exclamationmark.triangle.fill")
-//                                .foregroundColor(.orange)
-//                                .help("Missing permissions required for Screen Snip")
-//                        }
-//                        .buttonStyle(.plain)
-//                    }
-//                    
-//                    // Existing capture button
-//                    Button {
-//                        GlobalHotKeyManager.shared.triggerCapture()
-//                    } label: {
-//                        Label("Capture Region", systemImage: "camera.viewfinder")
-//                    }
-//                }
-//            }
             if hasPermissionIssues {
                 ToolbarItem(placement: .primaryAction) {
                     Button {
@@ -1323,20 +1300,14 @@ struct ContentView: View {
             }
         }
         .sheet(isPresented: $appDelegate.showPermissionsView) {
-             PermissionsView(
-                 needsAccessibility: appDelegate.needsAccessibilityPermission,
-                 needsScreenRecording: appDelegate.needsScreenRecordingPermission,
-                 onOpenPreferences: {
-                     openPrivacyPreferences(
-                         needsAccessibility: appDelegate.needsAccessibilityPermission,
-                         needsScreenRecording: appDelegate.needsScreenRecordingPermission
-                     )
-                 },
-                 onContinue: {
-                     appDelegate.showPermissionsView = false
-                 }
-             )
-         }
+            PermissionsView(
+                needsAccessibility: appDelegate.needsAccessibilityPermission,
+                needsScreenRecording: appDelegate.needsScreenRecordingPermission,
+                onContinue: {
+                    appDelegate.showPermissionsView = false
+                }
+            )
+        }
         .fileImporter(
             isPresented: Binding(
                 get: { activeImporter != nil },
@@ -1500,7 +1471,6 @@ struct ContentView: View {
         let nc = NotificationCenter.default
         return Publishers.MergeMany([
             nc.publisher(for: Notification.Name("com.georgebabichev.screenSnip.beginSnipFromIntent")),
-            nc.publisher(for: Notification.Name("showPermissionsView")),
             nc.publisher(for: .selectTool),
             nc.publisher(for: .openImageFile),
             nc.publisher(for: .copyToClipboard),

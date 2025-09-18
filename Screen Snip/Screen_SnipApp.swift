@@ -82,8 +82,6 @@ private func applyActivationPolicy(_ hide: Bool) {
 
 // MARK: - AppDelegate Changes (in Screen_SnipApp.swift)
 
-// MARK: - AppDelegate Changes (in Screen_SnipApp.swift)
-
 final class AppDelegate: NSObject, NSApplicationDelegate, ObservableObject {
     
     // Add singleton access
@@ -222,6 +220,32 @@ final class AppDelegate: NSObject, NSApplicationDelegate, ObservableObject {
         GlobalHotKeyManager.shared.registerSnipHotKey()
     }
 
+    func applicationShouldTerminate(_ sender: NSApplication) -> NSApplication.TerminateReply {
+        // Force close all sheets and modal windows immediately
+        for window in NSApp.windows {
+            // End any attached sheets
+            if let sheet = window.attachedSheet {
+                window.endSheet(sheet, returnCode: .cancel)
+            }
+            
+            // Close any modal panels
+            if window.isModalPanel {
+                NSApp.stopModal(withCode: .cancel)
+            }
+        }
+        
+        // Force our SwiftUI sheet state to false
+        DispatchQueue.main.async {
+            self.showPermissionsView = false
+        }
+        
+        // Stop any modal sessions
+        NSApp.stopModal()
+        
+        // Allow immediate termination without delay
+        return .terminateNow
+    }
+
     func applicationWillTerminate(_ notification: Notification) {
         GlobalHotKeyManager.shared.unregister()
     }
@@ -322,5 +346,3 @@ final class AppDelegate: NSObject, NSApplicationDelegate, ObservableObject {
         NSApp.activate(ignoringOtherApps: true)
     }
 }
-
-

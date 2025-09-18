@@ -1,19 +1,15 @@
-//
-//  PermissionsView.swift
-//  Screen Snip
-//
-//  Created by George Babichev on 9/17/25.
-//
-
-
 import SwiftUI
-//import AppKit
+import ScreenCaptureKit
+import ApplicationServices
+import AppKit
 
 struct PermissionsView: View {
     let needsAccessibility: Bool
     let needsScreenRecording: Bool
-    let onOpenPreferences: () -> Void
     let onContinue: () -> Void
+    
+    @State private var isTestingScreenRecording = false
+    @State private var isTestingAccessibility = false
     
     var body: some View {
         VStack(spacing: 20) {
@@ -33,99 +29,127 @@ struct PermissionsView: View {
                     .multilineTextAlignment(.center)
             }
             
-            // Permissions List
+            // Permissions List with Action Buttons
             VStack(spacing: 16) {
                 if needsAccessibility {
-                    PermissionRow(
+                    PermissionRowWithAction(
                         icon: "hand.point.up.left.fill",
                         title: "Accessibility",
                         description: "Required to capture screenshots with the global hotkey (⌘⇧2)",
-                        status: .required
-                    )
+                        status: .required,
+                        buttonTitle: "Open System Settings",
+                        isLoading: isTestingAccessibility
+                    ) {
+                        isTestingAccessibility = true
+                        
+                        onContinue()
+                        
+                        AXPromptCoordinator.shared.requestAXPromptOnly()
+                        // The coordinator will call AppDelegate.shared.refreshPermissionStatus() after 2 seconds
+                        DispatchQueue.main.asyncAfter(deadline: .now() + 2.5) {
+                            isTestingAccessibility = false
+                        }
+                    }
                 }
                 
                 if needsScreenRecording {
-                    PermissionRow(
+                    PermissionRowWithAction(
                         icon: "camera.viewfinder",
                         title: "Screen Recording",
                         description: "Required to capture screen content",
-                        status: .required
-                    )
+                        status: .required,
+                        buttonTitle: "Allow",
+                        isLoading: isTestingScreenRecording
+                    ) {
+                        onContinue()
+                        testScreenRecordingPermission()
+                    }
                 }
             }
             .padding(.horizontal, 8)
             
             // Instructions
             VStack(spacing: 8) {
-                Text("What to do next:")
+                Text("How it works:")
                     .font(.headline)
                     .fontWeight(.medium)
                 
                 VStack(alignment: .leading, spacing: 6) {
                     InstructionStep(
                         number: 1,
-                        text: "Click 'Open System Preferences' below"
+                        text: "Click the button above for each permission"
                     )
-                    
-                    if needsAccessibility {
-                        InstructionStep(
-                            number: 2,
-                            text: "Go to Privacy & Security → Accessibility"
-                        )
-                        InstructionStep(
-                            number: 3,
-                            text: "Enable Screen Snip in the list"
-                        )
-                    }
-                    
-                    if needsScreenRecording {
-                        let stepNumber = needsAccessibility ? 4 : 2
-                        InstructionStep(
-                            number: stepNumber,
-                            text: "Go to Privacy & Security → Screen Recording"
-                        )
-                        InstructionStep(
-                            number: stepNumber + 1,
-                            text: "Enable Screen Snip in the list"
-                        )
-                    }
-                    
-                    let finalStep = (needsAccessibility ? 4 : 2) + (needsScreenRecording ? 2 : 0)
                     InstructionStep(
-                        number: finalStep,
-                        text: "Restart Screen Snip for all features to work"
+                        number: 2,
+                        text: "For Accessibility - Click the '+' Sign and add Screen Snip. Make sure to flip the toggle!"
+                    )
+                    InstructionStep(
+                        number: 3,
+                        text: "For Screen Recording - Enable the Screen Recording toggle in System Settings."
                     )
                 }
                 .padding(.horizontal, 16)
             }
             
-            // Action Buttons
-            HStack(spacing: 12) {
-                Button("Continue with Limited Features") {
-                    onContinue()
-                }
-                .buttonStyle(.plain)
-                .foregroundColor(.secondary)
-                
-                Button("Open System Preferences") {
-                    onOpenPreferences()
-                }
-                .buttonStyle(.borderedProminent)
-                .controlSize(.large)
+            // Continue Button
+            Button("Continue") {
+                onContinue()
             }
+            .buttonStyle(.borderedProminent)
+            .controlSize(.large)
             .padding(.top, 8)
         }
         .padding(32)
         .frame(maxWidth: 480)
         .background(Color(NSColor.windowBackgroundColor))
     }
+    
+    private func testScreenRecordingPermission() {
+        isTestingScreenRecording = true
+        
+        Task {
+            do {
+                // Use ScreenCaptureKit to trigger the permission dialog
+                let availableContent = try await SCShareableContent.excludingDesktopWindows(false, onScreenWindowsOnly: true)
+                
+                if let display = availableContent.displays.first {
+                    let filter = SCContentFilter(display: display, excludingWindows: [])
+                    let config = SCStreamConfiguration()
+                    config.width = 100  // Small test capture
+                    config.height = 100
+                    config.minimumFrameInterval = CMTime(value: 1, timescale: 1)
+                    
+                    // This will show the permission dialog if needed
+                    let stream = SCStream(filter: filter, configuration: config, delegate: nil)
+                    try await stream.startCapture()
+                    try await stream.stopCapture()
+                }
+                
+                // If we got here, permission was likely granted
+                await MainActor.run {
+                    self.isTestingScreenRecording = false
+                    AppDelegate.shared.refreshPermissionStatus()
+                }
+                
+            } catch {
+                print("Screen recording test failed: \(error)")
+                await MainActor.run {
+                    self.isTestingScreenRecording = false
+                    AppDelegate.shared.refreshPermissionStatus()
+                }
+            }
+        }
+    }
 }
 
-struct PermissionRow: View {
+struct PermissionRowWithAction: View {
     let icon: String
     let title: String
     let description: String
     let status: PermissionStatus
+    let buttonTitle: String
+    let isLoading: Bool
+    let action: () -> Void
     
     enum PermissionStatus {
         case granted
@@ -133,28 +157,49 @@ struct PermissionRow: View {
     }
     
     var body: some View {
-        HStack(spacing: 16) {
-            Image(systemName: icon)
-                .font(.title2)
-                .foregroundColor(status == .granted ? .green : .orange)
-                .frame(width: 32)
-            
-            VStack(alignment: .leading, spacing: 4) {
-                Text(title)
-                    .font(.headline)
-                    .fontWeight(.medium)
+        VStack(spacing: 12) {
+            HStack(spacing: 16) {
+                Image(systemName: icon)
+                    .font(.title2)
+                    .foregroundColor(status == .granted ? .green : .orange)
+                    .frame(width: 32)
                 
-                Text(description)
-                    .font(.body)
-                    .foregroundColor(.secondary)
-                    .fixedSize(horizontal: false, vertical: true)
+                VStack(alignment: .leading, spacing: 4) {
+                    Text(title)
+                        .font(.headline)
+                        .fontWeight(.medium)
+                    
+                    Text(description)
+                        .font(.body)
+                        .foregroundColor(.secondary)
+                        .fixedSize(horizontal: false, vertical: true)
+                }
+                
+                Spacer()
+                
+                Image(systemName: status == .granted ? "checkmark.circle.fill" : "exclamationmark.circle.fill")
+                    .foregroundColor(status == .granted ? .green : .orange)
+                    .font(.title3)
             }
             
-            Spacer()
-            
-            Image(systemName: status == .granted ? "checkmark.circle.fill" : "exclamationmark.circle.fill")
-                .foregroundColor(status == .granted ? .green : .orange)
-                .font(.title3)
+            // Action Button
+            HStack {
+                Spacer()
+                Button(action: action) {
+                    HStack(spacing: 8) {
+                        if isLoading {
+                            ProgressView()
+                                .scaleEffect(0.8)
+                                .frame(width: 16, height: 16)
+                        } else {
+                            Image(systemName: "play.circle.fill")
+                        }
+                        Text(buttonTitle)
+                    }
+                }
+                .buttonStyle(.bordered)
+                .disabled(isLoading || status == .granted)
+            }
         }
         .padding(16)
         .background(Color(NSColor.controlBackgroundColor))
