@@ -120,13 +120,10 @@ final class GlobalHotKeyManager {
         guard !isCurrentlyCapturing else { return }
         isCurrentlyCapturing = true
         
-        print("Starting screen capture...")
-        
-        // Get user preference for capture mode
         let captureModeRaw = UserDefaults.standard.string(forKey: "captureMode") ?? "captureWithWindows"
         let captureMode = CaptureMode(rawValue: captureModeRaw) ?? .captureWithWindows
         
-        print("Using capture mode: \(captureMode.displayName)")
+        let windowsWereHidden = (captureMode == .captureWithoutWindows)
         
         switch captureMode {
         case .captureWithWindows:
@@ -135,10 +132,17 @@ final class GlobalHotKeyManager {
             handleCaptureWithoutWindows()
         }
         
-        // Set up cancel handler (same for both modes)
+        // Set up cancel handler
         SelectionWindowManager.shared.onCancel = { [weak self] in
             self?.isCurrentlyCapturing = false
             self?.capturedScreens.removeAll()
+            
+            // Only restore windows if we actually hid them
+            if windowsWereHidden {
+                DispatchQueue.main.async {
+                    WindowManager.shared.ensureMainWindow()
+                }
+            }
         }
     }
 
@@ -149,17 +153,12 @@ final class GlobalHotKeyManager {
         Task { [weak self] in
             guard let self = self else { return }
             
-            // STEP 1: Capture all screens FIRST (with windows visible - this is what user sees)
+            // STEP 1: Capture all screens with windows visible
             let screenshots = await self.captureAllScreensImmediately()
             
             await MainActor.run {
-                // STEP 2: Now close windows for clean selection UI
-                WindowManager.shared.closeAllAppWindows()
-                
-                // Store the captured screens
+                // STEP 2: Show selection overlay directly - NO window manipulation
                 self.capturedScreens = screenshots
-                
-                // STEP 3: Show selection overlay
                 self.presentSelectionUI(with: screenshots)
             }
         }
@@ -170,16 +169,14 @@ final class GlobalHotKeyManager {
         Task { [weak self] in
             guard let self = self else { return }
             
-            // STEP 1: Wait for windows to actually close completely
+            // STEP 1: Hide windows first for clean desktop
             await WindowManager.shared.closeAllAppWindowsAsync()
             
-            // STEP 2: Now capture with windows definitely closed
+            // STEP 2: Capture with windows hidden
             let screenshots = await self.captureAllScreensImmediately()
             
             await MainActor.run {
                 self.capturedScreens = screenshots
-                
-                // STEP 3: Show selection overlay
                 self.presentSelectionUI(with: screenshots)
             }
         }
