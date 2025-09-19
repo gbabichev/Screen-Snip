@@ -81,6 +81,8 @@ struct ContentView: View {
     
     @ObservedObject private var appDelegate = AppDelegate.shared
     
+    @FocusState private var thumbnailsFocused: Bool
+
     private var hasPermissionIssues: Bool {
         appDelegate.needsAccessibilityPermission || appDelegate.needsScreenRecordingPermission
     }
@@ -641,8 +643,8 @@ struct ContentView: View {
                     }
                     .padding(.leading, 8)
                     
-                    
-                    
+
+
                     ScrollView(.horizontal, showsIndicators: true) {
                         HStack(spacing: 8) {
                             ForEach(SnipURLs, id: \.self) { url in
@@ -658,6 +660,9 @@ struct ContentView: View {
                                 }
                                 .contentShape(Rectangle())
                                 .onTapGesture {
+                                    // Set focus when clicking on thumbnails
+                                    thumbnailsFocused = true
+                                    
                                     // Check if file exists before trying to load
                                     let fm = FileManager.default
                                     if !fm.fileExists(atPath: url.path) {
@@ -699,6 +704,43 @@ struct ContentView: View {
                         .padding(.horizontal, 8)
                         .padding(.vertical, 6)
                     }
+                    .focusable()  // Make the ScrollView focusable
+                    .focused($thumbnailsFocused)  // Bind to focus state
+                    .focusEffectDisabled()
+                    .background(
+                        // Invisible background that extends beyond thumbnails to maintain focus
+                        Rectangle()
+                            .fill(Color.clear)
+                            .contentShape(Rectangle())
+                            .onTapGesture {
+                                thumbnailsFocused = true
+                            }
+                    )
+                    .onKeyPress(keys: [.leftArrow, .rightArrow]) { keyPress in
+                        // Only handle navigation if thumbnails are focused and we have thumbnails
+                        guard thumbnailsFocused && !SnipURLs.isEmpty else { return .ignored }
+                        
+                        if keyPress.key == .leftArrow {
+                            // Defer state changes to avoid "Publishing changes from within view updates" error
+                            DispatchQueue.main.async {
+                                navigateToAdjacentThumbnail(direction: .previous)
+                            }
+                            return .handled
+                        } else if keyPress.key == .rightArrow {
+                            DispatchQueue.main.async {
+                                navigateToAdjacentThumbnail(direction: .next)
+                            }
+                            return .handled
+                        }
+                        
+                        return .ignored
+                    }
+                    
+                    
+                    
+                    
+                    
+                    
                 }
                 .padding(.top, 4)
                 .background(.thinMaterial) // keep it distinct and readable
@@ -709,6 +751,17 @@ struct ContentView: View {
             updateMenuState()
             // Listen for Cmd+Z / Shift+Cmd+Z globally while this view is active, and Delete for selected objects
             keyMonitor = NSEvent.addLocalMonitorForEvents(matching: .keyDown) { event in
+                
+                if event.type == .keyDown {
+                    // Auto-focus thumbnails when arrow keys are pressed and nothing specific is focused
+                    if !thumbnailsFocused && !isTextEditorFocused && (event.keyCode == 123 || event.keyCode == 124) { // left/right arrows
+                        DispatchQueue.main.async {
+                            thumbnailsFocused = true
+                        }
+                        // Don't return nil here - let the event continue to be processed by the new onKeyPress handler
+                    }
+                }
+                
                 // Cmd+Z / Shift+Cmd+Z for Undo/Redo
                 if event.modifierFlags.contains(.command), let chars = event.charactersIgnoringModifiers?.lowercased() {
                     if chars == "z" {
@@ -727,6 +780,12 @@ struct ContentView: View {
                             pasteFromClipboard()
                             return nil // consume
                         }
+                    }
+                    if chars == "t" {
+                        DispatchQueue.main.async {
+                            thumbnailsFocused = true
+                        }
+                        return nil // consume
                     }
                 }
                 
@@ -1406,6 +1465,70 @@ struct ContentView: View {
         )
     }
     
+
+    private enum NavigationDirection {
+        case previous, next
+    }
+
+    private func navigateToAdjacentThumbnail(direction: NavigationDirection) {
+        guard !SnipURLs.isEmpty else { return }
+        
+        let currentIndex: Int
+        if let selectedURL = selectedSnipURL,
+           let index = SnipURLs.firstIndex(of: selectedURL) {
+            currentIndex = index
+        } else {
+            // No selection, start from first
+            currentIndex = direction == .next ? -1 : 0
+        }
+        
+        let nextIndex: Int
+        switch direction {
+        case .next:
+            nextIndex = currentIndex + 1 < SnipURLs.count ? currentIndex + 1 : 0
+        case .previous:
+            nextIndex = currentIndex > 0 ? currentIndex - 1 : SnipURLs.count - 1
+        }
+        
+        let targetURL = SnipURLs[nextIndex]
+        
+        // Use the same loading logic as the tap gesture
+        let fm = FileManager.default
+        if !fm.fileExists(atPath: targetURL.path) {
+            // File is missing - add to missing set and remove from SnipURLs
+            missingSnipURLs.insert(targetURL)
+            SnipURLs.remove(at: nextIndex)
+            // Try again with updated array if we still have thumbnails
+            if !SnipURLs.isEmpty {
+                navigateToAdjacentThumbnail(direction: direction)
+            }
+            return
+        }
+        
+        // File exists - load it into the editor
+        selectedSnipURL = targetURL
+        selectedImageSize = probeImageSize(targetURL)
+        updateMenuState()
+        
+        // Clear all editing state when switching images
+        objects.removeAll()
+        objectSpaceSize = nil
+        selectedObjectID = nil
+        activeHandle = .none
+        cropRect = nil
+        cropDraftRect = nil
+        cropHandle = .none
+        focusedTextID = nil
+        
+        // Clear undo/redo stacks for the new image
+        undoStack.removeAll()
+        redoStack.removeAll()
+    }
+
+    
+    
+    
+    
     private func openPrivacyPreferences(needsAccessibility: Bool, needsScreenRecording: Bool) {
         // Try to open the most relevant preference pane
         var urlString: String
@@ -1851,37 +1974,6 @@ struct ContentView: View {
         c.size.height = max(2, c.size.height)
         return c
     }
-    
-//    private func startSelection() {
-//        WindowManager.shared.closeAllAppWindows()
-//        
-//        SelectionWindowManager.shared.present(onComplete: { rect in
-//            Task {
-//                // Use the same capture method as the hotkey to avoid duplication
-//                if let img = await GlobalHotKeyManager.shared.captureScreenshot(rect: rect) {
-//                    if let savedURL = ImageSaver.saveImage(img, to: SnipsDirectory()) {
-//                        DispatchQueue.main.async {
-//                            // Handle the ContentView-specific cleanup that was in saveSnipToDisk
-//                            self.insertSnipURL(savedURL)  // Add to gallery
-//                            
-//                            // Clear any retained image references
-//                            self.selectedImageSize = nil
-//                            // Limit undo stack growth
-//                            if self.undoStack.count > 5 { self.undoStack.removeFirst(self.undoStack.count - 5) }
-//                            if self.redoStack.count > 5 { self.redoStack.removeFirst(self.redoStack.count - 5) }
-//                            
-//                            WindowManager.shared.loadImageIntoWindow(url: savedURL, shouldActivate: true)
-//                        }
-//                    }
-//                    // img goes out of scope and gets deallocated immediately
-//                }
-//            }
-//        })
-//    }
-    
-
-    
-    
     
     private func copyToPasteboard(_ image: NSImage) {
         // 1) ALWAYS flatten first so annotations are included
