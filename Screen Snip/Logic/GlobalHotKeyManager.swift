@@ -125,6 +125,15 @@ final class GlobalHotKeyManager {
         
         let windowsWereHidden = (captureMode == .captureWithoutWindows)
         
+        // NEW: Track if there was a visible main window before capture
+        let hadVisibleMainWindow = NSApp.windows.contains { window in
+            window.isVisible &&
+            !window.isMiniaturized &&
+            window.canBecomeKey &&
+            !window.isSheet &&
+            window.contentViewController is NSHostingController<ContentView>
+        }
+        
         switch captureMode {
         case .captureWithWindows:
             handleCaptureWithWindows()
@@ -137,8 +146,8 @@ final class GlobalHotKeyManager {
             self?.isCurrentlyCapturing = false
             self?.capturedScreens.removeAll()
             
-            // Only restore windows if we actually hid them
-            if windowsWereHidden {
+            // Only restore windows if we actually hid them AND there was a visible window before
+            if windowsWereHidden && hadVisibleMainWindow {
                 DispatchQueue.main.async {
                     WindowManager.shared.ensureMainWindow()
                 }
