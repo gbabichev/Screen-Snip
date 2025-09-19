@@ -100,6 +100,9 @@ open "Screen Snip.xcodeproj"
 
 ## 📝 Changelog
 
+### 1.0.4
+- Added keyboard navigation to move between thumbnails in the bottom row.
+
 ### 1.0.3
 - Resolved issue with screen cursor not always displaying properly. 
 - Optimized window close/reopen behavior during certain captures. 
@@ -186,4 +189,5 @@ MIT — free for personal and commercial use.
 - <del>Fixed cursor not always displaying correctly during capture.
 - <del>Added better UI for screen capture. 
 - <del>Optimized window closing/opening behavior. 
+- <del>Added keyboard navigation between existing thumbnails.
 </details>
