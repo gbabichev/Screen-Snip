@@ -2219,6 +2219,19 @@ struct ContentView: View {
             }
     }
     
+    @inline(__always)
+    private func normalizedAngleDelta(from a: CGFloat, to b: CGFloat) -> CGFloat {
+        var d = b - a
+        let twoPi = CGFloat.pi * 2
+        // Wrap into [-π, π]
+        if d > .pi {
+            d -= twoPi
+        } else if d < -.pi {
+            d += twoPi
+        }
+        return d
+    }
+
     private func rectGesture(insetOrigin: CGPoint, fitted: CGSize, author: CGSize) -> some Gesture {
         DragGesture(minimumDistance: 0)
             .onChanged { value in
@@ -2256,10 +2269,26 @@ struct ContentView: View {
                         if !pushedDragUndo { pushUndoSnipshot(); pushedDragUndo = true }
                         switch objects[idx] {
                         case .rect(let o):
-                            let updated = (activeHandle == .none) ? o.moved(by: delta) : o.resizing(activeHandle, to: current)
+                            var updated = o
+                            if activeHandle == .none {
+                                updated = o.moved(by: delta)
+                            } else if activeHandle == .rotate {
+                                // Delta-based rotation around center using shortest angular distance
+                                let c = CGPoint(x: o.rect.midX, y: o.rect.midY)
+                                let prevAngle = atan2(s.y - c.y, s.x - c.x)
+                                let currAngle = atan2(current.y - c.y, current.x - c.x)
+                                let d = normalizedAngleDelta(from: prevAngle, to: currAngle)
+                                updated.rotation = o.rotation + d
+                                // Do NOT clamp rect while rotating; geometry doesn't change
+                                objects[idx] = .rect(updated)
+                                dragStartPoint = current
+                                return
+                            } else {
+                                updated = o.resizing(activeHandle, to: current)
+                            }
                             let clamped = clampRect(updated.rect, in: author)
-                            var u = updated; u.rect = clamped
-                            objects[idx] = .rect(u)
+                            updated.rect = clamped
+                            objects[idx] = .rect(updated)
                         default:
                             break
                         }
@@ -2679,10 +2708,26 @@ struct ContentView: View {
                         u.end   = clampPoint(u.end,   in: author)
                         objects[idx] = .line(u)
                     case .rect(let o):
-                        let updated = (activeHandle == .none) ? o.moved(by: delta) : o.resizing(activeHandle, to: p)
+                        var updated = o
+                        if activeHandle == .none {
+                            updated = o.moved(by: delta)
+                        } else if activeHandle == .rotate {
+                            // Delta-based rotation around center using shortest angular distance
+                            let c = CGPoint(x: o.rect.midX, y: o.rect.midY)
+                            let prevAngle = atan2(start.y - c.y, start.x - c.x)
+                            let currAngle = atan2(p.y - c.y, p.x - c.x)
+                            let d = normalizedAngleDelta(from: prevAngle, to: currAngle)
+                            updated.rotation = o.rotation + d
+                            // Do NOT clamp rect while rotating; geometry doesn't change
+                            objects[idx] = .rect(updated)
+                            dragStartPoint = p
+                            return
+                        } else {
+                            updated = o.resizing(activeHandle, to: p)
+                        }
                         let clamped = clampRect(updated.rect, in: author)
-                        var u = updated; u.rect = clamped
-                        objects[idx] = .rect(u)
+                        updated.rect = clamped
+                        objects[idx] = .rect(updated)
                     case .oval(let o):
                         let updated = (activeHandle == .none) ? o.moved(by: delta) : o.resizing(activeHandle, to: p)
                         let clamped = clampRect(updated.rect, in: author)
@@ -2910,13 +2955,31 @@ struct ContentView: View {
         }
     }
     
+    @inline(__always)
+    private func rotatePoint(_ p: CGPoint, around c: CGPoint, by angle: CGFloat) -> CGPoint {
+        let s = sin(angle), co = cos(angle)
+        let dx = p.x - c.x, dy = p.y - c.y
+        return CGPoint(x: c.x + dx * co - dy * s,
+                       y: c.y + dx * s + dy * co)
+    }
+
     private func selectionHandlesForRect(_ o: RectObject) -> some View {
-        let pts = [
+        let rotateOffset: CGFloat = 20
+        let c = CGPoint(x: o.rect.midX, y: o.rect.midY)
+        
+        // Raw unrotated positions
+        let rawPts = [
             CGPoint(x: o.rect.minX, y: o.rect.minY),
             CGPoint(x: o.rect.maxX, y: o.rect.minY),
             CGPoint(x: o.rect.minX, y: o.rect.maxY),
             CGPoint(x: o.rect.maxX, y: o.rect.maxY)
         ]
+        let rawRotate = CGPoint(x: o.rect.maxX + rotateOffset, y: o.rect.minY - rotateOffset)
+        
+        // Rotate positions to match the rotated rectangle
+        let pts = rawPts.map { rotatePoint($0, around: c, by: o.rotation) }
+        let rotatePos = rotatePoint(rawRotate, around: c, by: o.rotation)
+        
         return ZStack {
             ForEach(Array(pts.enumerated()), id: \.offset) { _, pt in
                 Circle()
@@ -2925,6 +2988,10 @@ struct ContentView: View {
                     .frame(width: 12, height: 12)
                     .position(pt)
             }
+            Image(systemName: "arrow.clockwise")
+                .foregroundColor(.blue)
+                .background(Circle().fill(.white).frame(width: 16, height: 16))
+                .position(rotatePos)
         }
     }
     
@@ -3220,9 +3287,56 @@ struct ContentView: View {
                         tri.fill()
                     }
                 case .rect(let o):
-                    let r = uiRectToImageRect(o.rect, fitted: fitted, image: imgSize)
                     o.color.setStroke()
-                    let path = NSBezierPath(rect: r); path.lineWidth = o.width * scaleW; path.stroke()
+                    
+                    if o.rotation != 0 {
+                        NSGraphicsContext.current?.saveGraphicsState()
+                        
+                        // Apply rotation in UI space first, then transform to image space
+                        let uiCenter = CGPoint(x: o.rect.midX, y: o.rect.midY)
+                        
+                        // Create the four corners of the rectangle in UI space
+                        let corners = [
+                            CGPoint(x: o.rect.minX, y: o.rect.minY),
+                            CGPoint(x: o.rect.maxX, y: o.rect.minY),
+                            CGPoint(x: o.rect.maxX, y: o.rect.maxY),
+                            CGPoint(x: o.rect.minX, y: o.rect.maxY)
+                        ]
+                        
+                        // Rotate corners around center in UI space
+                        let rotatedCorners = corners.map { corner in
+                            let dx = corner.x - uiCenter.x
+                            let dy = corner.y - uiCenter.y
+                            let cos = Foundation.cos(o.rotation)
+                            let sin = Foundation.sin(o.rotation)
+                            return CGPoint(
+                                x: uiCenter.x + dx * cos - dy * sin,
+                                y: uiCenter.y + dx * sin + dy * cos
+                            )
+                        }
+                        
+                        // Transform each rotated corner to image space
+                        let imageCorners = rotatedCorners.map {
+                            uiToImagePoint($0, fitted: fitted, image: imgSize)
+                        }
+                        
+                        // Draw the rotated rectangle as a polygon
+                        let path = NSBezierPath()
+                        path.move(to: imageCorners[0])
+                        for i in 1..<imageCorners.count {
+                            path.line(to: imageCorners[i])
+                        }
+                        path.close()
+                        path.lineWidth = o.width * scaleW
+                        path.stroke()
+                        
+                        NSGraphicsContext.current?.restoreGraphicsState()
+                    } else {
+                        let r = uiRectToImageRect(o.rect, fitted: fitted, image: imgSize)
+                        let path = NSBezierPath(rect: r)
+                        path.lineWidth = o.width * scaleW
+                        path.stroke()
+                    }
                 case .oval(let o):
                     let r = uiRectToImageRect(o.rect, fitted: fitted, image: imgSize)
                     o.color.setStroke()

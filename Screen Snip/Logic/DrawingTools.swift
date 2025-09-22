@@ -5,6 +5,7 @@
 //  Created by George Babichev on 9/15/25.
 //
 
+
 import SwiftUI
 import AppKit
 @preconcurrency import ScreenCaptureKit
@@ -13,8 +14,27 @@ import UniformTypeIdentifiers
 import ImageIO
 import Combine
 
+fileprivate extension CGPoint {
+    func rotated(around c: CGPoint, by angle: CGFloat) -> CGPoint {
+        let s = sin(angle), co = cos(angle)
+        let dx = self.x - c.x, dy = self.y - c.y
+        return CGPoint(x: c.x + dx * co - dy * s,
+                       y: c.y + dx * s + dy * co)
+    }
+}
+
+// Angle normalization helper: returns the shortest signed angular difference from a to b
+fileprivate func normalizedAngleDelta(from a: CGFloat, to b: CGFloat) -> CGFloat {
+    var d = b - a
+    let twoPi = CGFloat.pi * 2
+    if d > .pi { d -= twoPi }
+    else if d < -.pi { d += twoPi }
+    return d
+}
+
 // MARK: - Object Editing Models
-enum Handle: Hashable { case none, lineStart, lineEnd, rectTopLeft, rectTopRight, rectBottomLeft, rectBottomRight }
+enum Handle: Hashable { case none, lineStart, lineEnd, rectTopLeft, rectTopRight, rectBottomLeft, rectBottomRight
+case rotate }
 
 protocol DrawableObject: Identifiable, Equatable {}
 
@@ -93,52 +113,123 @@ struct RectObject: @MainActor DrawableObject {
     let id: UUID
     var rect: CGRect
     var width: CGFloat
-    var color: NSColor  // Add color property
+    var color: NSColor
+    var rotation: CGFloat = 0
     
     init(id: UUID = UUID(), rect: CGRect, width: CGFloat, color: NSColor = .black) {
         self.id = id; self.rect = rect; self.width = width; self.color = color
     }
     
     static func == (lhs: RectObject, rhs: RectObject) -> Bool {
-        lhs.id == rhs.id && lhs.rect == rhs.rect && lhs.width == rhs.width && lhs.color == rhs.color
+        lhs.id == rhs.id && lhs.rect == rhs.rect && lhs.width == rhs.width && lhs.color == rhs.color && lhs.rotation == rhs.rotation
     }
-    
-    func drawPath(in _: CGSize) -> Path { Rectangle().path(in: rect) }
-    
+
+    func drawPath(in _: CGSize) -> Path {
+        var p = Rectangle().path(in: rect)
+        let c = CGPoint(x: rect.midX, y: rect.midY)
+        
+        // Build transform: translate to origin, rotate, translate back
+        var t = CGAffineTransform.identity
+        t = t.translatedBy(x: c.x, y: c.y)      // 3. Move back to center
+        t = t.rotated(by: rotation)             // 2. Rotate around origin
+        t = t.translatedBy(x: -c.x, y: -c.y)   // 1. Move center to origin
+        
+        return p.applying(t)
+    }
+
     func hitTest(_ p: CGPoint) -> Bool {
-        let inset = -max(6, width + 6)
-        return rect.insetBy(dx: inset, dy: inset).contains(p) && !rect.insetBy(dx: max(6, width + 6), dy: max(6, width + 6)).contains(p)
+        // Convert the point into the rectangle's local (unrotated) space
+        let c = CGPoint(x: rect.midX, y: rect.midY)
+        let localP = p.rotated(around: c, by: -rotation)
+
+        let outerInset = -max(6, width + 6)
+        let innerInset =  max(6, width + 6)
+        let outer = rect.insetBy(dx: outerInset, dy: outerInset)
+        let inner = rect.insetBy(dx: innerInset,  dy: innerInset)
+        return outer.contains(localP) && !inner.contains(localP)
     }
-    
+
     func handleHitTest(_ p: CGPoint) -> Handle {
         let r: CGFloat = 8
-        let tl = CGRect(x: rect.minX-r, y: rect.minY-r, width: 2*r, height: 2*r)
-        let tr = CGRect(x: rect.maxX-r, y: rect.minY-r, width: 2*r, height: 2*r)
-        let bl = CGRect(x: rect.minX-r, y: rect.maxY-r, width: 2*r, height: 2*r)
-        let br = CGRect(x: rect.maxX-r, y: rect.maxY-r, width: 2*r, height: 2*r)
-        if tl.contains(p) { return .rectTopLeft }
-        if tr.contains(p) { return .rectTopRight }
-        if bl.contains(p) { return .rectBottomLeft }
-        if br.contains(p) { return .rectBottomRight }
+        let rotateOffset: CGFloat = 20
+
+        // Convert to local/unrotated space
+        let c = CGPoint(x: rect.midX, y: rect.midY)
+        let lp = p.rotated(around: c, by: -rotation)
+
+        // Corner handles in local space
+        let tl = CGRect(x: rect.minX - r, y: rect.minY - r, width: 2*r, height: 2*r)
+        let tr = CGRect(x: rect.maxX - r, y: rect.minY - r, width: 2*r, height: 2*r)
+        let bl = CGRect(x: rect.minX - r, y: rect.maxY - r, width: 2*r, height: 2*r)
+        let br = CGRect(x: rect.maxX - r, y: rect.maxY - r, width: 2*r, height: 2*r)
+
+        if tl.contains(lp) { return .rectTopLeft }
+        if tr.contains(lp) { return .rectTopRight }
+        if bl.contains(lp) { return .rectBottomLeft }
+        if br.contains(lp) { return .rectBottomRight }
+
+        // Rotate handle in local space: at (maxX + offset, minY - offset)
+        let handleCenter = CGPoint(x: rect.maxX + rotateOffset, y: rect.minY - rotateOffset)
+        let rotateHandle = CGRect(x: handleCenter.x - r, y: handleCenter.y - r, width: 2*r, height: 2*r)
+
+        if rotateHandle.contains(lp) { return .rotate }
+
         return .none
     }
-    
+
+    /// Rotate by the shortest angular delta from prev->center to curr->center.
+    func rotating(from prev: CGPoint, to curr: CGPoint) -> RectObject {
+        var cpy = self
+        let center = CGPoint(x: rect.midX, y: rect.midY)
+        let prevAngle = atan2(prev.y - center.y, prev.x - center.x)
+        let currAngle = atan2(curr.y - center.y, curr.x - center.x)
+        let d = normalizedAngleDelta(from: prevAngle, to: currAngle)
+        cpy.rotation += d
+        return cpy
+    }
+
     func moved(by d: CGSize) -> RectObject { var c = self; c.rect.origin.x += d.width; c.rect.origin.y += d.height; return c }
-    
+
     func resizing(_ handle: Handle, to p: CGPoint) -> RectObject {
-        var c = self
+        var cpy = self
+        let center = CGPoint(x: rect.midX, y: rect.midY)
+
         switch handle {
-        case .rectTopLeft:
-            c.rect = CGRect(x: p.x, y: p.y, width: rect.maxX - p.x, height: rect.maxY - p.y)
-        case .rectTopRight:
-            c.rect = CGRect(x: rect.minX, y: p.y, width: p.x - rect.minX, height: rect.maxY - p.y)
-        case .rectBottomLeft:
-            c.rect = CGRect(x: p.x, y: rect.minY, width: rect.maxX - p.x, height: p.y - rect.minY)
-        case .rectBottomRight:
-            c.rect = CGRect(x: rect.minX, y: rect.minY, width: p.x - rect.minX, height: p.y - rect.minY)
-        default: break
+        case .rotate:
+            // Adjust by the shortest delta from current rotation to target pointer angle
+            let target = atan2(p.y - center.y, p.x - center.x)
+            let d = normalizedAngleDelta(from: cpy.rotation, to: target)
+            cpy.rotation += d
+            return cpy
+
+        case .rectTopLeft, .rectTopRight, .rectBottomLeft, .rectBottomRight:
+            // Convert the drag point into local/unrotated space
+            let lp = p.rotated(around: center, by: -rotation)
+
+            var x0 = rect.minX, y0 = rect.minY
+            var x1 = rect.maxX, y1 = rect.maxY
+
+            switch handle {
+            case .rectTopLeft:
+                x0 = lp.x; y0 = lp.y
+            case .rectTopRight:
+                x1 = lp.x; y0 = lp.y
+            case .rectBottomLeft:
+                x0 = lp.x; y1 = lp.y
+            case .rectBottomRight:
+                x1 = lp.x; y1 = lp.y
+            default: break
+            }
+
+            // Normalize in case the drag crosses the opposite corner
+            let nx0 = min(x0, x1), nx1 = max(x0, x1)
+            let ny0 = min(y0, y1), ny1 = max(y0, y1)
+            cpy.rect = CGRect(x: nx0, y: ny0, width: nx1 - nx0, height: ny1 - ny0)
+            return cpy
+
+        default:
+            return self
         }
-        return c
     }
 }
 
