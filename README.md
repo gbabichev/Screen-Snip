@@ -203,4 +203,5 @@ MIT — free for personal and commercial use.
 - <del>Added keyboard navigation between existing thumbnails.
 - <del>Add rotate to Rectangle, Text, and Paste. 
 - <del>Update Gallery Window UI to better show the date of images being displayed. 
+- <del>Modified Zoom so that it can zoom out past 1 to -2x
 </details>

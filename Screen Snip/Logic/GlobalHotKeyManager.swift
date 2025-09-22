@@ -110,7 +110,7 @@ final class GlobalHotKeyManager {
     private var capturedScreens: [(screenInfo: ScreenInfo, cgImage: CGImage)] = []
     
     // Sendable struct to hold screen data
-    public struct ScreenInfo: Sendable {
+    struct ScreenInfo: Sendable {
         let frame: CGRect
         let backingScaleFactor: CGFloat
         let index: Int
@@ -229,7 +229,7 @@ final class GlobalHotKeyManager {
     
     // MARK: - Helper Functions
     
-    public func triggerCapture() {
+    func triggerCapture() {
         handleSnipHotkey()
     }
     
@@ -491,20 +491,17 @@ final class GlobalHotKeyManager {
 private final class SingleDisplayCapturer: NSObject, SCStreamOutput {
     private var captureResult: CGImage?
     private var captureError: Error?
-    private var currentStream: SCStream?
     
     func captureImage(using filter: SCContentFilter, display: SCDisplay) async -> CGImage? {
         // Reset state
         captureResult = nil
         captureError = nil
-        currentStream = nil
         
         do {
             // Find the matching NSScreen to get the backing scale factor
             let backingScale = getBackingScaleForDisplay(display) ?? 1.0
             let config = createFullResolutionConfig(for: display, backingScale: backingScale)
             let stream = SCStream(filter: filter, configuration: config, delegate: nil)
-            currentStream = stream
             
             print("Stream config for display \(display.displayID):")
             print("  Display reported size: \(display.width)x\(display.height)")
@@ -529,7 +526,6 @@ private final class SingleDisplayCapturer: NSObject, SCStreamOutput {
             // Cleanup
             try stream.removeStreamOutput(self, type: .screen)
             try await stream.stopCapture()
-            currentStream = nil
             
             if let error = captureError {
                 print("Capture error for display \(display.displayID): \(error)")

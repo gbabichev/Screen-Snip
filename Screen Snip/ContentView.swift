@@ -57,24 +57,6 @@ enum SaveFormat: String, CaseIterable, Identifiable {
 enum CaptureMode: String, CaseIterable {
     case captureWithWindows = "captureWithWindows"
     case captureWithoutWindows = "captureWithoutWindows"
-    
-    var displayName: String {
-        switch self {
-        case .captureWithWindows:
-            return "Capture what I see"
-        case .captureWithoutWindows:
-            return "Capture clean desktop"
-        }
-    }
-    
-    var description: String {
-        switch self {
-        case .captureWithWindows:
-            return "Captures exactly what you see on screen when you press the hotkey"
-        case .captureWithoutWindows:
-            return "Hides app windows first, then captures a clean desktop view"
-        }
-    }
 }
 
 struct ContentView: View {
@@ -105,23 +87,11 @@ struct ContentView: View {
     
     // MARK: - Vars
     @Environment(\.openWindow) private var openWindow  // Add this line
-
-    @State private var activeSecurityScopedURL: URL? = nil
-    private func endActiveSecurityScope() {
-        if let u = activeSecurityScopedURL {
-            u.stopAccessingSecurityScopedResource()
-            activeSecurityScopedURL = nil
-        }
-    }
-
     @State private var showingFileExporter = false
     @State private var exportImage: NSImage? = nil
     
     @AppStorage("captureMode") private var captureModeRaw: String = CaptureMode.captureWithWindows.rawValue
-    private var captureMode: CaptureMode {
-        get { CaptureMode(rawValue: captureModeRaw) ?? .captureWithWindows }
-        set { captureModeRaw = newValue.rawValue }
-    }
+
     
     @State private var currentGeometrySize: CGSize = CGSize(width: 800, height: 600)
     
@@ -1535,36 +1505,6 @@ struct ContentView: View {
         redoStack.removeAll()
     }
 
-    
-    
-    
-    
-    private func openPrivacyPreferences(needsAccessibility: Bool, needsScreenRecording: Bool) {
-        // Try to open the most relevant preference pane
-        var urlString: String
-        
-        if needsAccessibility && needsScreenRecording {
-            // If both are needed, open the main Privacy & Security pane
-            urlString = "x-apple.systempreferences:com.apple.preference.security"
-        } else if needsAccessibility {
-            urlString = "x-apple.systempreferences:com.apple.preference.security?Privacy_Accessibility"
-        } else {
-            urlString = "x-apple.systempreferences:com.apple.preference.security?Privacy_ScreenCapture"
-        }
-        
-        if let url = URL(string: urlString) {
-            NSWorkspace.shared.open(url)
-        }
-        
-        // Close the permissions sheet
-        appDelegate.showPermissionsView = false
-        
-        // Schedule a permission refresh for when user returns
-        DispatchQueue.main.asyncAfter(deadline: .now() + 2.0) {
-            appDelegate.refreshPermissionStatus()
-        }
-    }
-    
     // MARK: - Launch On Logon Helpers
     // Handles enabling or disabling the login helper at login
     private func toggleLaunchAtLogin(_ enabled: Bool) {

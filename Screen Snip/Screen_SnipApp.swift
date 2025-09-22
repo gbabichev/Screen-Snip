@@ -173,13 +173,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, ObservableObject {
             showPermissionsView = false
         }
     }
-    
-    // Add this method to show permissions view programmatically
-    func showPermissions() {
-        refreshPermissionStatus()
-        showPermissionsView = true
-    }
-    
+
     private func isAccessibilityEnabled() -> Bool {
         return AXIsProcessTrusted()
     }

@@ -177,17 +177,6 @@ struct RectObject: @MainActor DrawableObject {
         return .none
     }
     
-    /// Rotate by the shortest angular delta from prev->center to curr->center.
-    func rotating(from prev: CGPoint, to curr: CGPoint) -> RectObject {
-        var cpy = self
-        let center = CGPoint(x: rect.midX, y: rect.midY)
-        let prevAngle = atan2(prev.y - center.y, prev.x - center.x)
-        let currAngle = atan2(curr.y - center.y, curr.x - center.x)
-        let d = normalizedAngleDelta(from: prevAngle, to: currAngle)
-        cpy.rotation += d
-        return cpy
-    }
-    
     func moved(by d: CGSize) -> RectObject { var c = self; c.rect.origin.x += d.width; c.rect.origin.y += d.height; return c }
     
     func resizing(_ handle: Handle, to p: CGPoint) -> RectObject {
@@ -324,10 +313,6 @@ struct OvalObject: @MainActor DrawableObject {
     
     static func == (lhs: OvalObject, rhs: OvalObject) -> Bool {
         lhs.id == rhs.id && lhs.rect == rhs.rect && lhs.width == rhs.width && lhs.color == rhs.color
-    }
-
-    func drawPath(in _: CGSize) -> Path {
-        return Ellipse().path(in: rect)
     }
     
     func hitTest(_ p: CGPoint) -> Bool {
@@ -554,17 +539,6 @@ struct TextObject: @MainActor DrawableObject {
             return self
         }
     }
-    
-    func rotating(from prev: CGPoint, to curr: CGPoint) -> TextObject {
-        var cpy = self
-        let center = CGPoint(x: rect.midX, y: rect.midY)
-        let prevAngle = atan2(prev.y - center.y, prev.x - center.x)
-        let currAngle = atan2(curr.y - center.y, curr.x - center.x)
-        let d = normalizedAngleDelta(from: prevAngle, to: currAngle)
-        cpy.rotation += d
-        return cpy
-    }
-    
 }
 
 struct BadgeObject: @MainActor DrawableObject {
@@ -687,17 +661,6 @@ struct PastedImageObject: @MainActor DrawableObject {
         c.rect.origin.x += d.width
         c.rect.origin.y += d.height
         return c
-    }
-    
-    /// Rotate by the shortest angular delta from prev->center to curr->center.
-    func rotating(from prev: CGPoint, to curr: CGPoint) -> PastedImageObject {
-        var cpy = self
-        let center = CGPoint(x: rect.midX, y: rect.midY)
-        let prevAngle = atan2(prev.y - center.y, prev.x - center.x)
-        let currAngle = atan2(curr.y - center.y, curr.x - center.x)
-        let d = normalizedAngleDelta(from: prevAngle, to: currAngle)
-        cpy.rotation += d
-        return cpy
     }
     
     func resizing(_ handle: Handle, to p: CGPoint) -> PastedImageObject {
