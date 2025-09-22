@@ -15,6 +15,8 @@ Inspired by Greenshot on Windows - the goal is to make a tiny app that can do th
 
 <p align="center">
     <a href="Documentation/App1.png"><img src="Documentation/App1.png" width="35%"></a>
+    <a href="Documentation/App3.png"><img src="Documentation/App3.png" width="35%"></a>
+    <a href="Documentation/App2.png"><img src="Documentation/App2.png" width="35%"></a>
 </p>
 
 ## 🖥️ Features, Tools, and Settings
@@ -86,7 +88,11 @@ These settings are customizable by you.
 
 ### ⚙️ Installation
 
-(when released) Download from Releases. It's signed & notarized!
+Mac App Store
+
+OR 
+
+Download from Releases. It's signed & notarized!
 
 ### ⚙️ Build it yourself!
 
@@ -99,6 +105,11 @@ open "Screen Snip.xcodeproj"
 ```
 
 ## 📝 Changelog
+
+### 1.1.0
+- Added rotation for Rectangle Tool, Text Tool, Pasted object tool. 
+- New Icon 
+- Snip Gallery now shows the date of snips in the Window Titlebar. 
 
 ### 1.0.4
 - Added keyboard navigation to move between thumbnails in the bottom row.
@@ -190,4 +201,6 @@ MIT — free for personal and commercial use.
 - <del>Added better UI for screen capture. 
 - <del>Optimized window closing/opening behavior. 
 - <del>Added keyboard navigation between existing thumbnails.
+- <del>Add rotate to Rectangle, Text, and Paste. 
+- <del>Update Gallery Window UI to better show the date of images being displayed. 
 </details>

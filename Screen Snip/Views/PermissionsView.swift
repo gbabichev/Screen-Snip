@@ -31,6 +31,21 @@ struct PermissionsView: View {
             
             // Permissions List with Action Buttons
             VStack(spacing: 16) {
+                
+                if needsScreenRecording {
+                    PermissionRowWithAction(
+                        icon: "camera.viewfinder",
+                        title: "Screen Recording",
+                        description: "Required to capture screen content",
+                        status: .required,
+                        buttonTitle: "Allow",
+                        isLoading: isTestingScreenRecording
+                    ) {
+                        onContinue()
+                        testScreenRecordingPermission()
+                    }
+                }
+                
                 if needsAccessibility {
                     PermissionRowWithAction(
                         icon: "hand.point.up.left.fill",
@@ -51,20 +66,6 @@ struct PermissionsView: View {
                         }
                     }
                 }
-                
-                if needsScreenRecording {
-                    PermissionRowWithAction(
-                        icon: "camera.viewfinder",
-                        title: "Screen Recording",
-                        description: "Required to capture screen content",
-                        status: .required,
-                        buttonTitle: "Allow",
-                        isLoading: isTestingScreenRecording
-                    ) {
-                        onContinue()
-                        testScreenRecordingPermission()
-                    }
-                }
             }
             .padding(.horizontal, 8)
             
@@ -81,15 +82,17 @@ struct PermissionsView: View {
                     )
                     InstructionStep(
                         number: 2,
-                        text: "For Accessibility - Click the '+' Sign and add Screen Snip. Make sure to flip the toggle!"
+                        text: "For Screen Recording - Enable the Screen Recording toggle in System Settings."
                     )
                     InstructionStep(
                         number: 3,
-                        text: "For Screen Recording - Enable the Screen Recording toggle in System Settings."
+                        text: "For Accessibility - Click the '+' Sign and add Screen Snip. Make sure to flip the toggle!"
                     )
                 }
                 .padding(.horizontal, 16)
             }
+            
+            
             
             // Continue Button
             Button("Continue") {
