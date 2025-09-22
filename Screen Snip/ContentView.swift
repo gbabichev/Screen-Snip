@@ -3780,12 +3780,26 @@ struct ContentView: View {
         CGPoint(x: min(max(0, p.x), fitted.width),
                 y: min(max(0, p.y), fitted.height))
     }
+    
     private func clampRect(_ r: CGRect, in fitted: CGSize) -> CGRect {
-        let x = max(0, min(r.origin.x, fitted.width))
-        let y = max(0, min(r.origin.y, fitted.height))
-        let w = max(0, min(r.width,  fitted.width  - x))
-        let h = max(0, min(r.height, fitted.height - y))
-        return CGRect(x: x, y: y, width: w, height: h)
+        // Preserve the original size
+        var rect = r
+        
+        // Clamp the position to keep the object within bounds without deforming it
+        rect.origin.x = max(0, min(rect.origin.x, fitted.width - rect.width))
+        rect.origin.y = max(0, min(rect.origin.y, fitted.height - rect.height))
+        
+        // Only adjust size if the object is larger than the container
+        if rect.width > fitted.width {
+            rect.size.width = fitted.width
+            rect.origin.x = 0
+        }
+        if rect.height > fitted.height {
+            rect.size.height = fitted.height
+            rect.origin.y = 0
+        }
+        
+        return rect
     }
     
     private func fittedImageSize(original: CGSize, in container: CGSize) -> CGSize {
