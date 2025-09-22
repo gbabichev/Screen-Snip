@@ -31,6 +31,9 @@ Inspired by Greenshot on Windows - the goal is to make a tiny app that can do th
   - Native "Open With" integration in Finder. 
 - Copy to Clipboard / Save / Save As. 
 - Undo / redo!
+- Paste objects on canvas from clipboard. 
+- Rotation support for rectangles, text, and pastes from clipboard. 
+- Hold SHIFT while rotating to snap every 15 degrees. 
 - Pinch to zoom / Double tap to zoom / cmd + scroll wheel to zoom. 
 - Snip Gallery to view snips by date. 
 - Liquid Glass first design. 
@@ -55,7 +58,6 @@ Inspired by Greenshot on Windows - the goal is to make a tiny app that can do th
 | Reset Zoom                   | ⌘ , 0         |  |
 | Zoom In                      | ⌘ , +         |  |
 | Zoom Out                     | ⌘ , -         |  |
-
 
 ### Settings
 
@@ -110,6 +112,7 @@ open "Screen Snip.xcodeproj"
 - Added rotation for Rectangle Tool, Text Tool, Pasted object tool. 
 - New Icon 
 - Snip Gallery now shows the date of snips in the Window Titlebar. 
+- Adjusted Snip Gallery to load fresh snips, instead of stale snips. 
 
 ### 1.0.4
 - Added keyboard navigation to move between thumbnails in the bottom row.

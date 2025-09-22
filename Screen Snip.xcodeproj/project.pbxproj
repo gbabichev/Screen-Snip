@@ -29,7 +29,7 @@
 /* End PBXFileReference section */
 
 /* Begin PBXFileSystemSynchronizedBuildFileExceptionSet section */
-		FF7EA7402E8185EE00B55966 /* Exceptions for "Screen Snip" folder in "ScreenSnipHelper" target */ = {
+		FF1704462E81DF5D004A7848 /* Exceptions for "Screen Snip" folder in "ScreenSnipHelper" target */ = {
 			isa = PBXFileSystemSynchronizedBuildFileExceptionSet;
 			membershipExceptions = (
 				Assets/ScreenSnip.icon,
@@ -42,7 +42,7 @@
 		FF30F8E92E6F929000F72D09 /* Screen Snip */ = {
 			isa = PBXFileSystemSynchronizedRootGroup;
 			exceptions = (
-				FF7EA7402E8185EE00B55966 /* Exceptions for "Screen Snip" folder in "ScreenSnipHelper" target */,
+				FF1704462E81DF5D004A7848 /* Exceptions for "Screen Snip" folder in "ScreenSnipHelper" target */,
 			);
 			path = "Screen Snip";
 			sourceTree = "<group>";
@@ -340,7 +340,7 @@
 				CODE_SIGN_ENTITLEMENTS = "Screen Snip/Screen Snip.entitlements";
 				CODE_SIGN_STYLE = Automatic;
 				COMBINE_HIDPI_IMAGES = YES;
-				CURRENT_PROJECT_VERSION = 1;
+				CURRENT_PROJECT_VERSION = 2;
 				DEVELOPMENT_TEAM = 7GK58M2353;
 				ENABLE_APP_SANDBOX = YES;
 				ENABLE_FILE_ACCESS_PICTURE_FOLDER = readwrite;
@@ -394,7 +394,7 @@
 				CODE_SIGN_ENTITLEMENTS = "Screen Snip/Screen Snip.entitlements";
 				CODE_SIGN_STYLE = Automatic;
 				COMBINE_HIDPI_IMAGES = YES;
-				CURRENT_PROJECT_VERSION = 1;
+				CURRENT_PROJECT_VERSION = 2;
 				DEVELOPMENT_TEAM = 7GK58M2353;
 				ENABLE_APP_SANDBOX = YES;
 				ENABLE_FILE_ACCESS_PICTURE_FOLDER = readwrite;
@@ -447,7 +447,7 @@
 				CODE_SIGN_ENTITLEMENTS = ScreenSnipHelper/ScreenSnipHelper.entitlements;
 				CODE_SIGN_STYLE = Automatic;
 				COMBINE_HIDPI_IMAGES = YES;
-				CURRENT_PROJECT_VERSION = 1;
+				CURRENT_PROJECT_VERSION = 2;
 				DEVELOPMENT_TEAM = 7GK58M2353;
 				ENABLE_APP_SANDBOX = YES;
 				ENABLE_HARDENED_RUNTIME = YES;
@@ -492,7 +492,7 @@
 				CODE_SIGN_ENTITLEMENTS = ScreenSnipHelper/ScreenSnipHelper.entitlements;
 				CODE_SIGN_STYLE = Automatic;
 				COMBINE_HIDPI_IMAGES = YES;
-				CURRENT_PROJECT_VERSION = 1;
+				CURRENT_PROJECT_VERSION = 2;
 				DEVELOPMENT_TEAM = 7GK58M2353;
 				ENABLE_APP_SANDBOX = YES;
 				ENABLE_HARDENED_RUNTIME = YES;

@@ -1,39 +1,77 @@
 {
   "fill" : {
-    "solid" : "display-p3:0.53794,0.54417,0.56271,1.00000"
+    "linear-gradient" : [
+      "display-p3:0.19752,0.45719,0.85726,1.00000",
+      "display-p3:0.04267,0.29503,0.70108,1.00000"
+    ]
   },
   "groups" : [
+    {
+      "layers" : [
+        {
+          "image-name" : "left.png",
+          "name" : "left",
+          "position" : {
+            "scale" : 1,
+            "translation-in-points" : [
+              -345.96875,
+              -361.15625
+            ]
+          }
+        },
+        {
+          "image-name" : "right.png",
+          "name" : "right",
+          "position" : {
+            "scale" : 1,
+            "translation-in-points" : [
+              355.25,
+              360.7109375
+            ]
+          }
+        }
+      ],
+      "position" : {
+        "scale" : 0.9,
+        "translation-in-points" : [
+          0,
+          0
+        ]
+      },
+      "shadow" : {
+        "kind" : "layer-color",
+        "opacity" : 1
+      },
+      "translucency" : {
+        "enabled" : true,
+        "value" : 0.4
+      }
+    },
     {
       "layers" : [
         {
           "fill" : {
             "solid" : "extended-srgb:0.20392,0.78039,0.34902,1.00000"
           },
+          "glass" : true,
           "image-name" : "Scissors.png",
           "name" : "Scissors",
           "position" : {
-            "scale" : 0.8,
+            "scale" : 1,
             "translation-in-points" : [
-              -6.1171875,
-              -7.7890625
-            ]
-          }
-        },
-        {
-          "fill" : {
-            "solid" : "extended-gray:1.00000,1.00000"
-          },
-          "image-name" : "Background.png",
-          "name" : "Background",
-          "position" : {
-            "scale" : 1.05,
-            "translation-in-points" : [
-              0,
-              0
+              -6.1796875,
+              -11.5234375
             ]
           }
         }
       ],
+      "position" : {
+        "scale" : 1,
+        "translation-in-points" : [
+          0,
+          0
+        ]
+      },
       "shadow" : {
         "kind" : "layer-color",
         "opacity" : 1
