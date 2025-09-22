@@ -1853,6 +1853,8 @@ struct ContentView: View {
         }
     }
     
+    
+    
     func colorsEqual(_ a: NSColor, _ b: NSColor, tol: CGFloat = 0.001) -> Bool {
         // Prefer sRGB; fall back to deviceRGB; finally fall back to NSObject equality.
         if let ar = a.usingColorSpace(.sRGB), let br = b.usingColorSpace(.sRGB) {
@@ -2765,6 +2767,8 @@ struct ContentView: View {
     // Rotation gesture anchors for Rect (keep one anchor per drag)
     @State private var rectRotateStartAngle: CGFloat? = nil
     @State private var rectRotateStartValue: CGFloat? = nil
+    @State private var imageRotateStartAngle: CGFloat? = nil
+    @State private var imageRotateStartValue: CGFloat? = nil
 
     private func pointerGesture(insetOrigin: CGPoint, fitted: CGSize, author: CGSize) -> some Gesture {
         DragGesture(minimumDistance: 0)
@@ -2946,31 +2950,45 @@ struct ContentView: View {
                         if activeHandle == .none {
                             updated = o.moved(by: delta)
                         } else if activeHandle == .rotate {
+                            // Absolute-angle rotation anchored at gesture begin; no per-tick anchor drift
                             let c = CGPoint(x: o.rect.midX, y: o.rect.midY)
-                            let prevAngle = atan2(start.y - c.y, start.x - c.x)
-                            let currAngle = atan2(p.y - c.y, p.x - c.x)
-                            let rawDelta = normalizedAngleDelta(from: prevAngle, to: currAngle)
 
-                            let mods = NSEvent.modifierFlags
-                            let increment: CGFloat? =
-                                mods.contains(.option) ? (CGFloat.pi / 180) :
-                                mods.contains(.command) ? (CGFloat.pi / 36) :
-                                mods.contains(.shift) ? (CGFloat.pi / 12) :
-                                nil
-
-                            var newRotation: CGFloat
-                            if let inc = increment {
-                                let target = o.rotation + rawDelta
-                                let snapped = round(target / inc) * inc
-                                let d = normalizedAngleDelta(from: o.rotation, to: snapped)
-                                newRotation = o.rotation + d
-                            } else {
-                                newRotation = o.rotation + rawDelta
+                            // Initialize anchors on first rotate tick for this drag
+                            if imageRotateStartAngle == nil || imageRotateStartValue == nil {
+                                if let s = dragStartPoint {
+                                    imageRotateStartAngle = atan2(s.y - c.y, s.x - c.x)
+                                } else {
+                                    imageRotateStartAngle = atan2(p.y - c.y, p.x - c.x)
+                                }
+                                imageRotateStartValue = o.rotation
                             }
 
-                            updated.rotation = newRotation
+                            guard let startAngle = imageRotateStartAngle, let baseRotation = imageRotateStartValue else {
+                                return
+                            }
+
+                            // Current pointer angle
+                            let currAngle = atan2(p.y - c.y, p.x - c.x)
+
+                            // Absolute target = base rotation + delta from initial pointer angle to current pointer angle
+                            var target = baseRotation + normalizedAngleDelta(from: startAngle, to: currAngle)
+
+                            // Modifier-based snapping: Option=1°, Command=5°, Shift=15°; none=free
+                            let mods = NSEvent.modifierFlags
+                            if mods.contains(.option) {
+                                let inc = CGFloat.pi / 180 // 1°
+                                target = round(target / inc) * inc
+                            } else if mods.contains(.command) {
+                                let inc = CGFloat.pi / 36  // 5°
+                                target = round(target / inc) * inc
+                            } else if mods.contains(.shift) {
+                                let inc = CGFloat.pi / 12  // 15°
+                                target = round(target / inc) * inc
+                            }
+
+                            updated.rotation = target
                             objects[idx] = .image(updated)
-                            dragStartPoint = p
+                            // Important: keep anchors stable; do not mutate dragStartPoint here
                             return
                         } else {
                             updated = o.resizing(activeHandle, to: p)
@@ -2997,6 +3015,8 @@ struct ContentView: View {
                 rectRotateStartValue = nil
                 textRotateStartAngle = nil
                 textRotateStartValue = nil
+                imageRotateStartAngle = nil
+                imageRotateStartValue = nil
 
                 dragStartPoint = nil
                 pushedDragUndo = false
