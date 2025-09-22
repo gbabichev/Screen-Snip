@@ -15,11 +15,11 @@ import ImageIO
 import Combine
 
 fileprivate extension CGPoint {
-    func rotated(around c: CGPoint, by angle: CGFloat) -> CGPoint {
+    func rotated(around center: CGPoint, by angle: CGFloat) -> CGPoint {
         let s = sin(angle), co = cos(angle)
-        let dx = self.x - c.x, dy = self.y - c.y
-        return CGPoint(x: c.x + dx * co - dy * s,
-                       y: c.y + dx * s + dy * co)
+        let dx = self.x - center.x, dy = self.y - center.y
+        return CGPoint(x: center.x + dx * co - dy * s,
+                       y: center.y + dx * s + dy * co)
     }
 }
 
@@ -123,7 +123,7 @@ struct RectObject: @MainActor DrawableObject {
     static func == (lhs: RectObject, rhs: RectObject) -> Bool {
         lhs.id == rhs.id && lhs.rect == rhs.rect && lhs.width == rhs.width && lhs.color == rhs.color && lhs.rotation == rhs.rotation
     }
-
+    
     func drawPath(in _: CGSize) -> Path {
         let p = Rectangle().path(in: rect)
         let c = CGPoint(x: rect.midX, y: rect.midY)
@@ -136,47 +136,47 @@ struct RectObject: @MainActor DrawableObject {
         
         return p.applying(t)
     }
-
+    
     func hitTest(_ p: CGPoint) -> Bool {
         // Convert the point into the rectangle's local (unrotated) space
         let c = CGPoint(x: rect.midX, y: rect.midY)
         let localP = p.rotated(around: c, by: -rotation)
-
+        
         let outerInset = -max(6, width + 6)
         let innerInset =  max(6, width + 6)
         let outer = rect.insetBy(dx: outerInset, dy: outerInset)
         let inner = rect.insetBy(dx: innerInset,  dy: innerInset)
         return outer.contains(localP) && !inner.contains(localP)
     }
-
+    
     func handleHitTest(_ p: CGPoint) -> Handle {
         let r: CGFloat = 8
         let rotateOffset: CGFloat = 20
-
+        
         // Convert to local/unrotated space
         let c = CGPoint(x: rect.midX, y: rect.midY)
         let lp = p.rotated(around: c, by: -rotation)
-
+        
         // Corner handles in local space
         let tl = CGRect(x: rect.minX - r, y: rect.minY - r, width: 2*r, height: 2*r)
         let tr = CGRect(x: rect.maxX - r, y: rect.minY - r, width: 2*r, height: 2*r)
         let bl = CGRect(x: rect.minX - r, y: rect.maxY - r, width: 2*r, height: 2*r)
         let br = CGRect(x: rect.maxX - r, y: rect.maxY - r, width: 2*r, height: 2*r)
-
+        
         if tl.contains(lp) { return .rectTopLeft }
         if tr.contains(lp) { return .rectTopRight }
         if bl.contains(lp) { return .rectBottomLeft }
         if br.contains(lp) { return .rectBottomRight }
-
+        
         // Rotate handle in local space: at (maxX + offset, minY - offset)
         let handleCenter = CGPoint(x: rect.maxX + rotateOffset, y: rect.minY - rotateOffset)
         let rotateHandle = CGRect(x: handleCenter.x - r, y: handleCenter.y - r, width: 2*r, height: 2*r)
-
+        
         if rotateHandle.contains(lp) { return .rotate }
-
+        
         return .none
     }
-
+    
     /// Rotate by the shortest angular delta from prev->center to curr->center.
     func rotating(from prev: CGPoint, to curr: CGPoint) -> RectObject {
         var cpy = self
@@ -187,9 +187,9 @@ struct RectObject: @MainActor DrawableObject {
         cpy.rotation += d
         return cpy
     }
-
+    
     func moved(by d: CGSize) -> RectObject { var c = self; c.rect.origin.x += d.width; c.rect.origin.y += d.height; return c }
-
+    
     func resizing(_ handle: Handle, to p: CGPoint) -> RectObject {
         var cpy = self
         let center = CGPoint(x: rect.midX, y: rect.midY)
@@ -203,34 +203,99 @@ struct RectObject: @MainActor DrawableObject {
             return cpy
 
         case .rectTopLeft, .rectTopRight, .rectBottomLeft, .rectBottomRight:
-            // Convert the drag point into local/unrotated space
-            let lp = p.rotated(around: center, by: -rotation)
+            // For rotated rectangles, we need to work entirely in world space
+            if rotation != 0 {
+                // Get the four corners of the current rectangle in world space
+                let corners = [
+                    CGPoint(x: rect.minX, y: rect.minY), // top-left
+                    CGPoint(x: rect.maxX, y: rect.minY), // top-right
+                    CGPoint(x: rect.minX, y: rect.maxY), // bottom-left
+                    CGPoint(x: rect.maxX, y: rect.maxY)  // bottom-right
+                ].map { $0.rotated(around: center, by: rotation) }
+                
+                // Determine which corner should stay fixed (opposite to the handle being dragged)
+                let fixedCornerIndex: Int
+                switch handle {
+                case .rectTopLeft:     fixedCornerIndex = 3  // fix bottom-right
+                case .rectTopRight:    fixedCornerIndex = 2  // fix bottom-left
+                case .rectBottomLeft:  fixedCornerIndex = 1  // fix top-right
+                case .rectBottomRight: fixedCornerIndex = 0  // fix top-left
+                default: return self
+                }
+                
+                let fixedCorner = corners[fixedCornerIndex]
+                let newDragCorner = p
+                
+                // Calculate the new center point (midpoint between fixed corner and new drag corner)
+                let newCenter = CGPoint(
+                    x: (fixedCorner.x + newDragCorner.x) / 2,
+                    y: (fixedCorner.y + newDragCorner.y) / 2
+                )
+                
+                // Calculate the vector from new center to the drag corner in world space
+                let dragVector = CGPoint(x: newDragCorner.x - newCenter.x, y: newDragCorner.y - newCenter.y)
+                
+                // Rotate this vector back to local space to get the local corner position
+                let localDragCorner = dragVector.rotated(around: .zero, by: -rotation)
+                
+                // The new rect should be centered at origin with corners at ±localDragCorner
+                let newWidth = abs(localDragCorner.x) * 2
+                let newHeight = abs(localDragCorner.y) * 2
+                
+                // Enforce minimum size
+                let minSize: CGFloat = 10
+                if newWidth < minSize || newHeight < minSize {
+                    return self
+                }
+                
+                // Create the new rect centered at the new center point
+                cpy.rect = CGRect(
+                    x: newCenter.x - newWidth / 2,
+                    y: newCenter.y - newHeight / 2,
+                    width: newWidth,
+                    height: newHeight
+                )
+                
+                return cpy
+            } else {
+                // For non-rotated rectangles, use the original simple logic
+                let lp = p
+                var x0 = rect.minX, y0 = rect.minY
+                var x1 = rect.maxX, y1 = rect.maxY
 
-            var x0 = rect.minX, y0 = rect.minY
-            var x1 = rect.maxX, y1 = rect.maxY
+                switch handle {
+                case .rectTopLeft:
+                    x0 = lp.x; y0 = lp.y
+                case .rectTopRight:
+                    x1 = lp.x; y0 = lp.y
+                case .rectBottomLeft:
+                    x0 = lp.x; y1 = lp.y
+                case .rectBottomRight:
+                    x1 = lp.x; y1 = lp.y
+                default: break
+                }
 
-            switch handle {
-            case .rectTopLeft:
-                x0 = lp.x; y0 = lp.y
-            case .rectTopRight:
-                x1 = lp.x; y0 = lp.y
-            case .rectBottomLeft:
-                x0 = lp.x; y1 = lp.y
-            case .rectBottomRight:
-                x1 = lp.x; y1 = lp.y
-            default: break
+                // Normalize in case the drag crosses the opposite corner
+                let nx0 = min(x0, x1), nx1 = max(x0, x1)
+                let ny0 = min(y0, y1), ny1 = max(y0, y1)
+                let newWidth = nx1 - nx0
+                let newHeight = ny1 - ny0
+                
+                // Enforce minimum size
+                if newWidth < 10 || newHeight < 10 {
+                    return self
+                }
+                
+                cpy.rect = CGRect(x: nx0, y: ny0, width: newWidth, height: newHeight)
+                return cpy
             }
-
-            // Normalize in case the drag crosses the opposite corner
-            let nx0 = min(x0, x1), nx1 = max(x0, x1)
-            let ny0 = min(y0, y1), ny1 = max(y0, y1)
-            cpy.rect = CGRect(x: nx0, y: ny0, width: nx1 - nx0, height: ny1 - ny0)
-            return cpy
 
         default:
             return self
         }
     }
+    
+    
 }
 
 struct OvalObject: @MainActor DrawableObject {
@@ -555,6 +620,7 @@ struct PastedImageObject: @MainActor DrawableObject {
     let id: UUID
     var rect: CGRect
     var image: NSImage
+    var rotation: CGFloat = 0  // Add rotation property
     /// Natural aspect ratio (w / h) for Shift-resize.
     let aspect: CGFloat
     
@@ -567,21 +633,41 @@ struct PastedImageObject: @MainActor DrawableObject {
     }
     
     static func == (lhs: PastedImageObject, rhs: PastedImageObject) -> Bool {
-        lhs.id == rhs.id && lhs.rect == rhs.rect && lhs.image == rhs.image
+        lhs.id == rhs.id && lhs.rect == rhs.rect && lhs.image == rhs.image && lhs.rotation == rhs.rotation  // Include rotation in equality
     }
     
-    func hitTest(_ p: CGPoint) -> Bool { rect.insetBy(dx: -6, dy: -6).contains(p) }
+    func hitTest(_ p: CGPoint) -> Bool {
+        // Convert the point into the image's local (unrotated) space
+        let c = CGPoint(x: rect.midX, y: rect.midY)
+        let localP = p.rotated(around: c, by: -rotation)
+        return rect.insetBy(dx: -6, dy: -6).contains(localP)
+    }
     
     func handleHitTest(_ p: CGPoint) -> Handle {
         let r: CGFloat = 8
+        let rotateOffset: CGFloat = 20
+
+        // Convert to local/unrotated space
+        let c = CGPoint(x: rect.midX, y: rect.midY)
+        let lp = p.rotated(around: c, by: -rotation)
+
+        // Corner handles in local space
         let tl = CGRect(x: rect.minX - r, y: rect.minY - r, width: 2*r, height: 2*r)
         let tr = CGRect(x: rect.maxX - r, y: rect.minY - r, width: 2*r, height: 2*r)
         let bl = CGRect(x: rect.minX - r, y: rect.maxY - r, width: 2*r, height: 2*r)
         let br = CGRect(x: rect.maxX - r, y: rect.maxY - r, width: 2*r, height: 2*r)
-        if tl.contains(p) { return .rectTopLeft }
-        if tr.contains(p) { return .rectTopRight }
-        if bl.contains(p) { return .rectBottomLeft }
-        if br.contains(p) { return .rectBottomRight }
+
+        if tl.contains(lp) { return .rectTopLeft }
+        if tr.contains(lp) { return .rectTopRight }
+        if bl.contains(lp) { return .rectBottomLeft }
+        if br.contains(lp) { return .rectBottomRight }
+
+        // Rotate handle in local space: at (maxX + offset, minY - offset)
+        let handleCenter = CGPoint(x: rect.maxX + rotateOffset, y: rect.minY - rotateOffset)
+        let rotateHandle = CGRect(x: handleCenter.x - r, y: handleCenter.y - r, width: 2*r, height: 2*r)
+
+        if rotateHandle.contains(lp) { return .rotate }
+
         return .none
     }
     
@@ -592,50 +678,85 @@ struct PastedImageObject: @MainActor DrawableObject {
         return c
     }
     
+    /// Rotate by the shortest angular delta from prev->center to curr->center.
+    func rotating(from prev: CGPoint, to curr: CGPoint) -> PastedImageObject {
+        var cpy = self
+        let center = CGPoint(x: rect.midX, y: rect.midY)
+        let prevAngle = atan2(prev.y - center.y, prev.x - center.x)
+        let currAngle = atan2(curr.y - center.y, curr.x - center.x)
+        let d = normalizedAngleDelta(from: prevAngle, to: currAngle)
+        cpy.rotation += d
+        return cpy
+    }
+    
     func resizing(_ handle: Handle, to p: CGPoint) -> PastedImageObject {
         var c = self
         let keepAspect = NSEvent.modifierFlags.contains(.shift)
-        
+        let center = CGPoint(x: rect.midX, y: rect.midY)
+
         switch handle {
-        case .rectTopLeft:
-            c.rect = CGRect(x: p.x, y: p.y, width: rect.maxX - p.x, height: rect.maxY - p.y)
-        case .rectTopRight:
-            c.rect = CGRect(x: rect.minX, y: p.y, width: p.x - rect.minX, height: rect.maxY - p.y)
-        case .rectBottomLeft:
-            c.rect = CGRect(x: p.x, y: rect.minY, width: rect.maxX - p.x, height: p.y - rect.minY)
-        case .rectBottomRight:
-            c.rect = CGRect(x: rect.minX, y: rect.minY, width: p.x - rect.minX, height: p.y - rect.minY)
+        case .rotate:
+            // Adjust by the shortest delta from current rotation to target pointer angle
+            let target = atan2(p.y - center.y, p.x - center.x)
+            let d = normalizedAngleDelta(from: c.rotation, to: target)
+            c.rotation += d
+            return c
+
+        case .rectTopLeft, .rectTopRight, .rectBottomLeft, .rectBottomRight:
+            // Convert the drag point into local/unrotated space
+            let lp = p.rotated(around: center, by: -rotation)
+
+            var x0 = rect.minX, y0 = rect.minY
+            var x1 = rect.maxX, y1 = rect.maxY
+
+            switch handle {
+            case .rectTopLeft:
+                x0 = lp.x; y0 = lp.y
+            case .rectTopRight:
+                x1 = lp.x; y0 = lp.y
+            case .rectBottomLeft:
+                x0 = lp.x; y1 = lp.y
+            case .rectBottomRight:
+                x1 = lp.x; y1 = lp.y
+            default: break
+            }
+
+            // Normalize in case the drag crosses the opposite corner
+            let nx0 = min(x0, x1), nx1 = max(x0, x1)
+            let ny0 = min(y0, y1), ny1 = max(y0, y1)
+            c.rect = CGRect(x: nx0, y: ny0, width: nx1 - nx0, height: ny1 - ny0)
+            
+            c.rect.size.width = max(8, c.rect.size.width)
+            c.rect.size.height = max(8, c.rect.size.height)
+            
+            guard keepAspect else { return c }
+            
+            // Snap to original aspect by adjusting the dimension that needs the smallest change.
+            let targetW = c.rect.height * aspect
+            let targetH = c.rect.width / aspect
+            if abs(targetW - c.rect.width) < abs(targetH - c.rect.height) {
+                c.rect.size.width = targetW
+            } else {
+                c.rect.size.height = targetH
+            }
+            
+            // Re-anchor based on which corner moved so the opposite corner stays fixed.
+            switch handle {
+            case .rectTopLeft:
+                c.rect.origin.x = rect.maxX - c.rect.size.width
+                c.rect.origin.y = rect.maxY - c.rect.size.height
+            case .rectTopRight:
+                c.rect.origin.y = rect.maxY - c.rect.size.height
+            case .rectBottomLeft:
+                c.rect.origin.x = rect.maxX - c.rect.size.width
+            default:
+                break
+            }
+            return c
+
         default:
-            break
+            return self
         }
-        
-        c.rect.size.width  = max(8, c.rect.size.width)
-        c.rect.size.height = max(8, c.rect.size.height)
-        
-        guard keepAspect else { return c }
-        
-        // Snip to original aspect by adjusting the dimension that needs the smallest change.
-        let targetW = c.rect.height * aspect
-        let targetH = c.rect.width / aspect
-        if abs(targetW - c.rect.width) < abs(targetH - c.rect.height) {
-            c.rect.size.width = targetW
-        } else {
-            c.rect.size.height = targetH
-        }
-        
-        // Re-anchor based on which corner moved so the opposite corner stays fixed.
-        switch handle {
-        case .rectTopLeft:
-            c.rect.origin.x = rect.maxX - c.rect.size.width
-            c.rect.origin.y = rect.maxY - c.rect.size.height
-        case .rectTopRight:
-            c.rect.origin.y = rect.maxY - c.rect.size.height
-        case .rectBottomLeft:
-            c.rect.origin.x = rect.maxX - c.rect.size.width
-        default:
-            break
-        }
-        return c
     }
 }
 
