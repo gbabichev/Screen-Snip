@@ -195,8 +195,12 @@ struct PermissionRowWithAction: View {
                             Image(systemName: "play.circle.fill")
                         }
                         Text(buttonTitle)
+                            .lineLimit(1) // optional, prevents wrapping
+                            .truncationMode(.tail)
                     }
+                    .frame(maxWidth: .infinity) // makes content expand inside fixed frame
                 }
+                .frame(width: 250, height: 44) // fixed button size
                 .buttonStyle(.bordered)
                 .disabled(isLoading || status == .granted)
             }

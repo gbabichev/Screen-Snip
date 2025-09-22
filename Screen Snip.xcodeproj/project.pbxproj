@@ -29,7 +29,7 @@
 /* End PBXFileReference section */
 
 /* Begin PBXFileSystemSynchronizedBuildFileExceptionSet section */
-		FF8156232E78EFC8009FBAF4 /* Exceptions for "Screen Snip" folder in "ScreenSnipHelper" target */ = {
+		FFDBE3BE2E80F18D00619F3B /* Exceptions for "Screen Snip" folder in "ScreenSnipHelper" target */ = {
 			isa = PBXFileSystemSynchronizedBuildFileExceptionSet;
 			membershipExceptions = (
 				Assets/ScreenSnip.icon,
@@ -42,7 +42,7 @@
 		FF30F8E92E6F929000F72D09 /* Screen Snip */ = {
 			isa = PBXFileSystemSynchronizedRootGroup;
 			exceptions = (
-				FF8156232E78EFC8009FBAF4 /* Exceptions for "Screen Snip" folder in "ScreenSnipHelper" target */,
+				FFDBE3BE2E80F18D00619F3B /* Exceptions for "Screen Snip" folder in "ScreenSnipHelper" target */,
 			);
 			path = "Screen Snip";
 			sourceTree = "<group>";
@@ -366,7 +366,7 @@
 					"$(inherited)",
 					"@executable_path/../Frameworks",
 				);
-				MARKETING_VERSION = 1.0.4;
+				MARKETING_VERSION = 1.0.5;
 				PRODUCT_BUNDLE_IDENTIFIER = "com.georgebabichev.Screen-Snip";
 				PRODUCT_NAME = "$(TARGET_NAME)";
 				REGISTER_APP_GROUPS = YES;
@@ -420,7 +420,7 @@
 					"$(inherited)",
 					"@executable_path/../Frameworks",
 				);
-				MARKETING_VERSION = 1.0.4;
+				MARKETING_VERSION = 1.0.5;
 				PRODUCT_BUNDLE_IDENTIFIER = "com.georgebabichev.Screen-Snip";
 				PRODUCT_NAME = "$(TARGET_NAME)";
 				REGISTER_APP_GROUPS = YES;

@@ -6,21 +6,35 @@
     {
       "layers" : [
         {
-          "glass" : false,
-          "image-name" : "ScreenSnip.png",
-          "name" : "ScreenSnip",
+          "fill" : "none",
+          "image-name" : "Scissors.png",
+          "name" : "Scissors",
           "position" : {
-            "scale" : 1.15,
+            "scale" : 0.85,
+            "translation-in-points" : [
+              -6.1171875,
+              -7.7890625
+            ]
+          }
+        },
+        {
+          "fill" : {
+            "solid" : "extended-gray:1.00000,1.00000"
+          },
+          "image-name" : "Background.png",
+          "name" : "Background",
+          "position" : {
+            "scale" : 1.05,
             "translation-in-points" : [
               0,
-              15
+              0
             ]
           }
         }
       ],
       "shadow" : {
-        "kind" : "layer-color",
-        "opacity" : 1
+        "kind" : "neutral",
+        "opacity" : 0.5
       },
       "translucency" : {
         "enabled" : true,
