@@ -83,6 +83,14 @@ struct ContentView: View {
     
     @FocusState private var thumbnailsFocused: Bool
 
+    // Zoom
+    
+    private let ZOOM_MIN: Double = 0.5
+    private let ZOOM_MAX: Double = 3.0
+    
+    
+    
+    
     private var hasPermissionIssues: Bool {
         appDelegate.needsAccessibilityPermission || appDelegate.needsScreenRecordingPermission
     }
@@ -557,7 +565,7 @@ struct ContentView: View {
                             }
                             .frame(maxWidth: .infinity, maxHeight: .infinity)
                             .overlay(
-                                LocalScrollWheelZoomView(zoomLevel: $zoomLevel, minZoom: 1.0, maxZoom: 3.0)
+                                LocalScrollWheelZoomView(zoomLevel: $zoomLevel, minZoom: ZOOM_MIN, maxZoom: ZOOM_MAX)
                                     .allowsHitTesting(true)
                             )
                             .gesture(
@@ -565,7 +573,7 @@ struct ContentView: View {
                                     .onChanged { scale in
                                         if pinchBaseZoom == nil { pinchBaseZoom = zoomLevel }
                                         let proposed = (pinchBaseZoom ?? zoomLevel) * Double(scale)
-                                        zoomLevel = min(max(proposed, 1.0), 3.0)
+                                        zoomLevel = min(max(proposed, ZOOM_MIN), ZOOM_MAX)
                                     }
                                     .onEnded { _ in pinchBaseZoom = nil }
                             )
@@ -1003,7 +1011,7 @@ struct ContentView: View {
                     ToolbarItemGroup(placement: .navigation){
                         HStack {
                             
-                            Slider(value: $zoomLevel, in: 1...3) {
+                            Slider(value: $zoomLevel, in: ZOOM_MIN...ZOOM_MAX) {
                                 Text("Zoom")
                             }
                             .frame(width: 80)
