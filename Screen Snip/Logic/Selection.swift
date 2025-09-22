@@ -165,7 +165,8 @@ struct SelectionOverlay: View {
                     }
                 } else {
                     // Initial overlay before dragging starts
-                    Color.black.opacity(0.2)
+                    
+                    //Color.black.opacity(0.2)
                     
                     // Instructions overlay
                     VStack(spacing: 8) {

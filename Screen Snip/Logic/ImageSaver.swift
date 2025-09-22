@@ -63,7 +63,20 @@ struct ImageSaver {
         return generateFilename(fileExtension: fileExtension)
     }
     
-    static func writeImage(_ image: NSImage, to url: URL, format: String, quality: Double) -> Bool {
+    static func writeImage(_ image: NSImage, to url: URL, format: String, quality: Double, preserveAttributes: Bool = false) -> Bool {
+        var originalCreationDate: Date? = nil
+        
+        // Capture original creation date if preserving and file exists
+        if preserveAttributes && FileManager.default.fileExists(atPath: url.path) {
+            do {
+                let attributes = try FileManager.default.attributesOfItem(atPath: url.path)
+                originalCreationDate = attributes[.creationDate] as? Date
+            } catch {
+                // If we can't read attributes, continue anyway
+                print("Could not read original file attributes: \(error)")
+            }
+        }
+        
         // Check if user wants to downsample to non-retina
         let downsampleToNonRetinaForSave = UserDefaults.standard.bool(forKey: "downsampleToNonRetinaForSave")
         
@@ -81,6 +94,16 @@ struct ImageSaver {
             
             do {
                 try pngData.write(to: url, options: .atomic)
+                
+                // Restore original creation date if we captured it
+                if preserveAttributes, let creationDate = originalCreationDate {
+                    do {
+                        try FileManager.default.setAttributes([.creationDate: creationDate], ofItemAtPath: url.path)
+                    } catch {
+                        print("Could not restore original creation date: \(error)")
+                    }
+                }
+                
                 return true
             } catch {
                 return false
@@ -119,6 +142,7 @@ struct ImageSaver {
         #if DEBUG
         print("[ImageSaver] NSImage.size (pt)=\(Int(pointsWidth))x\(Int(pointsHeight)) cg=\(dbg_cgW)x\(dbg_cgH) bestRep=\(dbg_repW)x\(dbg_repH) class=\(dbg_bestRepClass) scaleFromRep=\(String(format: "%.2f", Double(scaleFromRep))) downsample=\(downsampleToNonRetinaForSave)")
         #endif
+        
         // Effective output scale: 1x if explicitly downsampling, otherwise preserve backing scale (e.g., 2x)
         let effectiveScale = CGFloat(downsampleToNonRetinaForSave ? 1.0 : max(1.0, scaleFromRep))
 
@@ -172,6 +196,7 @@ struct ImageSaver {
         #if DEBUG
         print("[ImageSaver] targetPixels=\(targetPixelsWide)x\(targetPixelsHigh) effectiveScale=\(String(format: "%.2f", Double(effectiveScale))) dpi=\(dpi) format=\(format)")
         #endif
+        
         // Determine UTType
         let utType: CFString = {
             switch format {
@@ -227,8 +252,22 @@ struct ImageSaver {
         
         // Add image with properties and finalize
         CGImageDestinationAddImage(destination, cgImage, properties as CFDictionary)
-        return CGImageDestinationFinalize(destination)
+        let success = CGImageDestinationFinalize(destination)
+        
+        // Restore original creation date if we captured it and write was successful
+        if success, preserveAttributes, let creationDate = originalCreationDate {
+            do {
+                try FileManager.default.setAttributes([.creationDate: creationDate], ofItemAtPath: url.path)
+            } catch {
+                print("Could not restore original creation date: \(error)")
+                // Don't fail the operation just because we couldn't restore the date
+            }
+        }
+        
+        return success
     }
+    
+    
     
     nonisolated static func imageData(from image: NSImage, format: String, quality: Double) -> Data? {
         guard let bestRep = image.representations

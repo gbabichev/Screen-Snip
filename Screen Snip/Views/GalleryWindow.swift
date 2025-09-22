@@ -14,16 +14,15 @@ final class GalleryWindow {
     func present(urls: [URL], onSelect: @escaping (URL) -> Void, onReload: @escaping () -> [URL]) {
         // If already visible, just bring to front and update content
         if let win = window {
-            // Refresh content in the existing window
-            if let hosting = win.contentViewController as? NSHostingController<GalleryView> {
-                hosting.rootView = GalleryView(urls: urls, onSelect: onSelect, onReload: onReload, onVisibleDateChange: { date in
-                    win.title = date.map { "Snip Gallery — \($0)" } ?? "Snip Gallery"
-                })
-            } else {
-                win.contentViewController = NSHostingController(rootView: GalleryView(urls: urls, onSelect: onSelect, onReload: onReload, onVisibleDateChange: { date in
-                    win.title = date.map { "Snip Gallery — \($0)" } ?? "Snip Gallery"
-                }))
-            }
+            
+            let freshUrls = onReload()
+            
+            // Always create a new hosting controller with fresh data to ensure SwiftUI updates
+            let content = GalleryView(urls: freshUrls, onSelect: onSelect, onReload: onReload, onVisibleDateChange: { [weak win] date in
+                win?.title = date.map { "Snip Gallery — \($0)" } ?? "Snip Gallery"
+            })
+            win.contentViewController = NSHostingController(rootView: content)
+            
             // Enforce a sane size if it somehow got too small
             win.minSize = NSSize(width: 480, height: 360)
             var f = win.frame
@@ -44,7 +43,7 @@ final class GalleryWindow {
             defer: false
         )
         
-        let content = GalleryView(urls: urls, onSelect: onSelect, onReload: onReload, onVisibleDateChange: { [weak win] date in
+        let content = GalleryView(urls: onReload(), onSelect: onSelect, onReload: onReload, onVisibleDateChange: { [weak win] date in
             win?.title = date.map { "Snip Gallery — \($0)" } ?? "Snip Gallery"
         })
         let hosting = NSHostingController(rootView: content)
@@ -165,10 +164,10 @@ struct GalleryView: View {
             }
         }
         
-        // Fallback: use file modification date
+        // Fallback: use file creation date (not modification date)
         do {
-            let attrs = try url.resourceValues(forKeys: [.contentModificationDateKey])
-            if let date = attrs.contentModificationDate {
+            let attrs = try url.resourceValues(forKeys: [.creationDateKey])  // Changed this
+            if let date = attrs.creationDate {  // And this
                 let formatter = DateFormatter()
                 formatter.dateFormat = "EEEE, MMMM d"
                 return formatter.string(from: date)
@@ -369,5 +368,10 @@ struct GalleryView: View {
                minHeight: 360, maxHeight: .infinity)
         .background(Color(NSColor.windowBackgroundColor))
         .onDisappear { onVisibleDateChange(nil) }
+        // Add this to ensure the view updates when presented again
+        .onAppear {
+            urlsLocal = onReload()
+            refreshTrigger = UUID()
+        }
     }
 }

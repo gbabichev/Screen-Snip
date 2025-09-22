@@ -1961,7 +1961,7 @@ struct ContentView: View {
         // 4) Optional: Save the rasterized image to disk when enabled in settings (non-destructive)
         if UserDefaults.standard.bool(forKey: "saveOnCopy") {
             if let url = selectedSnipURL {
-                if ImageSaver.writeImage(source, to: url, format: preferredSaveFormat.rawValue, quality: saveQuality) {
+                if ImageSaver.writeImage(source, to: url, format: preferredSaveFormat.rawValue, quality: saveQuality, preserveAttributes: true) {
                     
                     // NEW: Clear all drawn objects after successful save
                     objects.removeAll()
@@ -1981,7 +1981,7 @@ struct ContentView: View {
             } else if let dir = SnipsDirectory() {
                 let newName = ImageSaver.generateFilename(for: preferredSaveFormat.rawValue)
                 let dest = dir.appendingPathComponent(newName)
-                if ImageSaver.writeImage(source, to: dest, format: preferredSaveFormat.rawValue, quality: saveQuality) {
+                if ImageSaver.writeImage(source, to: dest, format: preferredSaveFormat.rawValue, quality: saveQuality, preserveAttributes: true) {
                     
                     // NEW: Clear all drawn objects after successful save
                     objects.removeAll()
@@ -2130,10 +2130,34 @@ struct ContentView: View {
                         if !pushedDragUndo { pushUndoSnipshot(); pushedDragUndo = true }
                         switch objects[idx] {
                         case .line(let o):
-                            var updated = (activeHandle == .none) ? o.moved(by: delta) : o.resizing(activeHandle, to: current)
-                            updated.start = clampPoint(updated.start, in: author)
-                            updated.end   = clampPoint(updated.end,   in: author)
-                            objects[idx] = .line(updated)
+                            if activeHandle == .none {
+                                // Move whole line as a unit — clamp the delta so BOTH endpoints stay within bounds (prevents warping)
+                                // Clamp X
+                                let proposedStartX = o.start.x + delta.width
+                                let proposedEndX   = o.end.x   + delta.width
+                                var dx = delta.width
+                                let minX = min(proposedStartX, proposedEndX)
+                                let maxX = max(proposedStartX, proposedEndX)
+                                if minX < 0 { dx -= minX }
+                                if maxX > author.width { dx -= (maxX - author.width) }
+                                // Clamp Y
+                                let proposedStartY = o.start.y + delta.height
+                                let proposedEndY   = o.end.y   + delta.height
+                                var dy = delta.height
+                                let minY = min(proposedStartY, proposedEndY)
+                                let maxY = max(proposedStartY, proposedEndY)
+                                if minY < 0 { dy -= minY }
+                                if maxY > author.height { dy -= (maxY - author.height) }
+                                let clampedDelta = CGSize(width: dx, height: dy)
+                                let moved = o.moved(by: clampedDelta)
+                                objects[idx] = .line(moved)
+                            } else {
+                                // Resize one endpoint: allow it to hit bounds, then clamp that endpoint only
+                                var updated = o.resizing(activeHandle, to: current)
+                                updated.start = clampPoint(updated.start, in: author)
+                                updated.end   = clampPoint(updated.end,   in: author)
+                                objects[idx] = .line(updated)
+                            }
                         default:
                             break
                         }
@@ -2764,11 +2788,34 @@ struct ContentView: View {
                     }
                     switch objects[idx] {
                     case .line(let o):
-                        let updated = (activeHandle == .none) ? o.moved(by: delta) : o.resizing(activeHandle, to: p)
-                        var u = updated
-                        u.start = clampPoint(u.start, in: author)
-                        u.end   = clampPoint(u.end,   in: author)
-                        objects[idx] = .line(u)
+                        if activeHandle == .none {
+                            // Move whole line without warping — clamp the delta so both endpoints remain inside the canvas
+                            // Clamp X
+                            let proposedStartX = o.start.x + delta.width
+                            let proposedEndX   = o.end.x   + delta.width
+                            var dx = delta.width
+                            let minX = min(proposedStartX, proposedEndX)
+                            let maxX = max(proposedStartX, proposedEndX)
+                            if minX < 0 { dx -= minX }
+                            if maxX > author.width { dx -= (maxX - author.width) }
+                            // Clamp Y
+                            let proposedStartY = o.start.y + delta.height
+                            let proposedEndY   = o.end.y   + delta.height
+                            var dy = delta.height
+                            let minY = min(proposedStartY, proposedEndY)
+                            let maxY = max(proposedStartY, proposedEndY)
+                            if minY < 0 { dy -= minY }
+                            if maxY > author.height { dy -= (maxY - author.height) }
+                            let clampedDelta = CGSize(width: dx, height: dy)
+                            let moved = o.moved(by: clampedDelta)
+                            objects[idx] = .line(moved)
+                        } else {
+                            // Resizing endpoint: clamp that endpoint after resize
+                            var updated = o.resizing(activeHandle, to: p)
+                            updated.start = clampPoint(updated.start, in: author)
+                            updated.end   = clampPoint(updated.end,   in: author)
+                            objects[idx] = .line(updated)
+                        }
                     case .rect(let o):
                         var updated = o
                         if activeHandle == .none {
@@ -3393,8 +3440,8 @@ struct ContentView: View {
         if let flattened = rasterize(base: img, objects: objects) {
             objects.removeAll()
             if let url = selectedSnipURL {
-                // Write the flattened image back to the same file
-                if ImageSaver.writeImage(flattened, to: url, format: preferredSaveFormat.rawValue, quality: saveQuality) {
+                // Write the flattened image back to the same file, preserving creation date
+                if ImageSaver.writeImage(flattened, to: url, format: preferredSaveFormat.rawValue, quality: saveQuality, preserveAttributes: true) {
                     reloadCurrentImage()
                     thumbnailRefreshTrigger = UUID()
                 }
@@ -3943,11 +3990,11 @@ struct ContentView: View {
         let fm = FileManager.default
         do {
             let supportedExtensions = Set(["png", "jpg", "jpeg", "heic"])
-            let urls = try fm.contentsOfDirectory(at: dir, includingPropertiesForKeys: [.contentModificationDateKey], options: [.skipsHiddenFiles])
+            let urls = try fm.contentsOfDirectory(at: dir, includingPropertiesForKeys: [.creationDateKey], options: [.skipsHiddenFiles])
                 .filter { supportedExtensions.contains($0.pathExtension.lowercased()) }
             let dated: [(URL, Date)] = urls.compactMap {
-                let vals = try? $0.resourceValues(forKeys: [.contentModificationDateKey])
-                return ($0, vals?.contentModificationDate ?? .distantPast)
+                let vals = try? $0.resourceValues(forKeys: [.creationDateKey])
+                return ($0, vals?.creationDate ?? .distantPast)
             }
             let sorted = dated.sorted { $0.1 > $1.1 }.map { $0.0 }
             SnipURLs = Array(sorted.prefix(10))
@@ -3973,35 +4020,38 @@ struct ContentView: View {
     }
     
     private func openSnipsInGallery() {
-        guard let dir = SnipsDirectory() else { return }
-        let fm = FileManager.default
-        var urls: [URL] = []
-        do {
-            let all = try fm.contentsOfDirectory(at: dir,
-                                                 includingPropertiesForKeys: [.contentModificationDateKey, .isRegularFileKey],
-                                                 options: [.skipsHiddenFiles])
-            // Allow common raster image types
-            let allowedExts: Set<String> = ["png", "jpg", "jpeg", "heic"]
-            let filtered = all.filter { allowedExts.contains($0.pathExtension.lowercased()) }
-            let dated: [(URL, Date)] = filtered.compactMap {
-                let vals = try? $0.resourceValues(forKeys: [.contentModificationDateKey])
-                return ($0, vals?.contentModificationDate ?? .distantPast)
+        // First, refresh the main view's data
+        loadExistingSnips()
+        
+        // Create a function that builds on the refreshed main data
+        func loadAllGalleryURLs() -> [URL] {
+            guard let dir = SnipsDirectory() else { return [] }
+            let fm = FileManager.default
+            do {
+                let supportedExtensions = Set(["png", "jpg", "jpeg", "heic"])
+                let urls = try fm.contentsOfDirectory(at: dir, includingPropertiesForKeys: [.creationDateKey], options: [.skipsHiddenFiles])
+                    .filter { supportedExtensions.contains($0.pathExtension.lowercased()) }
+                let dated: [(URL, Date)] = urls.compactMap {
+                    let vals = try? $0.resourceValues(forKeys: [.creationDateKey])
+                    return ($0, vals?.creationDate ?? .distantPast)
+                }
+                // Return ALL files (not limited to 10 like SnipURLs)
+                return dated.sorted { $0.1 > $1.1 }.map { $0.0 }
+            } catch {
+                return []
             }
-            urls = dated.sorted { $0.1 > $1.1 }.map { $0.0 }
-        } catch {
-            urls = []
         }
         
-        // Fallback: if we failed to enumerate, do nothing
-        guard !urls.isEmpty else { return }
+        // Use the already-refreshed SnipURLs as the immediate data source, then load all files
+        let initialUrls = loadAllGalleryURLs()
+        guard !initialUrls.isEmpty else { return }
         
         GalleryWindow.shared.present(
-            urls: urls,
+            urls: initialUrls,
             onSelect: { url in
-                // Check if file exists before trying to load
+                // Your existing onSelect code...
                 let fm = FileManager.default
                 if !fm.fileExists(atPath: url.path) {
-                    // File is missing - add to missing set and remove from SnipURLs
                     missingSnipURLs.insert(url)
                     if let index = SnipURLs.firstIndex(of: url) {
                         SnipURLs.remove(at: index)
@@ -4009,11 +4059,8 @@ struct ContentView: View {
                     return
                 }
                 
-                // File exists - load it into the editor using the same logic as the main thumbnail view
                 selectedSnipURL = url
                 selectedImageSize = probeImageSize(url)
-                
-                // Clear all editing state when switching images (same as main thumbnail logic)
                 objects.removeAll()
                 objectSpaceSize = nil
                 selectedObjectID = nil
@@ -4022,36 +4069,13 @@ struct ContentView: View {
                 cropDraftRect = nil
                 cropHandle = .none
                 focusedTextID = nil
-                
-                // Clear undo/redo stacks for the new image
                 undoStack.removeAll()
                 redoStack.removeAll()
-                
-                // Reset zoom and image reload trigger
                 zoomLevel = 1.0
                 imageReloadTrigger = UUID()
-                
-                // Close the gallery window
                 GalleryWindow.shared.close()
             },
-            onReload: {
-                let fm = FileManager.default
-                guard let dir = SnipsDirectory() else { return [] }
-                do {
-                    let all = try fm.contentsOfDirectory(at: dir,
-                                                         includingPropertiesForKeys: [.contentModificationDateKey, .isRegularFileKey],
-                                                         options: [.skipsHiddenFiles])
-                    let allowedExts: Set<String> = ["png", "jpg", "jpeg", "heic"]
-                    let filtered = all.filter { allowedExts.contains($0.pathExtension.lowercased()) }
-                    let dated: [(URL, Date)] = filtered.compactMap {
-                        let vals = try? $0.resourceValues(forKeys: [.contentModificationDateKey])
-                        return ($0, vals?.contentModificationDate ?? .distantPast)
-                    }
-                    return dated.sorted { $0.1 > $1.1 }.map { $0.0 }
-                } catch {
-                    return []
-                }
-            }
+            onReload: loadAllGalleryURLs  // Use the same function for reload
         )
     }
     
