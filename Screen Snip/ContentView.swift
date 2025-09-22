@@ -2012,8 +2012,6 @@ struct ContentView: View {
         if UserDefaults.standard.bool(forKey: "saveOnCopy") {
             if let url = selectedSnipURL {
                 if ImageSaver.writeImage(source, to: url, format: preferredSaveFormat.rawValue, quality: saveQuality) {
-                    refreshGalleryAfterSaving(to: url)
-                    reloadCurrentImage()
                     
                     // NEW: Clear all drawn objects after successful save
                     objects.removeAll()
@@ -2023,14 +2021,17 @@ struct ContentView: View {
                     cropRect = nil
                     cropDraftRect = nil
                     cropHandle = .none
+                    
+                    refreshGalleryAfterSaving(to: url)
+                    reloadCurrentImage()
+                    
+                    
+                    
                 }
             } else if let dir = SnipsDirectory() {
                 let newName = ImageSaver.generateFilename(for: preferredSaveFormat.rawValue)
                 let dest = dir.appendingPathComponent(newName)
                 if ImageSaver.writeImage(source, to: dest, format: preferredSaveFormat.rawValue, quality: saveQuality) {
-                    selectedSnipURL = dest
-                    refreshGalleryAfterSaving(to: dest)
-                    reloadCurrentImage()
                     
                     // NEW: Clear all drawn objects after successful save
                     objects.removeAll()
@@ -2040,6 +2041,11 @@ struct ContentView: View {
                     cropRect = nil
                     cropDraftRect = nil
                     cropHandle = .none
+                    
+                    selectedSnipURL = dest
+                    refreshGalleryAfterSaving(to: dest)
+                    reloadCurrentImage()
+                    
                 }
             } else {
                 // Fallback if no directory available
@@ -3782,8 +3788,10 @@ struct ContentView: View {
             missingSnipURLs = missingSnipURLs.filter { !sorted.contains($0) }
             
             // If currently selected Snip no longer exists, clear selection
-            if let sel = selectedSnipURL, !sorted.contains(sel) {
-                selectedSnipURL = nil
+            if let sel = selectedSnipURL {
+                if !fm.fileExists(atPath: sel.path) {
+                    selectedSnipURL = nil
+                }
             }
         } catch {
             SnipURLs = []
