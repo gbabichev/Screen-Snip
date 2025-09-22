@@ -16,9 +16,13 @@ final class GalleryWindow {
         if let win = window {
             // Refresh content in the existing window
             if let hosting = win.contentViewController as? NSHostingController<GalleryView> {
-                hosting.rootView = GalleryView(urls: urls, onSelect: onSelect, onReload: onReload)
+                hosting.rootView = GalleryView(urls: urls, onSelect: onSelect, onReload: onReload, onVisibleDateChange: { date in
+                    win.title = date.map { "Snip Gallery — \($0)" } ?? "Snip Gallery"
+                })
             } else {
-                win.contentViewController = NSHostingController(rootView: GalleryView(urls: urls, onSelect: onSelect, onReload: onReload))
+                win.contentViewController = NSHostingController(rootView: GalleryView(urls: urls, onSelect: onSelect, onReload: onReload, onVisibleDateChange: { date in
+                    win.title = date.map { "Snip Gallery — \($0)" } ?? "Snip Gallery"
+                }))
             }
             // Enforce a sane size if it somehow got too small
             win.minSize = NSSize(width: 480, height: 360)
@@ -33,15 +37,18 @@ final class GalleryWindow {
             return
         }
         
-        let content = GalleryView(urls: urls, onSelect: onSelect, onReload: onReload)
-        let hosting = NSHostingController(rootView: content)
-        
         let win = NSWindow(
             contentRect: NSRect(x: 0, y: 0, width: 820, height: 620),
             styleMask: [.titled, .closable, .miniaturizable, .resizable, .fullSizeContentView],
             backing: .buffered,
             defer: false
         )
+        
+        let content = GalleryView(urls: urls, onSelect: onSelect, onReload: onReload, onVisibleDateChange: { [weak win] date in
+            win?.title = date.map { "Snip Gallery — \($0)" } ?? "Snip Gallery"
+        })
+        let hosting = NSHostingController(rootView: content)
+        
         //win.titleVisibility = .hidden
         win.title = "Snip Gallery"
         win.titlebarAppearsTransparent = true
@@ -112,9 +119,11 @@ final class GalleryWindow {
 struct GalleryView: View {
     let onSelect: (URL) -> Void
     let onReload: () -> [URL]
+    let onVisibleDateChange: (String?) -> Void
     @State private var urlsLocal: [URL]
     @State private var selectedUrl: URL?
     @State private var refreshTrigger = UUID()
+    @State private var currentVisibleDate: String? = nil
     
     @AppStorage("saveDirectoryPath") private var saveDirectoryPath: String = ""
     
@@ -245,10 +254,36 @@ struct GalleryView: View {
         }
     }
     
-    init(urls: [URL], onSelect: @escaping (URL) -> Void, onReload: @escaping () -> [URL]) {
+    
+    init(urls: [URL], onSelect: @escaping (URL) -> Void, onReload: @escaping () -> [URL], onVisibleDateChange: @escaping (String?) -> Void) {
         self.onSelect = onSelect
         self.onReload = onReload
+        self.onVisibleDateChange = onVisibleDateChange
         _urlsLocal = State(initialValue: urls)
+    }
+    
+    private struct SectionTopPreferenceKey: PreferenceKey {
+        static var defaultValue: [String: CGFloat] = [:]
+        static func reduce(value: inout [String: CGFloat], nextValue: () -> [String: CGFloat]) {
+            value.merge(nextValue(), uniquingKeysWith: { $1 })
+        }
+    }
+    
+    private func updateVisibleDate(with positions: [String: CGFloat]) {
+        // Pick the section whose top is closest to the top (>= 0 preferred), else the highest one
+        // The coordinate space will be the ScrollView named "galleryScroll"
+        let sorted = positions.sorted { a, b in
+            let ay = a.value
+            let by = b.value
+            // Prefer non-negative mins that are closest to zero
+            let aScore = ay >= 0 ? ay : abs(ay) + 10_000
+            let bScore = by >= 0 ? by : abs(by) + 10_000
+            return aScore < bScore
+        }
+        if let top = sorted.first?.key, top != currentVisibleDate {
+            currentVisibleDate = top
+            onVisibleDateChange(top)
+        }
     }
     
     // Grid for each section
@@ -261,6 +296,13 @@ struct GalleryView: View {
             LazyVStack(alignment: .leading, spacing: 20) {
                 ForEach(groupedUrls, id: \.0) { dateString, urls in
                     VStack(alignment: .leading, spacing: 12) {
+                        // Track this section's top position within the scroll coordinate space
+                        GeometryReader { geo in
+                            Color.clear
+                                .preference(key: SectionTopPreferenceKey.self,
+                                            value: [dateString: geo.frame(in: .named("galleryScroll")).minY])
+                        }
+                        .frame(height: 0)
                         // Date header
                         HStack {
                             Text(dateString)
@@ -304,6 +346,10 @@ struct GalleryView: View {
             }
             .padding(.vertical, 16)
         }
+        .coordinateSpace(name: "galleryScroll")
+        .onPreferenceChange(SectionTopPreferenceKey.self) { positions in
+            updateVisibleDate(with: positions)
+        }
         .toolbar {
             ToolbarItemGroup(placement: .navigation) {
                 Button {
@@ -322,5 +368,6 @@ struct GalleryView: View {
         .frame(minWidth: 480, maxWidth: .infinity,
                minHeight: 360, maxHeight: .infinity)
         .background(Color(NSColor.windowBackgroundColor))
+        .onDisappear { onVisibleDateChange(nil) }
     }
 }
