@@ -2281,15 +2281,48 @@ struct ContentView: View {
                             if activeHandle == .none {
                                 updated = o.moved(by: delta)
                             } else if activeHandle == .rotate {
-                                // Delta-based rotation around center using shortest angular distance
+                                // Absolute-angle rotation anchored at gesture begin; no per-tick anchor drift
                                 let c = CGPoint(x: o.rect.midX, y: o.rect.midY)
-                                let prevAngle = atan2(s.y - c.y, s.x - c.x)
+
+                                // Initialize anchors on first rotate tick for this drag
+                                if rectRotateStartAngle == nil || rectRotateStartValue == nil {
+                                    // Use the initial dragStartPoint as the pointer anchor at mouse-down
+                                    if let s = dragStartPoint {
+                                        rectRotateStartAngle = atan2(s.y - c.y, s.x - c.x)
+                                    } else {
+                                        rectRotateStartAngle = atan2(current.y - c.y, current.x - c.x)
+                                    }
+                                    rectRotateStartValue = o.rotation
+                                }
+
+                                guard let startAngle = rectRotateStartAngle, let baseRotation = rectRotateStartValue else {
+                                    return
+                                }
+
+                                // Current pointer angle
                                 let currAngle = atan2(current.y - c.y, current.x - c.x)
-                                let d = normalizedAngleDelta(from: prevAngle, to: currAngle)
-                                updated.rotation = o.rotation + d
+
+                                // Absolute target = base rotation + delta from initial pointer angle to current pointer angle
+                                var target = baseRotation + normalizedAngleDelta(from: startAngle, to: currAngle)
+
+                                // Modifier-based snapping: Option=1°, Command=5°, Shift=15°; none=free
+                                let mods = NSEvent.modifierFlags
+                                if mods.contains(.option) {
+                                    let inc = CGFloat.pi / 180 // 1°
+                                    target = round(target / inc) * inc
+                                } else if mods.contains(.command) {
+                                    let inc = CGFloat.pi / 36 // 5°
+                                    target = round(target / inc) * inc
+                                } else if mods.contains(.shift) {
+                                    let inc = CGFloat.pi / 12 // 15°
+                                    target = round(target / inc) * inc
+                                }
+
+                                updated.rotation = target
+
                                 // Do NOT clamp rect while rotating; geometry doesn't change
                                 objects[idx] = .rect(updated)
-                                dragStartPoint = current
+                                // Important: keep anchors stable; do not mutate dragStartPoint here
                                 return
                             } else {
                                 updated = o.resizing(activeHandle, to: current)
@@ -2326,6 +2359,10 @@ struct ContentView: View {
                 let endFit = CGPoint(x: value.location.x - insetOrigin.x, y: value.location.y - insetOrigin.y)
                 let pEnd = fittedToAuthorPoint(endFit, fitted: fitted, author: author)
                 
+                // Reset rotation anchors (for Rect) - same as pointer tool
+                rectRotateStartAngle = nil
+                rectRotateStartValue = nil
+                
                 defer { dragStartPoint = nil; pushedDragUndo = false; activeHandle = .none; draftRect = nil }
                 
                 // If we were moving/resizing an existing rect, we're done
@@ -2339,7 +2376,7 @@ struct ContentView: View {
                 // Create a new rectangle from the draft drag area if present…
                 if let r = draftRect {
                     let clamped = clampRect(r, in: author)
-                    let newObj = RectObject(rect: clamped, width: strokeWidth, color: rectColor)  // Pass current color
+                    let newObj = RectObject(rect: clamped, width: strokeWidth, color: rectColor)
                     pushUndoSnipshot()
                     objects.append(.rect(newObj))
                     if objectSpaceSize == nil { objectSpaceSize = author }
@@ -2349,7 +2386,7 @@ struct ContentView: View {
                     let d: CGFloat = 40
                     let rect = CGRect(x: max(0, pEnd.x - d/2), y: max(0, pEnd.y - d/2), width: d, height: d)
                     let clamped = clampRect(rect, in: author)
-                    let newObj = RectObject(rect: clamped, width: strokeWidth, color: rectColor)  // Pass current color
+                    let newObj = RectObject(rect: clamped, width: strokeWidth, color: rectColor)
                     pushUndoSnipshot()
                     objects.append(.rect(newObj))
                     if objectSpaceSize == nil { objectSpaceSize = author }
@@ -2529,6 +2566,10 @@ struct ContentView: View {
             }
     }
     
+    // Add these state variables at the top of ContentView with the other rotation anchors
+    @State private var textRotateStartAngle: CGFloat? = nil
+    @State private var textRotateStartValue: CGFloat? = nil
+
     private func textGesture(insetOrigin: CGPoint, fitted: CGSize, author: CGSize) -> some Gesture {
         DragGesture(minimumDistance: 0)
             .onChanged { value in
@@ -2578,10 +2619,59 @@ struct ContentView: View {
                         }
                         switch objects[idx] {
                         case .text(let o):
-                            let updated = (activeHandle == .none) ? o.moved(by: delta) : o.resizing(activeHandle, to: p)
+                            var updated = o
+                            if activeHandle == .none {
+                                updated = o.moved(by: delta)
+                            } else if activeHandle == .rotate {
+                                // Absolute-angle rotation anchored at gesture begin; no per-tick anchor drift
+                                let c = CGPoint(x: o.rect.midX, y: o.rect.midY)
+
+                                // Initialize anchors on first rotate tick for this drag
+                                if textRotateStartAngle == nil || textRotateStartValue == nil {
+                                    // Use the initial dragStartPoint as the pointer anchor at mouse-down
+                                    if let s = dragStartPoint {
+                                        textRotateStartAngle = atan2(s.y - c.y, s.x - c.x)
+                                    } else {
+                                        textRotateStartAngle = atan2(p.y - c.y, p.x - c.x)
+                                    }
+                                    textRotateStartValue = o.rotation
+                                }
+
+                                guard let startAngle = textRotateStartAngle, let baseRotation = textRotateStartValue else {
+                                    return
+                                }
+
+                                // Current pointer angle
+                                let currAngle = atan2(p.y - c.y, p.x - c.x)
+
+                                // Absolute target = base rotation + delta from initial pointer angle to current pointer angle
+                                var target = baseRotation + normalizedAngleDelta(from: startAngle, to: currAngle)
+
+                                // Modifier-based snapping: Option=1°, Command=5°, Shift=15°; none=free
+                                let mods = NSEvent.modifierFlags
+                                if mods.contains(.option) {
+                                    let inc = CGFloat.pi / 180 // 1°
+                                    target = round(target / inc) * inc
+                                } else if mods.contains(.command) {
+                                    let inc = CGFloat.pi / 36 // 5°
+                                    target = round(target / inc) * inc
+                                } else if mods.contains(.shift) {
+                                    let inc = CGFloat.pi / 12 // 15°
+                                    target = round(target / inc) * inc
+                                }
+
+                                updated.rotation = target
+
+                                // Do NOT clamp rect while rotating; geometry doesn't change
+                                objects[idx] = .text(updated)
+                                // Important: keep anchors stable; do not mutate dragStartPoint here
+                                return
+                            } else {
+                                updated = o.resizing(activeHandle, to: p)
+                            }
                             let clamped = clampRect(updated.rect, in: author)
-                            var u = updated; u.rect = clamped
-                            objects[idx] = .text(u)
+                            updated.rect = clamped
+                            objects[idx] = .text(updated)
                         default:
                             break
                         }
@@ -2600,8 +2690,12 @@ struct ContentView: View {
                 let dy = pEnd.y - pStart.y
                 let moved = hypot(dx, dy) > 5 // threshold in author space
                 
+                // Reset rotation anchors (for Text) - same as pointer and rect tools
+                textRotateStartAngle = nil
+                textRotateStartValue = nil
+                
                 if moved {
-                    // We were dragging – finish and clean up
+                    // We were dragging — finish and clean up
                     dragStartPoint = nil
                     pushedDragUndo = false
                     return
@@ -2667,6 +2761,11 @@ struct ContentView: View {
             }
     }
     
+    
+    // Rotation gesture anchors for Rect (keep one anchor per drag)
+    @State private var rectRotateStartAngle: CGFloat? = nil
+    @State private var rectRotateStartValue: CGFloat? = nil
+
     private func pointerGesture(insetOrigin: CGPoint, fitted: CGSize, author: CGSize) -> some Gesture {
         DragGesture(minimumDistance: 0)
             .onChanged { value in
@@ -2723,15 +2822,48 @@ struct ContentView: View {
                         if activeHandle == .none {
                             updated = o.moved(by: delta)
                         } else if activeHandle == .rotate {
-                            // Delta-based rotation around center using shortest angular distance
+                            // Absolute-angle rotation anchored at gesture begin; no per-tick anchor drift
                             let c = CGPoint(x: o.rect.midX, y: o.rect.midY)
-                            let prevAngle = atan2(start.y - c.y, start.x - c.x)
+
+                            // Initialize anchors on first rotate tick for this drag
+                            if rectRotateStartAngle == nil || rectRotateStartValue == nil {
+                                // Use the initial dragStartPoint as the pointer anchor at mouse-down
+                                if let s = dragStartPoint {
+                                    rectRotateStartAngle = atan2(s.y - c.y, s.x - c.x)
+                                } else {
+                                    rectRotateStartAngle = atan2(p.y - c.y, p.x - c.x)
+                                }
+                                rectRotateStartValue = o.rotation
+                            }
+
+                            guard let startAngle = rectRotateStartAngle, let baseRotation = rectRotateStartValue else {
+                                return
+                            }
+
+                            // Current pointer angle
                             let currAngle = atan2(p.y - c.y, p.x - c.x)
-                            let d = normalizedAngleDelta(from: prevAngle, to: currAngle)
-                            updated.rotation = o.rotation + d
+
+                            // Absolute target = base rotation + delta from initial pointer angle to current pointer angle
+                            var target = baseRotation + normalizedAngleDelta(from: startAngle, to: currAngle)
+
+                            // Modifier-based snapping: Option=1°, Command=5°, Shift=15°; none=free
+                            let mods = NSEvent.modifierFlags
+                            if mods.contains(.option) {
+                                let inc = CGFloat.pi / 180 // 1°
+                                target = round(target / inc) * inc
+                            } else if mods.contains(.command) {
+                                let inc = CGFloat.pi / 36 // 5°
+                                target = round(target / inc) * inc
+                            } else if mods.contains(.shift) {
+                                let inc = CGFloat.pi / 12 // 15°
+                                target = round(target / inc) * inc
+                            }
+
+                            updated.rotation = target
+
                             // Do NOT clamp rect while rotating; geometry doesn't change
                             objects[idx] = .rect(updated)
-                            dragStartPoint = p
+                            // Important: keep anchors stable; do not mutate dragStartPoint here
                             return
                         } else {
                             updated = o.resizing(activeHandle, to: p)
@@ -2751,15 +2883,47 @@ struct ContentView: View {
                         if activeHandle == .none {
                             updated = o.moved(by: delta)
                         } else if activeHandle == .rotate {
-                            // Delta-based rotation around center using shortest angular distance
+                            // Absolute-angle rotation anchored at gesture begin; no per-tick anchor drift
                             let c = CGPoint(x: o.rect.midX, y: o.rect.midY)
-                            let prevAngle = atan2(start.y - c.y, start.x - c.x)
+
+                            // Initialize anchors on first rotate tick for this drag
+                            if textRotateStartAngle == nil || textRotateStartValue == nil {
+                                // Use the initial dragStartPoint as the pointer anchor at mouse-down
+                                if let s = dragStartPoint {
+                                    textRotateStartAngle = atan2(s.y - c.y, s.x - c.x)
+                                } else {
+                                    textRotateStartAngle = atan2(p.y - c.y, p.x - c.x)
+                                }
+                                textRotateStartValue = o.rotation
+                            }
+
+                            guard let startAngle = textRotateStartAngle, let baseRotation = textRotateStartValue else {
+                                return
+                            }
+
+                            // Current pointer angle
                             let currAngle = atan2(p.y - c.y, p.x - c.x)
-                            let d = normalizedAngleDelta(from: prevAngle, to: currAngle)
-                            updated.rotation = o.rotation + d
-                            // Do NOT clamp rect while rotating; geometry doesn't change
+
+                            // Absolute target = base rotation + delta from initial pointer angle to current pointer angle
+                            var target = baseRotation + normalizedAngleDelta(from: startAngle, to: currAngle)
+
+                            // Modifier-based snapping: Option=1°, Command=5°, Shift=15°; none=free
+                            let mods = NSEvent.modifierFlags
+                            if mods.contains(.option) {
+                                let inc = CGFloat.pi / 180 // 1°
+                                target = round(target / inc) * inc
+                            } else if mods.contains(.command) {
+                                let inc = CGFloat.pi / 36 // 5°
+                                target = round(target / inc) * inc
+                            } else if mods.contains(.shift) {
+                                let inc = CGFloat.pi / 12 // 15°
+                                target = round(target / inc) * inc
+                            }
+
+                            updated.rotation = target
+
                             objects[idx] = .text(updated)
-                            dragStartPoint = p
+                            // Important: keep anchors stable; do not mutate dragStartPoint here
                             return
                         } else {
                             updated = o.resizing(activeHandle, to: p)
@@ -2782,13 +2946,29 @@ struct ContentView: View {
                         if activeHandle == .none {
                             updated = o.moved(by: delta)
                         } else if activeHandle == .rotate {
-                            // Delta-based rotation around center using shortest angular distance
                             let c = CGPoint(x: o.rect.midX, y: o.rect.midY)
                             let prevAngle = atan2(start.y - c.y, start.x - c.x)
                             let currAngle = atan2(p.y - c.y, p.x - c.x)
-                            let d = normalizedAngleDelta(from: prevAngle, to: currAngle)
-                            updated.rotation = o.rotation + d
-                            // Do NOT clamp rect while rotating; geometry doesn't change
+                            let rawDelta = normalizedAngleDelta(from: prevAngle, to: currAngle)
+
+                            let mods = NSEvent.modifierFlags
+                            let increment: CGFloat? =
+                                mods.contains(.option) ? (CGFloat.pi / 180) :
+                                mods.contains(.command) ? (CGFloat.pi / 36) :
+                                mods.contains(.shift) ? (CGFloat.pi / 12) :
+                                nil
+
+                            var newRotation: CGFloat
+                            if let inc = increment {
+                                let target = o.rotation + rawDelta
+                                let snapped = round(target / inc) * inc
+                                let d = normalizedAngleDelta(from: o.rotation, to: snapped)
+                                newRotation = o.rotation + d
+                            } else {
+                                newRotation = o.rotation + rawDelta
+                            }
+
+                            updated.rotation = newRotation
                             objects[idx] = .image(updated)
                             dragStartPoint = p
                             return
@@ -2807,11 +2987,17 @@ struct ContentView: View {
                 let startFit = CGPoint(x: value.startLocation.x - insetOrigin.x, y: value.startLocation.y - insetOrigin.y)
                 let pEnd = fittedToAuthorPoint(endFit, fitted: fitted, author: author)
                 let pStart = fittedToAuthorPoint(startFit, fitted: fitted, author: author)
-                
+
                 let dx = pEnd.x - pStart.x
                 let dy = pEnd.y - pStart.y
                 let _ = hypot(dx, dy) > 5
-                
+
+                // Reset rotation anchors (for Rect)
+                rectRotateStartAngle = nil
+                rectRotateStartValue = nil
+                textRotateStartAngle = nil
+                textRotateStartValue = nil
+
                 dragStartPoint = nil
                 pushedDragUndo = false
             }

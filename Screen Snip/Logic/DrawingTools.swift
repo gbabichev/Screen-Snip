@@ -196,10 +196,21 @@ struct RectObject: @MainActor DrawableObject {
 
         switch handle {
         case .rotate:
-            // Adjust by the shortest delta from current rotation to target pointer angle
+            // Check if Shift is held for 15-degree increments
+            let shiftHeld = NSEvent.modifierFlags.contains(.shift)
             let target = atan2(p.y - center.y, p.x - center.x)
-            let d = normalizedAngleDelta(from: cpy.rotation, to: target)
-            cpy.rotation += d
+            
+            if shiftHeld {
+                // Snap to 15-degree increments (π/12 radians)
+                let increment = CGFloat.pi / 12  // 15 degrees
+                let snappedTarget = round(target / increment) * increment
+                let d = normalizedAngleDelta(from: cpy.rotation, to: snappedTarget)
+                cpy.rotation += d
+            } else {
+                // Free rotation
+                let d = normalizedAngleDelta(from: cpy.rotation, to: target)
+                cpy.rotation += d
+            }
             return cpy
 
         case .rectTopLeft, .rectTopRight, .rectBottomLeft, .rectBottomRight:
