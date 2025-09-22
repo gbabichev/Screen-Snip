@@ -125,7 +125,7 @@ struct RectObject: @MainActor DrawableObject {
     }
 
     func drawPath(in _: CGSize) -> Path {
-        var p = Rectangle().path(in: rect)
+        let p = Rectangle().path(in: rect)
         let c = CGPoint(x: rect.midX, y: rect.midY)
         
         // Build transform: translate to origin, rotate, translate back
@@ -383,27 +383,48 @@ struct TextObject: @MainActor DrawableObject {
     var textColor: NSColor
     var bgEnabled: Bool
     var bgColor: NSColor
+    var rotation: CGFloat = 0  // Add rotation property
     
     init(id: UUID = UUID(), rect: CGRect, text: String, fontSize: CGFloat, textColor: NSColor, bgEnabled: Bool, bgColor: NSColor) {
         self.id = id; self.rect = rect; self.text = text; self.fontSize = fontSize; self.textColor = textColor; self.bgEnabled = bgEnabled; self.bgColor = bgColor
     }
     
     static func == (lhs: TextObject, rhs: TextObject) -> Bool {
-        lhs.id == rhs.id && lhs.rect == rhs.rect && lhs.text == rhs.text && lhs.fontSize == rhs.fontSize && lhs.textColor == rhs.textColor && lhs.bgEnabled == rhs.bgEnabled && lhs.bgColor == rhs.bgColor
+        lhs.id == rhs.id && lhs.rect == rhs.rect && lhs.text == rhs.text && lhs.fontSize == rhs.fontSize && lhs.textColor == rhs.textColor && lhs.bgEnabled == rhs.bgEnabled && lhs.bgColor == rhs.bgColor && lhs.rotation == rhs.rotation  // Include rotation in equality
     }
     
-    func hitTest(_ p: CGPoint) -> Bool { rect.insetBy(dx: -6, dy: -6).contains(p) }
+    func hitTest(_ p: CGPoint) -> Bool {
+        // Convert the point into the text box's local (unrotated) space
+        let c = CGPoint(x: rect.midX, y: rect.midY)
+        let localP = p.rotated(around: c, by: -rotation)
+        return rect.insetBy(dx: -6, dy: -6).contains(localP)
+    }
     
     func handleHitTest(_ p: CGPoint) -> Handle {
         let r: CGFloat = 8
+        let rotateOffset: CGFloat = 20
+
+        // Convert to local/unrotated space
+        let c = CGPoint(x: rect.midX, y: rect.midY)
+        let lp = p.rotated(around: c, by: -rotation)
+
+        // Corner handles in local space
         let tl = CGRect(x: rect.minX-r, y: rect.minY-r, width: 2*r, height: 2*r)
         let tr = CGRect(x: rect.maxX-r, y: rect.minY-r, width: 2*r, height: 2*r)
         let bl = CGRect(x: rect.minX-r, y: rect.maxY-r, width: 2*r, height: 2*r)
         let br = CGRect(x: rect.maxX-r, y: rect.maxY-r, width: 2*r, height: 2*r)
-        if tl.contains(p) { return .rectTopLeft }
-        if tr.contains(p) { return .rectTopRight }
-        if bl.contains(p) { return .rectBottomLeft }
-        if br.contains(p) { return .rectBottomRight }
+
+        if tl.contains(lp) { return .rectTopLeft }
+        if tr.contains(lp) { return .rectTopRight }
+        if bl.contains(lp) { return .rectBottomLeft }
+        if br.contains(lp) { return .rectBottomRight }
+
+        // Rotate handle in local space: at (maxX + offset, minY - offset)
+        let handleCenter = CGPoint(x: rect.maxX + rotateOffset, y: rect.minY - rotateOffset)
+        let rotateHandle = CGRect(x: handleCenter.x - r, y: handleCenter.y - r, width: 2*r, height: 2*r)
+
+        if rotateHandle.contains(lp) { return .rotate }
+
         return .none
     }
     
@@ -415,22 +436,59 @@ struct TextObject: @MainActor DrawableObject {
     }
     
     func resizing(_ handle: Handle, to p: CGPoint) -> TextObject {
-        var c = self
+        var cpy = self
+        let center = CGPoint(x: rect.midX, y: rect.midY)
+
         switch handle {
-        case .rectTopLeft:
-            c.rect = CGRect(x: p.x, y: p.y, width: rect.maxX - p.x, height: rect.maxY - p.y)
-        case .rectTopRight:
-            c.rect = CGRect(x: rect.minX, y: p.y, width: p.x - rect.minX, height: rect.maxY - p.y)
-        case .rectBottomLeft:
-            c.rect = CGRect(x: p.x, y: rect.minY, width: rect.maxX - p.x, height: p.y - rect.minY)
-        case .rectBottomRight:
-            c.rect = CGRect(x: rect.minX, y: rect.minY, width: p.x - rect.minX, height: p.y - rect.minY)
-        default: break
+        case .rotate:
+            // Use delta-based rotation like RectObject - NOT absolute angle
+            // This method should only be called from pointer gesture which handles deltas
+            return cpy
+
+        case .rectTopLeft, .rectTopRight, .rectBottomLeft, .rectBottomRight:
+            // Convert the drag point into local/unrotated space
+            let lp = p.rotated(around: center, by: -rotation)
+
+            var x0 = rect.minX, y0 = rect.minY
+            var x1 = rect.maxX, y1 = rect.maxY
+
+            switch handle {
+            case .rectTopLeft:
+                x0 = lp.x; y0 = lp.y
+            case .rectTopRight:
+                x1 = lp.x; y0 = lp.y
+            case .rectBottomLeft:
+                x0 = lp.x; y1 = lp.y
+            case .rectBottomRight:
+                x1 = lp.x; y1 = lp.y
+            default: break
+            }
+
+            // Normalize in case the drag crosses the opposite corner
+            let nx0 = min(x0, x1), nx1 = max(x0, x1)
+            let ny0 = min(y0, y1), ny1 = max(y0, y1)
+            cpy.rect = CGRect(x: nx0, y: ny0, width: nx1 - nx0, height: ny1 - ny0)
+            
+            // Maintain minimum size
+            cpy.rect.size.width = max(10, cpy.rect.size.width)
+            cpy.rect.size.height = max(10, cpy.rect.size.height)
+            return cpy
+
+        default:
+            return self
         }
-        c.rect.size.width = max(10, c.rect.size.width)
-        c.rect.size.height = max(10, c.rect.size.height)
-        return c
     }
+    
+    func rotating(from prev: CGPoint, to curr: CGPoint) -> TextObject {
+        var cpy = self
+        let center = CGPoint(x: rect.midX, y: rect.midY)
+        let prevAngle = atan2(prev.y - center.y, prev.x - center.x)
+        let currAngle = atan2(curr.y - center.y, curr.x - center.x)
+        let d = normalizedAngleDelta(from: prevAngle, to: currAngle)
+        cpy.rotation += d
+        return cpy
+    }
+    
 }
 
 struct BadgeObject: @MainActor DrawableObject {

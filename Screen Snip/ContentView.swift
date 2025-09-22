@@ -400,12 +400,13 @@ struct ContentView: View {
                                                         .frame(width: o.rect.width, height: o.rect.height, alignment: .topLeading)
                                                         .padding(4)
                                                         .background(o.bgEnabled ? Color(nsColor: o.bgColor) : Color.clear)
+                                                        .rotationEffect(Angle(radians: o.rotation))
+                                                        .position(x: o.rect.midX, y: o.rect.midY)
                                                         .onTapGesture(count: 2) {
                                                             focusedTextID = o.id
                                                             isTextEditorFocused = true
                                                             lastTextEditDoubleClickAt = CACurrentMediaTime()
                                                         }
-                                                        .position(x: o.rect.midX, y: o.rect.midY)
                                                 }
                                             case .badge(let o):
                                                 Circle()
@@ -2125,7 +2126,7 @@ struct ContentView: View {
     /// If saved file is within our Snips directory, update the gallery list.
     private func refreshGalleryAfterSaving(to url: URL) {
         if let dir = SnipsDirectory(), url.path.hasPrefix(dir.path) {
-            insertSnipURL(url)
+            loadExistingSnips()
         }
         
         // Refresh thumbnails.
@@ -2631,7 +2632,8 @@ struct ContentView: View {
                 
                 // 2) Create new text box only on single click in empty space
                 if !isDoubleClick {
-                    let defaultSize = CGSize(width: 240, height: 80)
+                    let defaultSize = CGSize(width: textFontSize * 4,   // 4 characters worth
+                                            height: textFontSize * 1.5)
                     let rect = CGRect(x: max(0, pEnd.x - defaultSize.width/2),
                                       y: max(0, pEnd.y - defaultSize.height/2),
                                       width: defaultSize.width,
@@ -2734,10 +2736,26 @@ struct ContentView: View {
                         var u = updated; u.rect = clamped
                         objects[idx] = .oval(u)
                     case .text(let o):
-                        let updated = (activeHandle == .none) ? o.moved(by: delta) : o.resizing(activeHandle, to: p)
+                        var updated = o
+                        if activeHandle == .none {
+                            updated = o.moved(by: delta)
+                        } else if activeHandle == .rotate {
+                            // Delta-based rotation around center using shortest angular distance
+                            let c = CGPoint(x: o.rect.midX, y: o.rect.midY)
+                            let prevAngle = atan2(start.y - c.y, start.x - c.x)
+                            let currAngle = atan2(p.y - c.y, p.x - c.x)
+                            let d = normalizedAngleDelta(from: prevAngle, to: currAngle)
+                            updated.rotation = o.rotation + d
+                            // Do NOT clamp rect while rotating; geometry doesn't change
+                            objects[idx] = .text(updated)
+                            dragStartPoint = p
+                            return
+                        } else {
+                            updated = o.resizing(activeHandle, to: p)
+                        }
                         let clamped = clampRect(updated.rect, in: author)
-                        var u = updated; u.rect = clamped
-                        objects[idx] = .text(u)
+                        updated.rect = clamped
+                        objects[idx] = .text(updated)
                     case .badge(let o):
                         let updated = (activeHandle == .none) ? o.moved(by: delta) : o.resizing(activeHandle, to: p)
                         let clamped = clampRect(updated.rect, in: author)
@@ -3014,12 +3032,22 @@ struct ContentView: View {
     }
     
     private func selectionHandlesForText(_ o: TextObject) -> some View {
-        let pts = [
+        let rotateOffset: CGFloat = 20
+        let c = CGPoint(x: o.rect.midX, y: o.rect.midY)
+        
+        // Raw unrotated positions
+        let rawPts = [
             CGPoint(x: o.rect.minX, y: o.rect.minY),
             CGPoint(x: o.rect.maxX, y: o.rect.minY),
             CGPoint(x: o.rect.minX, y: o.rect.maxY),
             CGPoint(x: o.rect.maxX, y: o.rect.maxY)
         ]
+        let rawRotate = CGPoint(x: o.rect.maxX + rotateOffset, y: o.rect.minY - rotateOffset)
+        
+        // Rotate positions to match the rotated text box
+        let pts = rawPts.map { rotatePoint($0, around: c, by: o.rotation) }
+        let rotatePos = rotatePoint(rawRotate, around: c, by: o.rotation)
+        
         return ZStack {
             ForEach(Array(pts.enumerated()), id: \.offset) { _, pt in
                 Circle()
@@ -3029,7 +3057,12 @@ struct ContentView: View {
                     .position(pt)
             }
             
-            // TextEditor for focused text (also needs to be in scaled context)
+            Image(systemName: "arrow.clockwise")
+                .foregroundColor(.blue)
+                .background(Circle().fill(.white).frame(width: 16, height: 16))
+                .position(rotatePos)
+            
+            // TextEditor for focused text (also needs to be in scaled context with rotation)
             if focusedTextID == o.id {
                 TextEditor(text: Binding(
                     get: { o.text },
@@ -3047,9 +3080,13 @@ struct ContentView: View {
                 .background(o.bgEnabled ? Color(nsColor: o.bgColor) : Color.clear)
                 .scrollContentBackground(.hidden)
                 .frame(width: o.rect.width, height: o.rect.height)
+                .rotationEffect(Angle(radians: o.rotation))
                 .position(x: o.rect.midX, y: o.rect.midY)
-                .overlay(RoundedRectangle(cornerRadius: 4)
-                    .stroke(.blue.opacity(0.6), lineWidth: 1))
+                .overlay(
+                    RoundedRectangle(cornerRadius: 4)
+                        .stroke(.blue.opacity(0.6), lineWidth: 1)
+                        .rotationEffect(Angle(radians: o.rotation))
+                )
                 .contentShape(Rectangle())
                 .focused($isTextEditorFocused)
                 .onAppear {
@@ -3063,6 +3100,7 @@ struct ContentView: View {
             }
         }
     }
+    
     
     private func selectionHandlesForBadge(_ o: BadgeObject) -> some View {
         let pts = [
@@ -3344,29 +3382,86 @@ struct ContentView: View {
                     path.lineWidth = o.width * scaleW
                     path.stroke()
                 case .text(let o):
-                    let r = uiRectToImageRect(o.rect, fitted: fitted, image: imgSize)
-                    let paddingScaled = 4 * scaleW
-                    
-                    // Draw background with proper padding to match SwiftUI rendering
-                    if o.bgEnabled {
-                        let bgRect = r.insetBy(dx: -paddingScaled, dy: -paddingScaled)
-                        let bg = NSBezierPath(rect: bgRect)
-                        o.bgColor.setFill()
-                        bg.fill()
+                    // For rotated text, we need to work entirely in UI space first, then convert to image space
+                    if o.rotation != 0 {
+                        NSGraphicsContext.current?.saveGraphicsState()
+                        
+                        // 1. Get the UI space rect and center
+                        let uiRect = o.rect
+                        let uiCenter = CGPoint(x: uiRect.midX, y: uiRect.midY)
+                        
+                        // 2. Convert center to image space
+                        let imageCenter = uiToImagePoint(uiCenter, fitted: fitted, image: imgSize)
+                        
+                        // 3. Convert size to image space (no Y-flip for size)
+                        let imageSize = CGSize(
+                            width: uiRect.width * (imgSize.width / max(1, fitted.width)),
+                            height: uiRect.height * (imgSize.height / max(1, fitted.height))
+                        )
+                        
+                        // 4. Create image rect centered at the converted center
+                        let imageRect = CGRect(
+                            x: imageCenter.x - imageSize.width / 2,
+                            y: imageCenter.y - imageSize.height / 2,
+                            width: imageSize.width,
+                            height: imageSize.height
+                        )
+                        
+                        // 5. Apply rotation in image space around the image center
+                        // Note: Negate the rotation because image Y is flipped from UI Y
+                        let transform = NSAffineTransform()
+                        transform.translateX(by: imageCenter.x, yBy: imageCenter.y)
+                        transform.rotate(byRadians: -o.rotation)  // Negate rotation for flipped coordinate system
+                        transform.translateX(by: -imageCenter.x, yBy: -imageCenter.y)
+                        transform.concat()
+                        
+                        // 6. Draw background if enabled
+                        if o.bgEnabled {
+                            let paddingScaled = 4 * scaleW
+                            let bgRect = imageRect.insetBy(dx: -paddingScaled, dy: -paddingScaled)
+                            let bg = NSBezierPath(rect: bgRect)
+                            o.bgColor.setFill()
+                            bg.fill()
+                        }
+                        
+                        // 7. Draw text
+                        let para = NSMutableParagraphStyle()
+                        para.alignment = .left
+                        para.lineBreakMode = .byWordWrapping
+                        let attrs: [NSAttributedString.Key: Any] = [
+                            .font: NSFont.systemFont(ofSize: o.fontSize * scaleW),
+                            .foregroundColor: o.textColor,
+                            .paragraphStyle: para
+                        ]
+                        
+                        NSString(string: o.text).draw(in: imageRect, withAttributes: attrs)
+                        
+                        NSGraphicsContext.current?.restoreGraphicsState()
+                    } else {
+                        // Non-rotated text - use existing logic
+                        let r = uiRectToImageRect(o.rect, fitted: fitted, image: imgSize)
+                        let paddingScaled = 4 * scaleW
+                        
+                        // Draw background with proper padding to match SwiftUI rendering
+                        if o.bgEnabled {
+                            let bgRect = r.insetBy(dx: -paddingScaled, dy: -paddingScaled)
+                            let bg = NSBezierPath(rect: bgRect)
+                            o.bgColor.setFill()
+                            bg.fill()
+                        }
+                        
+                        // Draw text
+                        let para = NSMutableParagraphStyle()
+                        para.alignment = .left
+                        para.lineBreakMode = .byWordWrapping
+                        let attrs: [NSAttributedString.Key: Any] = [
+                            .font: NSFont.systemFont(ofSize: o.fontSize * scaleW),
+                            .foregroundColor: o.textColor,
+                            .paragraphStyle: para
+                        ]
+                        
+                        NSString(string: o.text).draw(in: r, withAttributes: attrs)
                     }
-                    
-                    // Draw text in the original rect area (matching SwiftUI's padding behavior)
-                    let para = NSMutableParagraphStyle()
-                    para.alignment = .left
-                    para.lineBreakMode = .byWordWrapping
-                    let attrs: [NSAttributedString.Key: Any] = [
-                        .font: NSFont.systemFont(ofSize: o.fontSize * scaleW),
-                        .foregroundColor: o.textColor,
-                        .paragraphStyle: para
-                    ]
-                    
-                    // Use the original rect for text, matching the SwiftUI view's behavior
-                    NSString(string: o.text).draw(in: r, withAttributes: attrs)
                 case .badge(let o):
                     let r = uiRectToImageRect(o.rect, fitted: fitted, image: imgSize)
                     

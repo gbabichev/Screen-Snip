@@ -1,16 +1,18 @@
 {
   "fill" : {
-    "solid" : "extended-srgb:0.00000,0.53333,1.00000,1.00000"
+    "solid" : "display-p3:0.53794,0.54417,0.56271,1.00000"
   },
   "groups" : [
     {
       "layers" : [
         {
-          "fill" : "none",
+          "fill" : {
+            "solid" : "extended-srgb:0.20392,0.78039,0.34902,1.00000"
+          },
           "image-name" : "Scissors.png",
           "name" : "Scissors",
           "position" : {
-            "scale" : 0.85,
+            "scale" : 0.8,
             "translation-in-points" : [
               -6.1171875,
               -7.7890625
@@ -33,11 +35,11 @@
         }
       ],
       "shadow" : {
-        "kind" : "neutral",
-        "opacity" : 0.5
+        "kind" : "layer-color",
+        "opacity" : 1
       },
       "translucency" : {
-        "enabled" : true,
+        "enabled" : false,
         "value" : 0.5
       }
     }

@@ -29,7 +29,7 @@
 /* End PBXFileReference section */
 
 /* Begin PBXFileSystemSynchronizedBuildFileExceptionSet section */
-		FFDBE3BE2E80F18D00619F3B /* Exceptions for "Screen Snip" folder in "ScreenSnipHelper" target */ = {
+		FF7EA7402E8185EE00B55966 /* Exceptions for "Screen Snip" folder in "ScreenSnipHelper" target */ = {
 			isa = PBXFileSystemSynchronizedBuildFileExceptionSet;
 			membershipExceptions = (
 				Assets/ScreenSnip.icon,
@@ -42,7 +42,7 @@
 		FF30F8E92E6F929000F72D09 /* Screen Snip */ = {
 			isa = PBXFileSystemSynchronizedRootGroup;
 			exceptions = (
-				FFDBE3BE2E80F18D00619F3B /* Exceptions for "Screen Snip" folder in "ScreenSnipHelper" target */,
+				FF7EA7402E8185EE00B55966 /* Exceptions for "Screen Snip" folder in "ScreenSnipHelper" target */,
 			);
 			path = "Screen Snip";
 			sourceTree = "<group>";
