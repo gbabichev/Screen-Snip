@@ -646,28 +646,28 @@ struct PastedImageObject: @MainActor DrawableObject {
     func handleHitTest(_ p: CGPoint) -> Handle {
         let r: CGFloat = 8
         let rotateOffset: CGFloat = 20
-
+        
         // Convert to local/unrotated space
         let c = CGPoint(x: rect.midX, y: rect.midY)
         let lp = p.rotated(around: c, by: -rotation)
-
+        
         // Corner handles in local space
         let tl = CGRect(x: rect.minX - r, y: rect.minY - r, width: 2*r, height: 2*r)
         let tr = CGRect(x: rect.maxX - r, y: rect.minY - r, width: 2*r, height: 2*r)
         let bl = CGRect(x: rect.minX - r, y: rect.maxY - r, width: 2*r, height: 2*r)
         let br = CGRect(x: rect.maxX - r, y: rect.maxY - r, width: 2*r, height: 2*r)
-
+        
         if tl.contains(lp) { return .rectTopLeft }
         if tr.contains(lp) { return .rectTopRight }
         if bl.contains(lp) { return .rectBottomLeft }
         if br.contains(lp) { return .rectBottomRight }
-
+        
         // Rotate handle in local space: at (maxX + offset, minY - offset)
         let handleCenter = CGPoint(x: rect.maxX + rotateOffset, y: rect.minY - rotateOffset)
         let rotateHandle = CGRect(x: handleCenter.x - r, y: handleCenter.y - r, width: 2*r, height: 2*r)
-
+        
         if rotateHandle.contains(lp) { return .rotate }
-
+        
         return .none
     }
     
@@ -703,61 +703,158 @@ struct PastedImageObject: @MainActor DrawableObject {
             return c
 
         case .rectTopLeft, .rectTopRight, .rectBottomLeft, .rectBottomRight:
-            // Convert the drag point into local/unrotated space
-            let lp = p.rotated(around: center, by: -rotation)
-
-            var x0 = rect.minX, y0 = rect.minY
-            var x1 = rect.maxX, y1 = rect.maxY
-
-            switch handle {
-            case .rectTopLeft:
-                x0 = lp.x; y0 = lp.y
-            case .rectTopRight:
-                x1 = lp.x; y0 = lp.y
-            case .rectBottomLeft:
-                x0 = lp.x; y1 = lp.y
-            case .rectBottomRight:
-                x1 = lp.x; y1 = lp.y
-            default: break
-            }
-
-            // Normalize in case the drag crosses the opposite corner
-            let nx0 = min(x0, x1), nx1 = max(x0, x1)
-            let ny0 = min(y0, y1), ny1 = max(y0, y1)
-            c.rect = CGRect(x: nx0, y: ny0, width: nx1 - nx0, height: ny1 - ny0)
-            
-            c.rect.size.width = max(8, c.rect.size.width)
-            c.rect.size.height = max(8, c.rect.size.height)
-            
-            guard keepAspect else { return c }
-            
-            // Snap to original aspect by adjusting the dimension that needs the smallest change.
-            let targetW = c.rect.height * aspect
-            let targetH = c.rect.width / aspect
-            if abs(targetW - c.rect.width) < abs(targetH - c.rect.height) {
-                c.rect.size.width = targetW
+            // For rotated images, we need to work entirely in world space
+            if rotation != 0 {
+                // Get the four corners of the current image in world space
+                let corners = [
+                    CGPoint(x: rect.minX, y: rect.minY), // top-left
+                    CGPoint(x: rect.maxX, y: rect.minY), // top-right
+                    CGPoint(x: rect.minX, y: rect.maxY), // bottom-left
+                    CGPoint(x: rect.maxX, y: rect.maxY)  // bottom-right
+                ].map { $0.rotated(around: center, by: rotation) }
+                
+                // Determine which corner should stay fixed (opposite to the handle being dragged)
+                let fixedCornerIndex: Int
+                switch handle {
+                case .rectTopLeft:     fixedCornerIndex = 3  // fix bottom-right
+                case .rectTopRight:    fixedCornerIndex = 2  // fix bottom-left
+                case .rectBottomLeft:  fixedCornerIndex = 1  // fix top-right
+                case .rectBottomRight: fixedCornerIndex = 0  // fix top-left
+                default: return self
+                }
+                
+                let fixedCorner = corners[fixedCornerIndex]
+                let newDragCorner = p
+                
+                // Calculate the new center point (midpoint between fixed corner and new drag corner)
+                let newCenter = CGPoint(
+                    x: (fixedCorner.x + newDragCorner.x) / 2,
+                    y: (fixedCorner.y + newDragCorner.y) / 2
+                )
+                
+                // Calculate the vector from new center to the drag corner in world space
+                let dragVector = CGPoint(x: newDragCorner.x - newCenter.x, y: newDragCorner.y - newCenter.y)
+                
+                // Rotate this vector back to local space to get the local corner position
+                let localDragCorner = dragVector.rotated(around: .zero, by: -rotation)
+                
+                // The new rect should be centered at origin with corners at ±localDragCorner
+                let newWidth = abs(localDragCorner.x) * 2
+                let newHeight = abs(localDragCorner.y) * 2
+                
+                // Enforce minimum size
+                let minSize: CGFloat = 8
+                if newWidth < minSize || newHeight < minSize {
+                    return self
+                }
+                
+                // Handle aspect ratio constraint for rotated images
+                var finalWidth = newWidth
+                var finalHeight = newHeight
+                
+                if keepAspect {
+                    let currentAspect = finalWidth / finalHeight
+                    if abs(currentAspect - aspect) > 0.01 {
+                        // Decide whether to constrain by width or height based on which requires less change
+                        let targetWidthFromHeight = finalHeight * aspect
+                        let targetHeightFromWidth = finalWidth / aspect
+                        
+                        if abs(targetWidthFromHeight - finalWidth) < abs(targetHeightFromWidth - finalHeight) {
+                            finalWidth = targetWidthFromHeight
+                        } else {
+                            finalHeight = targetHeightFromWidth
+                        }
+                        
+                        // Ensure we still meet minimum size after aspect correction
+                        if finalWidth < minSize || finalHeight < minSize {
+                            if finalWidth < minSize {
+                                finalWidth = minSize
+                                finalHeight = finalWidth / aspect
+                            } else {
+                                finalHeight = minSize
+                                finalWidth = finalHeight * aspect
+                            }
+                        }
+                    }
+                }
+                
+                // Create the new rect centered at the new center point
+                c.rect = CGRect(
+                    x: newCenter.x - finalWidth / 2,
+                    y: newCenter.y - finalHeight / 2,
+                    width: finalWidth,
+                    height: finalHeight
+                )
+                
+                return c
             } else {
-                c.rect.size.height = targetH
+                // For non-rotated images, use the original simple logic
+                let lp = p
+                var x0 = rect.minX, y0 = rect.minY
+                var x1 = rect.maxX, y1 = rect.maxY
+
+                switch handle {
+                case .rectTopLeft:
+                    x0 = lp.x; y0 = lp.y
+                case .rectTopRight:
+                    x1 = lp.x; y0 = lp.y
+                case .rectBottomLeft:
+                    x0 = lp.x; y1 = lp.y
+                case .rectBottomRight:
+                    x1 = lp.x; y1 = lp.y
+                default: break
+                }
+
+                // Normalize in case the drag crosses the opposite corner
+                let nx0 = min(x0, x1), nx1 = max(x0, x1)
+                let ny0 = min(y0, y1), ny1 = max(y0, y1)
+                let newWidth = nx1 - nx0
+                let newHeight = ny1 - ny0
+                
+                // Enforce minimum size
+                if newWidth < 8 || newHeight < 8 {
+                    return self
+                }
+                
+                c.rect = CGRect(x: nx0, y: ny0, width: newWidth, height: newHeight)
+                
+                // Apply aspect ratio constraint for non-rotated images
+                if keepAspect {
+                    let currentAspect = c.rect.width / c.rect.height
+                    if abs(currentAspect - aspect) > 0.01 {
+                        // Snap to original aspect by adjusting the dimension that needs the smallest change
+                        let targetW = c.rect.height * aspect
+                        let targetH = c.rect.width / aspect
+                        if abs(targetW - c.rect.width) < abs(targetH - c.rect.height) {
+                            c.rect.size.width = targetW
+                        } else {
+                            c.rect.size.height = targetH
+                        }
+                        
+                        // Re-anchor based on which corner moved so the opposite corner stays fixed
+                        switch handle {
+                        case .rectTopLeft:
+                            c.rect.origin.x = rect.maxX - c.rect.size.width
+                            c.rect.origin.y = rect.maxY - c.rect.size.height
+                        case .rectTopRight:
+                            c.rect.origin.y = rect.maxY - c.rect.size.height
+                        case .rectBottomLeft:
+                            c.rect.origin.x = rect.maxX - c.rect.size.width
+                        default:
+                            break
+                        }
+                    }
+                }
+                
+                return c
             }
-            
-            // Re-anchor based on which corner moved so the opposite corner stays fixed.
-            switch handle {
-            case .rectTopLeft:
-                c.rect.origin.x = rect.maxX - c.rect.size.width
-                c.rect.origin.y = rect.maxY - c.rect.size.height
-            case .rectTopRight:
-                c.rect.origin.y = rect.maxY - c.rect.size.height
-            case .rectBottomLeft:
-                c.rect.origin.x = rect.maxX - c.rect.size.width
-            default:
-                break
-            }
-            return c
 
         default:
             return self
         }
     }
+    
+    
 }
 
 struct Line: Identifiable {
