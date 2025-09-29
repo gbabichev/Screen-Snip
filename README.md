@@ -90,7 +90,8 @@ These settings are customizable by you.
 
 ### ⚙️ Installation
 
-Mac App Store
+<a href="https://apps.apple.com/us/app/screen-snip/id6752541530?mt=12
+Screen Snip">Mac App Store</a>
 
 OR 
 
@@ -107,6 +108,9 @@ open "Screen Snip.xcodeproj"
 ```
 
 ## 📝 Changelog
+
+### 1.1.1
+- Fixed rectangle tool not showing the users color during drawing when the display is in "Fit" mode. 
 
 ### 1.1.0
 - Added rotation for Rectangle Tool, Text Tool, Pasted object tool. 
