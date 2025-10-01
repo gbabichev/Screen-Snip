@@ -46,7 +46,8 @@ enum Drawable: Identifiable, Equatable {
     case highlight(HighlightObject)
     case image(PastedImageObject)
     case oval(OvalObject)
-    
+    case blur(BlurRectObject)
+
     var id: UUID {
         switch self {
         case .line(let o): return o.id
@@ -56,6 +57,7 @@ enum Drawable: Identifiable, Equatable {
         case .highlight(let o): return o.id
         case .image(let o): return o.id
         case .oval(let o): return o.id
+        case .blur(let o): return o.id
         }
     }
 }
@@ -303,18 +305,18 @@ struct OvalObject: @MainActor DrawableObject {
     var rect: CGRect
     var width: CGFloat
     var color: NSColor  // Add color property
-    
+
     init(id: UUID = UUID(), rect: CGRect, width: CGFloat, color: NSColor = .black) {
         self.id = id
         self.rect = rect
         self.width = width
         self.color = color
     }
-    
+
     static func == (lhs: OvalObject, rhs: OvalObject) -> Bool {
         lhs.id == rhs.id && lhs.rect == rhs.rect && lhs.width == rhs.width && lhs.color == rhs.color
     }
-    
+
     func hitTest(_ p: CGPoint) -> Bool {
         // Ellipse hit test: normalize point into ellipse space and check if inside
         let rx = rect.width / 2.0
@@ -326,7 +328,7 @@ struct OvalObject: @MainActor DrawableObject {
         let ny = (p.y - cy) / ry
         return (nx * nx + ny * ny) <= 1.0
     }
-    
+
     func handleHitTest(_ p: CGPoint) -> Handle {
         let r: CGFloat = 8
         let tl = CGRect(x: rect.minX - r, y: rect.minY - r, width: 2*r, height: 2*r)
@@ -339,14 +341,14 @@ struct OvalObject: @MainActor DrawableObject {
         if br.contains(p) { return .rectBottomRight }
         return .none
     }
-    
+
     func moved(by d: CGSize) -> OvalObject {
         var c = self
         c.rect.origin.x += d.width
         c.rect.origin.y += d.height
         return c
     }
-    
+
     func resizing(_ handle: Handle, to p: CGPoint) -> OvalObject {
         var c = self
         switch handle {
@@ -377,6 +379,197 @@ struct OvalObject: @MainActor DrawableObject {
         c.rect.size.width = max(2, c.rect.size.width)
         c.rect.size.height = max(2, c.rect.size.height)
         return c
+    }
+}
+
+struct BlurRectObject: @MainActor DrawableObject {
+    let id: UUID
+    var rect: CGRect
+    var blurRadius: CGFloat
+    var rotation: CGFloat = 0
+
+    init(id: UUID = UUID(), rect: CGRect, blurRadius: CGFloat = 20) {
+        self.id = id
+        self.rect = rect
+        self.blurRadius = blurRadius
+    }
+
+    static func == (lhs: BlurRectObject, rhs: BlurRectObject) -> Bool {
+        lhs.id == rhs.id && lhs.rect == rhs.rect && lhs.blurRadius == rhs.blurRadius && lhs.rotation == rhs.rotation
+    }
+
+    func drawPath(in _: CGSize) -> Path {
+        let p = Rectangle().path(in: rect)
+        let c = CGPoint(x: rect.midX, y: rect.midY)
+
+        // Build transform: translate to origin, rotate, translate back
+        var t = CGAffineTransform.identity
+        t = t.translatedBy(x: c.x, y: c.y)      // 3. Move back to center
+        t = t.rotated(by: rotation)             // 2. Rotate around origin
+        t = t.translatedBy(x: -c.x, y: -c.y)   // 1. Move center to origin
+
+        return p.applying(t)
+    }
+
+    func hitTest(_ p: CGPoint) -> Bool {
+        // Convert the point into the rectangle's local (unrotated) space
+        let c = CGPoint(x: rect.midX, y: rect.midY)
+        let localP = p.rotated(around: c, by: -rotation)
+
+        // Hit test with some tolerance
+        let hitRect = rect.insetBy(dx: -6, dy: -6)
+        return hitRect.contains(localP)
+    }
+
+    func handleHitTest(_ p: CGPoint) -> Handle {
+        let r: CGFloat = 8
+        let rotateOffset: CGFloat = 20
+
+        // Convert to local/unrotated space
+        let c = CGPoint(x: rect.midX, y: rect.midY)
+        let lp = p.rotated(around: c, by: -rotation)
+
+        // Corner handles in local space
+        let tl = CGRect(x: rect.minX - r, y: rect.minY - r, width: 2*r, height: 2*r)
+        let tr = CGRect(x: rect.maxX - r, y: rect.minY - r, width: 2*r, height: 2*r)
+        let bl = CGRect(x: rect.minX - r, y: rect.maxY - r, width: 2*r, height: 2*r)
+        let br = CGRect(x: rect.maxX - r, y: rect.maxY - r, width: 2*r, height: 2*r)
+
+        if tl.contains(lp) { return .rectTopLeft }
+        if tr.contains(lp) { return .rectTopRight }
+        if bl.contains(lp) { return .rectBottomLeft }
+        if br.contains(lp) { return .rectBottomRight }
+
+        // Rotate handle in local space: at (maxX + offset, minY - offset)
+        let handleCenter = CGPoint(x: rect.maxX + rotateOffset, y: rect.minY - rotateOffset)
+        let rotateHandle = CGRect(x: handleCenter.x - r, y: handleCenter.y - r, width: 2*r, height: 2*r)
+
+        if rotateHandle.contains(lp) { return .rotate }
+
+        return .none
+    }
+
+    func moved(by d: CGSize) -> BlurRectObject {
+        var c = self
+        c.rect.origin.x += d.width
+        c.rect.origin.y += d.height
+        return c
+    }
+
+    func resizing(_ handle: Handle, to p: CGPoint) -> BlurRectObject {
+        var cpy = self
+        let center = CGPoint(x: rect.midX, y: rect.midY)
+
+        switch handle {
+        case .rotate:
+            // Check if Shift is held for 15-degree increments
+            let shiftHeld = NSEvent.modifierFlags.contains(.shift)
+            let target = atan2(p.y - center.y, p.x - center.x)
+
+            if shiftHeld {
+                // Snap to 15-degree increments (π/12 radians)
+                let increment = CGFloat.pi / 12  // 15 degrees
+                let snappedTarget = round(target / increment) * increment
+                let d = normalizedAngleDelta(from: cpy.rotation, to: snappedTarget)
+                cpy.rotation += d
+            } else {
+                // Free rotation
+                let d = normalizedAngleDelta(from: cpy.rotation, to: target)
+                cpy.rotation += d
+            }
+            return cpy
+
+        case .rectTopLeft, .rectTopRight, .rectBottomLeft, .rectBottomRight:
+            // For rotated rectangles, we need to work entirely in world space
+            if rotation != 0 {
+                // Get the four corners of the current rectangle in world space
+                let corners = [
+                    CGPoint(x: rect.minX, y: rect.minY), // top-left
+                    CGPoint(x: rect.maxX, y: rect.minY), // top-right
+                    CGPoint(x: rect.minX, y: rect.maxY), // bottom-left
+                    CGPoint(x: rect.maxX, y: rect.maxY)  // bottom-right
+                ].map { $0.rotated(around: center, by: rotation) }
+
+                // Determine which corner should stay fixed (opposite to the handle being dragged)
+                let fixedCornerIndex: Int
+                switch handle {
+                case .rectTopLeft:     fixedCornerIndex = 3  // fix bottom-right
+                case .rectTopRight:    fixedCornerIndex = 2  // fix bottom-left
+                case .rectBottomLeft:  fixedCornerIndex = 1  // fix top-right
+                case .rectBottomRight: fixedCornerIndex = 0  // fix top-left
+                default: return self
+                }
+
+                let fixedCorner = corners[fixedCornerIndex]
+                let newDragCorner = p
+
+                // Calculate the new center point (midpoint between fixed corner and new drag corner)
+                let newCenter = CGPoint(
+                    x: (fixedCorner.x + newDragCorner.x) / 2,
+                    y: (fixedCorner.y + newDragCorner.y) / 2
+                )
+
+                // Calculate the vector from new center to the drag corner in world space
+                let dragVector = CGPoint(x: newDragCorner.x - newCenter.x, y: newDragCorner.y - newCenter.y)
+
+                // Rotate this vector back to local space to get the local corner position
+                let localDragCorner = dragVector.rotated(around: .zero, by: -rotation)
+
+                // The new rect should be centered at origin with corners at ±localDragCorner
+                let newWidth = abs(localDragCorner.x) * 2
+                let newHeight = abs(localDragCorner.y) * 2
+
+                // Enforce minimum size
+                let minSize: CGFloat = 10
+                if newWidth < minSize || newHeight < minSize {
+                    return self
+                }
+
+                // Create the new rect centered at the new center point
+                cpy.rect = CGRect(
+                    x: newCenter.x - newWidth / 2,
+                    y: newCenter.y - newHeight / 2,
+                    width: newWidth,
+                    height: newHeight
+                )
+
+                return cpy
+            } else {
+                // For non-rotated rectangles, use the original simple logic
+                let lp = p
+                var x0 = rect.minX, y0 = rect.minY
+                var x1 = rect.maxX, y1 = rect.maxY
+
+                switch handle {
+                case .rectTopLeft:
+                    x0 = lp.x; y0 = lp.y
+                case .rectTopRight:
+                    x1 = lp.x; y0 = lp.y
+                case .rectBottomLeft:
+                    x0 = lp.x; y1 = lp.y
+                case .rectBottomRight:
+                    x1 = lp.x; y1 = lp.y
+                default: break
+                }
+
+                // Normalize in case the drag crosses the opposite corner
+                let nx0 = min(x0, x1), nx1 = max(x0, x1)
+                let ny0 = min(y0, y1), ny1 = max(y0, y1)
+                let newWidth = nx1 - nx0
+                let newHeight = ny1 - ny0
+
+                // Enforce minimum size
+                if newWidth < 10 || newHeight < 10 {
+                    return self
+                }
+
+                cpy.rect = CGRect(x: nx0, y: ny0, width: newWidth, height: newHeight)
+                return cpy
+            }
+
+        default:
+            return self
+        }
     }
 }
 

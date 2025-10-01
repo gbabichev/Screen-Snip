@@ -39,7 +39,7 @@ extension NSColor {
 }
 
 
-enum Tool { case pointer, line, rect, oval, text, crop, badge, highlighter }
+enum Tool { case pointer, line, rect, oval, text, crop, badge, highlighter, blur }
 
 enum SaveFormat: String, CaseIterable, Identifiable {
     case png, jpeg, heic
@@ -137,6 +137,7 @@ struct ContentView: View {
     @State private var cropDragStart: CGPoint? = nil
     @State private var cropOriginalRect: CGRect? = nil
     @AppStorage("strokeWidth") private var strokeWidth: Double = 3
+    @AppStorage("blurAmount") private var blurAmount: Double = 8
     @AppStorage("lineColor") private var lineColorRaw: String = "#000000FF"
     private var lineColor: NSColor {
         get { NSColor(hexRGBA: lineColorRaw) ?? .black }
@@ -264,6 +265,42 @@ struct ContentView: View {
         }
         
         return pixelSize
+    }
+    
+    private func authorRectToPixelBL(
+        authorRect: CGRect,
+        baseImage: NSImage,
+        selectedImageSize: CGSize?,
+        imageDisplayMode: String,
+        currentGeometrySize: CGSize,
+        objectSpaceSize: CGSize?
+    ) -> (pixelBL: CGRect, fittedPointsRect: CGRect) {
+        let actualDisplay = getActualDisplaySize(selectedImageSize ?? baseImage.size)
+        let fittedForUI: CGSize = (imageDisplayMode == "fit")
+            ? fittedImageSize(original: actualDisplay, in: currentGeometrySize)
+            : actualDisplay
+
+        // author space -> fitted points
+        let authorSpace = objectSpaceSize ?? fittedForUI
+        let sx = fittedForUI.width  / max(authorSpace.width,  1)
+        let sy = fittedForUI.height / max(authorSpace.height, 1)
+
+        let rectInFittedPoints = CGRect(
+            x: authorRect.origin.x * sx,
+            y: authorRect.origin.y * sy,
+            width: authorRect.width * sx,
+            height: authorRect.height * sy
+        )
+
+        // fitted points -> pixel (bottom-left origin)
+        let pxSize = pixelSize(of: baseImage)
+        let pixelBL = fittedRectToImageBottomLeftRect(
+            crpRect: rectInFittedPoints,
+            fitted: fittedForUI,
+            imagePx: pxSize
+        )
+
+        return (pixelBL, rectInFittedPoints)
     }
     
     var body: some View {
@@ -409,9 +446,16 @@ struct ContentView: View {
                                                     .frame(width: o.rect.width, height: o.rect.height)
                                                     .rotationEffect(Angle(radians: o.rotation))
                                                     .position(x: o.rect.midX, y: o.rect.midY)
+                                            case .blur(let o):
+                                                // Show blur as a semi-transparent white rect with dashed border for preview
+                                                o.drawPath(in: author)
+                                                    .fill(Color.white.opacity(0.5))
+                                                o.drawPath(in: author)
+                                                    .stroke(Color.gray,
+                                                            style: StrokeStyle(lineWidth: 2, dash: [4,4]))
                                             }
                                         }
-                                        
+
                                         // MOVE SELECTION HANDLES INSIDE THE SCALED CONTEXT
                                         if let sel = selectedObjectID, let idx = objects.firstIndex(where: { $0.id == sel }) {
                                             switch objects[idx] {
@@ -422,6 +466,7 @@ struct ContentView: View {
                                             case .badge(let o): selectionHandlesForBadge(o)
                                             case .highlight(let o): selectionHandlesForHighlight(o)
                                             case .image(let o): selectionHandlesForImage(o)
+                                            case .blur(let o): selectionHandlesForBlur(o)
                                             }
                                         }
                                         
@@ -449,6 +494,14 @@ struct ContentView: View {
                                                 Ellipse().path(in: r)
                                                     .stroke(Color(nsColor: ovalColor).opacity(0.8),
                                                             style: StrokeStyle(lineWidth: strokeWidth, dash: [6,4]))
+                                            case .blur:
+                                                Rectangle()
+                                                    .path(in: r)
+                                                    .fill(Color.white.opacity(0.5))
+                                                Rectangle()
+                                                    .path(in: r)
+                                                    .stroke(Color.gray.opacity(0.8),
+                                                            style: StrokeStyle(lineWidth: 2, dash: [4,4]))
                                             case .line:
                                                 EmptyView()
                                             default:
@@ -514,8 +567,8 @@ struct ContentView: View {
                                     .simultaneousGesture(selectedTool == .crop       ? cropGesture(insetOrigin: origin, fitted: fitted, author: author)    : nil)
                                     .simultaneousGesture(selectedTool == .badge      ? badgeGesture(insetOrigin: origin, fitted: fitted, author: author)   : nil)
                                     .simultaneousGesture(selectedTool == .highlighter ? highlightGesture(insetOrigin: origin, fitted: fitted, author: author): nil)
-                                    
-                                    
+                                    .simultaneousGesture(selectedTool == .blur       ? blurGesture(insetOrigin: origin, fitted: fitted, author: author)    : nil)
+
                                     .simultaneousGesture(selectedTool == .pointer    ? pointerGesture(insetOrigin: origin, fitted: fitted, author: author) : nil)
                                     .simultaneousGesture(selectedTool == .line       ? lineGesture(insetOrigin: origin, fitted: fitted, author: author)    : nil)
                                     .simultaneousGesture(selectedTool == .rect       ? rectGesture(insetOrigin: origin, fitted: fitted, author: author)    : nil)
@@ -524,6 +577,7 @@ struct ContentView: View {
                                     .simultaneousGesture(selectedTool == .crop       ? cropGesture(insetOrigin: origin, fitted: fitted, author: author)    : nil)
                                     .simultaneousGesture(selectedTool == .badge      ? badgeGesture(insetOrigin: origin, fitted: fitted, author: author)   : nil)
                                     .simultaneousGesture(selectedTool == .highlighter ? highlightGesture(insetOrigin: origin, fitted: fitted, author: author): nil)
+                                    .simultaneousGesture(selectedTool == .blur       ? blurGesture(insetOrigin: origin, fitted: fitted, author: author)    : nil)
                                     .onAppear {
                                         lastFittedSize = baseFitted
                                         if objectSpaceSize == nil { objectSpaceSize = baseFitted }
@@ -1178,7 +1232,7 @@ struct ContentView: View {
                         } label: {
                             Label("Rectangle", systemImage: "square.dashed")
                         }
-                        
+
                         Button {
                             selectedTool = .oval
                             selectedObjectID = nil; activeHandle = .none; cropDraftRect = nil; cropRect = nil; cropHandle = .none
@@ -1186,31 +1240,53 @@ struct ContentView: View {
                         } label: {
                             Label("Oval", systemImage: "circle.dashed")
                         }
-                        
-                        
+
+                        Button {
+                            selectedTool = .blur
+                            selectedObjectID = nil; activeHandle = .none; cropDraftRect = nil; cropRect = nil; cropHandle = .none
+                            focusedTextID = nil
+                        } label: {
+                            Label("Blur", systemImage: "circle.dotted")
+                        }
+
+
                         Divider()
-                        
+
                         if selectedTool == .oval {
                             colorButtons(current: ovalColorBinding)
                         }
-                        else {
+                        else if selectedTool == .rect {
                             colorButtons(current: rectColorBinding)
                         }
-                        
-                        Divider()
-                        
-                        Menu("Line Width") {
-                            ForEach([1,2,3,4,6,8,12,16], id: \.self) { w in
-                                Button(action: { strokeWidth = CGFloat(w) }) {
-                                    if Int(strokeWidth) == w { Image(systemName: "checkmark") }
-                                    Text("\(w) pt")
+
+                        if selectedTool == .blur {
+                            Menu("Blur Amount") {
+                                ForEach([3, 5, 8, 10, 12, 15, 20, 25], id: \.self) { amount in
+                                    Button(action: { blurAmount = Double(amount) }) {
+                                        if Int(blurAmount) == amount { Image(systemName: "checkmark") }
+                                        Text("\(amount)")
+                                    }
+                                }
+                            }
+                        } else {
+                            Divider()
+
+                            Menu("Line Width") {
+                                ForEach([1,2,3,4,6,8,12,16], id: \.self) { w in
+                                    Button(action: { strokeWidth = CGFloat(w) }) {
+                                        if Int(strokeWidth) == w { Image(systemName: "checkmark") }
+                                        Text("\(w) pt")
+                                    }
                                 }
                             }
                         }
-                        
+
                     } label: {
                         if selectedTool == .oval {
                             Label("Shapes", systemImage: "circle.dashed")
+                        }
+                        else if selectedTool == .blur {
+                            Label("Shapes", systemImage: "circle.dotted")
                         }
                         else {
                             Label("Shapes", systemImage: "square.dashed")
@@ -2368,7 +2444,162 @@ struct ContentView: View {
                 }
             }
     }
-    
+
+    private func blurGesture(insetOrigin: CGPoint, fitted: CGSize, author: CGSize) -> some Gesture {
+        DragGesture(minimumDistance: 0)
+            .onChanged { value in
+                guard allowDraftTick() else { return }
+                let startFit = CGPoint(x: value.startLocation.x - insetOrigin.x, y: value.startLocation.y - insetOrigin.y)
+                let currentFit = CGPoint(x: value.location.x - insetOrigin.x, y: value.location.y - insetOrigin.y)
+                let start = fittedToAuthorPoint(startFit, fitted: fitted, author: author)
+                let current = fittedToAuthorPoint(currentFit, fitted: fitted, author: author)
+                let shift = NSEvent.modifierFlags.contains(.shift)
+
+                if dragStartPoint == nil {
+                    dragStartPoint = start
+                    // If starting on an existing blur rect, select it and capture which handle (if any)
+                    if let idx = objects.lastIndex(where: { obj in
+                        switch obj {
+                        case .blur(let o): return o.handleHitTest(start) != .none || o.hitTest(start)
+                        default: return false
+                        }
+                    }) {
+                        selectedObjectID = objects[idx].id
+                        if case .blur(let o) = objects[idx] { activeHandle = o.handleHitTest(start) }
+                    } else {
+                        selectedObjectID = nil
+                        activeHandle = .none
+                    }
+                } else if
+                    let sel = selectedObjectID,
+                    let s = dragStartPoint,
+                    let idx = objects.firstIndex(where: { $0.id == sel })
+                {
+                    // We are interacting with an existing blur rectangle: move or resize
+                    let delta = CGSize(width: current.x - s.x, height: current.y - s.y)
+                    let dragDistance = hypot(delta.width, delta.height)
+                    if dragDistance > 0.5 {
+                        if !pushedDragUndo { pushUndoSnipshot(); pushedDragUndo = true }
+                        switch objects[idx] {
+                        case .blur(let o):
+                            var updated = o
+                            if activeHandle == .none {
+                                updated = o.moved(by: delta)
+                            } else if activeHandle == .rotate {
+                                // Absolute-angle rotation anchored at gesture begin; no per-tick anchor drift
+                                let c = CGPoint(x: o.rect.midX, y: o.rect.midY)
+
+                                // Initialize anchors on first rotate tick for this drag
+                                if rectRotateStartAngle == nil || rectRotateStartValue == nil {
+                                    // Use the initial dragStartPoint as the pointer anchor at mouse-down
+                                    if let s = dragStartPoint {
+                                        rectRotateStartAngle = atan2(s.y - c.y, s.x - c.x)
+                                    } else {
+                                        rectRotateStartAngle = atan2(current.y - c.y, current.x - c.x)
+                                    }
+                                    rectRotateStartValue = o.rotation
+                                }
+
+                                guard let startAngle = rectRotateStartAngle, let baseRotation = rectRotateStartValue else {
+                                    return
+                                }
+
+                                // Current pointer angle
+                                let currAngle = atan2(current.y - c.y, current.x - c.x)
+
+                                // Absolute target = base rotation + delta from initial pointer angle to current pointer angle
+                                var target = baseRotation + normalizedAngleDelta(from: startAngle, to: currAngle)
+
+                                // Modifier-based snapping: Option=1°, Command=5°, Shift=15°; none=free
+                                let mods = NSEvent.modifierFlags
+                                if mods.contains(.option) {
+                                    let inc = CGFloat.pi / 180 // 1°
+                                    target = round(target / inc) * inc
+                                } else if mods.contains(.command) {
+                                    let inc = CGFloat.pi / 36 // 5°
+                                    target = round(target / inc) * inc
+                                } else if mods.contains(.shift) {
+                                    let inc = CGFloat.pi / 12 // 15°
+                                    target = round(target / inc) * inc
+                                }
+
+                                updated.rotation = target
+
+                                // Do NOT clamp rect while rotating; geometry doesn't change
+                                objects[idx] = .blur(updated)
+                                // Important: keep anchors stable; do not mutate dragStartPoint here
+                                return
+                            } else {
+                                updated = o.resizing(activeHandle, to: current)
+                            }
+                            if updated.rotation == 0 {
+                                let clamped = clampRect(updated.rect, in: author)
+                                updated.rect = clamped
+                            }
+                            objects[idx] = .blur(updated)
+                        default:
+                            break
+                        }
+                        dragStartPoint = current
+                    }
+                } else {
+                    // No selection: show a draft for creating a new blur rectangle (Shift = square)
+                    func rectFrom(_ a: CGPoint, _ b: CGPoint, square: Bool) -> CGRect {
+                        var x0 = min(a.x, b.x)
+                        var y0 = min(a.y, b.y)
+                        var w = abs(a.x - b.x)
+                        var h = abs(a.y - b.y)
+                        if square {
+                            let side = max(w, h)
+                            x0 = (b.x >= a.x) ? a.x : (a.x - side)
+                            y0 = (b.y >= a.y) ? a.y : (a.y - side)
+                            w = side; h = side
+                        }
+                        return CGRect(x: x0, y: y0, width: w, height: h)
+                    }
+                    draftRect = rectFrom(start, current, square: shift)
+                }
+            }
+            .onEnded { value in
+                let endFit = CGPoint(x: value.location.x - insetOrigin.x, y: value.location.y - insetOrigin.y)
+                let pEnd = fittedToAuthorPoint(endFit, fitted: fitted, author: author)
+
+                // Reset rotation anchors - same as pointer tool
+                rectRotateStartAngle = nil
+                rectRotateStartValue = nil
+
+                defer { dragStartPoint = nil; pushedDragUndo = false; activeHandle = .none; draftRect = nil }
+
+                // If we were moving/resizing an existing blur rect, we're done
+                if let _ = selectedObjectID,
+                   let idx = objects.firstIndex(where: { $0.id == selectedObjectID }) {
+                    if case .blur = objects[idx] {
+                        return
+                    }
+                }
+
+                // Create a new blur rectangle from the draft drag area if present
+                if let r = draftRect {
+                    let clamped = clampRect(r, in: author)
+                    let newObj = BlurRectObject(rect: clamped, blurRadius: blurAmount)
+                    pushUndoSnipshot()
+                    objects.append(.blur(newObj))
+                    if objectSpaceSize == nil { objectSpaceSize = author }
+                    selectedObjectID = newObj.id
+                } else {
+                    // on simple click with no drag, create a default-sized square
+                    let d: CGFloat = 40
+                    let rect = CGRect(x: max(0, pEnd.x - d/2), y: max(0, pEnd.y - d/2), width: d, height: d)
+                    let clamped = clampRect(rect, in: author)
+                    let newObj = BlurRectObject(rect: clamped, blurRadius: blurAmount)
+                    pushUndoSnipshot()
+                    objects.append(.blur(newObj))
+                    if objectSpaceSize == nil { objectSpaceSize = author }
+                    selectedObjectID = newObj.id
+                }
+            }
+    }
+
     private func ovalGesture(insetOrigin: CGPoint, fitted: CGSize, author: CGSize) -> some Gesture {
         DragGesture(minimumDistance: 0)
             .onChanged { value in
@@ -2759,6 +2990,7 @@ struct ContentView: View {
                         case .badge(let o): return o.handleHitTest(p) != .none || o.hitTest(p)
                         case .highlight(let o): return o.handleHitTest(p) != .none || o.hitTest(p)
                         case .image(let o): return o.handleHitTest(p) != .none || o.hitTest(p)
+                        case .blur(let o): return o.handleHitTest(p) != .none || o.hitTest(p)
                         }
                     }) {
                         selectedObjectID = objects[idx].id
@@ -2770,6 +3002,7 @@ struct ContentView: View {
                         case .badge(let o): activeHandle = o.handleHitTest(p)
                         case .highlight(let o): activeHandle = o.handleHitTest(p)
                         case .image(let o): activeHandle = o.handleHitTest(p)
+                        case .blur(let o): activeHandle = o.handleHitTest(p)
                         }
                         // On single click or drag, always clear focus (do not enter edit mode)
                         focusedTextID = nil
@@ -2991,6 +3224,59 @@ struct ContentView: View {
                         let clamped = clampRect(updated.rect, in: author)
                         updated.rect = clamped
                         objects[idx] = .image(updated)
+                    case .blur(let o):
+                        var updated = o
+                        if activeHandle == .none {
+                            updated = o.moved(by: delta)
+                        } else if activeHandle == .rotate {
+                            // Absolute-angle rotation anchored at gesture begin; no per-tick anchor drift
+                            let c = CGPoint(x: o.rect.midX, y: o.rect.midY)
+
+                            // Initialize anchors on first rotate tick for this drag
+                            if rectRotateStartAngle == nil || rectRotateStartValue == nil {
+                                if let s = dragStartPoint {
+                                    rectRotateStartAngle = atan2(s.y - c.y, s.x - c.x)
+                                } else {
+                                    rectRotateStartAngle = atan2(p.y - c.y, p.x - c.x)
+                                }
+                                rectRotateStartValue = o.rotation
+                            }
+
+                            guard let startAngle = rectRotateStartAngle, let baseRotation = rectRotateStartValue else {
+                                return
+                            }
+
+                            // Current pointer angle
+                            let currAngle = atan2(p.y - c.y, p.x - c.x)
+
+                            // Absolute target = base rotation + delta from initial pointer angle to current pointer angle
+                            var target = baseRotation + normalizedAngleDelta(from: startAngle, to: currAngle)
+
+                            // Modifier-based snapping: Option=1°, Command=5°, Shift=15°; none=free
+                            let mods = NSEvent.modifierFlags
+                            if mods.contains(.option) {
+                                let inc = CGFloat.pi / 180 // 1°
+                                target = round(target / inc) * inc
+                            } else if mods.contains(.command) {
+                                let inc = CGFloat.pi / 36  // 5°
+                                target = round(target / inc) * inc
+                            } else if mods.contains(.shift) {
+                                let inc = CGFloat.pi / 12  // 15°
+                                target = round(target / inc) * inc
+                            }
+
+                            updated.rotation = target
+                            objects[idx] = .blur(updated)
+                            // Important: keep anchors stable; do not mutate dragStartPoint here
+                            return
+                        } else {
+                            updated = o.resizing(activeHandle, to: p)
+                        }
+                        if updated.rotation == 0 {
+                            let clamped = clampRect(updated.rect, in: author)
+                            updated.rect = clamped
+                        }
+                        objects[idx] = .blur(updated)
                     }
                     dragStartPoint = p
                 }
@@ -3212,7 +3498,7 @@ struct ContentView: View {
     private func selectionHandlesForRect(_ o: RectObject) -> some View {
         let rotateOffset: CGFloat = 20
         let c = CGPoint(x: o.rect.midX, y: o.rect.midY)
-        
+
         // Raw unrotated positions
         let rawPts = [
             CGPoint(x: o.rect.minX, y: o.rect.minY),
@@ -3221,11 +3507,43 @@ struct ContentView: View {
             CGPoint(x: o.rect.maxX, y: o.rect.maxY)
         ]
         let rawRotate = CGPoint(x: o.rect.maxX + rotateOffset, y: o.rect.minY - rotateOffset)
-        
+
         // Rotate positions to match the rotated rectangle
         let pts = rawPts.map { rotatePoint($0, around: c, by: o.rotation) }
         let rotatePos = rotatePoint(rawRotate, around: c, by: o.rotation)
-        
+
+        return ZStack {
+            ForEach(Array(pts.enumerated()), id: \.offset) { _, pt in
+                Circle()
+                    .stroke(.blue, lineWidth: 1)
+                    .background(Circle().fill(.white))
+                    .frame(width: 12, height: 12)
+                    .position(pt)
+            }
+            Image(systemName: "arrow.clockwise")
+                .foregroundColor(.blue)
+                .background(Circle().fill(.white).frame(width: 16, height: 16))
+                .position(rotatePos)
+        }
+    }
+
+    private func selectionHandlesForBlur(_ o: BlurRectObject) -> some View {
+        let rotateOffset: CGFloat = 20
+        let c = CGPoint(x: o.rect.midX, y: o.rect.midY)
+
+        // Raw unrotated positions
+        let rawPts = [
+            CGPoint(x: o.rect.minX, y: o.rect.minY),
+            CGPoint(x: o.rect.maxX, y: o.rect.minY),
+            CGPoint(x: o.rect.minX, y: o.rect.maxY),
+            CGPoint(x: o.rect.maxX, y: o.rect.maxY)
+        ]
+        let rawRotate = CGPoint(x: o.rect.maxX + rotateOffset, y: o.rect.minY - rotateOffset)
+
+        // Rotate positions to match the rotated rectangle
+        let pts = rawPts.map { rotatePoint($0, around: c, by: o.rotation) }
+        let rotatePos = rotatePoint(rawRotate, around: c, by: o.rotation)
+
         return ZStack {
             ForEach(Array(pts.enumerated()), id: \.offset) { _, pt in
                 Circle()
@@ -3503,16 +3821,26 @@ struct ContentView: View {
             NSGraphicsContext.current = ctx
             ctx.imageInterpolation = .high
             
-            // Draw the base image to fill the logical canvas
-            base.draw(in: CGRect(origin: .zero, size: imgSize))
-            
             // Render overlay objects. These utilities assume `image` is in points, which matches `imgSize`.
             let fitted = objectSpaceSize ?? lastFittedSize ?? imgSize
+
+            // Draw the base image to fill the logical canvas
+            print("DEBUG: base.size = \(base.size), drawing into imgSize = \(imgSize), fitted = \(fitted)")
+            base.draw(in: CGRect(origin: .zero, size: imgSize))
             let scaleX = imgSize.width / max(1, fitted.width)
             let scaleY = imgSize.height / max(1, fitted.height)
             let scaleW = (scaleX + scaleY) / 2
-            
-            for obj in objects {
+
+            // Collect blur objects for second pass
+            var blurObjects: [(BlurRectObject, Int)] = []
+
+            for (index, obj) in objects.enumerated() {
+                // Skip blur objects in first pass
+                if case .blur(let o) = obj {
+                    blurObjects.append((o, index))
+                    continue
+                }
+
                 switch obj {
                 case .line(let o):
                     let s = uiToImagePoint(o.start, fitted: fitted, image: imgSize)
@@ -3742,20 +4070,20 @@ struct ContentView: View {
                 case .image(let o):
                     if o.rotation != 0 {
                         NSGraphicsContext.current?.saveGraphicsState()
-                        
+
                         // 1. Get the UI space rect and center
                         let uiRect = o.rect
                         let uiCenter = CGPoint(x: uiRect.midX, y: uiRect.midY)
-                        
+
                         // 2. Convert center to image space
                         let imageCenter = uiToImagePoint(uiCenter, fitted: fitted, image: imgSize)
-                        
+
                         // 3. Convert size to image space (no Y-flip for size)
                         let imageSize = CGSize(
                             width: uiRect.width * (imgSize.width / max(1, fitted.width)),
                             height: uiRect.height * (imgSize.height / max(1, fitted.height))
                         )
-                        
+
                         // 4. Create image rect centered at the converted center
                         let imageRect = CGRect(
                             x: imageCenter.x - imageSize.width / 2,
@@ -3763,7 +4091,7 @@ struct ContentView: View {
                             width: imageSize.width,
                             height: imageSize.height
                         )
-                        
+
                         // 5. Apply rotation in image space around the image center
                         // Note: Negate the rotation because image Y is flipped from UI Y
                         let transform = NSAffineTransform()
@@ -3771,17 +4099,180 @@ struct ContentView: View {
                         transform.rotate(byRadians: -o.rotation)  // Negate rotation for flipped coordinate system
                         transform.translateX(by: -imageCenter.x, yBy: -imageCenter.y)
                         transform.concat()
-                        
+
                         // 6. Draw the image
                         o.image.draw(in: imageRect)
-                        
+
                         NSGraphicsContext.current?.restoreGraphicsState()
                     } else {
                         // Non-rotated image - use existing logic
                         let r = uiRectToImageRect(o.rect, fitted: fitted, image: imgSize)
                         o.image.draw(in: r)
                     }
+                case .blur:
+                    // Blur objects are handled in second pass - see line 4172
+                    break
                 }
+            }
+
+            // Second pass: Apply blur effects
+            // We do this after all other objects are drawn so the blur can affect them
+
+            // Flush graphics to ensure all drawing is committed to rep
+            NSGraphicsContext.current?.flushGraphics()
+
+            // Use the rep's CGImage directly - it has all the drawing we just did
+            if let currentCGImage = rep.cgImage {
+                print("Processing blur objects, count: \(blurObjects.count)")
+
+                // Create a new graphics context focused on rep for blur drawing
+                let repContext = NSGraphicsContext(bitmapImageRep: rep)
+                NSGraphicsContext.saveGraphicsState()
+                NSGraphicsContext.current = repContext
+
+                for (blurObj, _) in blurObjects {
+                    // Blur rects are in author space, use same conversion as crop
+                    let (pixelBL, _) = authorRectToPixelBL(
+                        authorRect: blurObj.rect,
+                        baseImage: base,
+                        selectedImageSize: selectedImageSize,
+                        imageDisplayMode: imageDisplayMode,
+                        currentGeometrySize: currentGeometrySize,
+                        objectSpaceSize: objectSpaceSize
+                    )
+
+                    // Convert BL to TL for CGImage cropping (CGImage uses top-left origin)
+                    let pixelTL = CGRect(
+                        x: pixelBL.origin.x,
+                        y: CGFloat(currentCGImage.height) - pixelBL.origin.y - pixelBL.height,
+                        width: pixelBL.width,
+                        height: pixelBL.height
+                    )
+
+                    // Clamp to image bounds
+                    let rPixels = CGRect(
+                        x: max(0, pixelTL.origin.x).rounded(.down),
+                        y: max(0, pixelTL.origin.y).rounded(.down),
+                        width: min(CGFloat(currentCGImage.width) - max(0, pixelTL.origin.x), pixelTL.width).rounded(.down),
+                        height: min(CGFloat(currentCGImage.height) - max(0, pixelTL.origin.y), pixelTL.height).rounded(.down)
+                    )
+
+                    // Convert back to BL points for drawing (NSImage uses bottom-left)
+                    let pxToPointsX = imgSize.width / CGFloat(currentCGImage.width)
+                    let pxToPointsY = imgSize.height / CGFloat(currentCGImage.height)
+                    let rTLPoints = CGRect(
+                        x: rPixels.origin.x * pxToPointsX,
+                        y: rPixels.origin.y * pxToPointsY,
+                        width: rPixels.width * pxToPointsX,
+                        height: rPixels.height * pxToPointsY
+                    )
+                    let r = CGRect(
+                        x: rTLPoints.origin.x,
+                        y: imgSize.height - rTLPoints.origin.y - rTLPoints.height,
+                        width: rTLPoints.width,
+                        height: rTLPoints.height
+                    )
+
+                    // Don't scale the blur radius - use it directly as pixel block size
+                    let pixelSize = max(1, blurObj.blurRadius)
+
+                    print("UI rect: \(blurObj.rect)")
+                    print("Fitted: \(fitted), ImgSize (points): \(imgSize)")
+                    print("Rect in points (bottom-left from uiRectToImageRect): \(r)")
+                    print("Rect in pixels (bottom-left for CGImage): \(rPixels)")
+                    print("CGImage size: \(currentCGImage.width)x\(currentCGImage.height)")
+
+                    // Manually create pixelation by downscaling and upscaling
+                    // Crop from CGImage using pixel coordinates, draw back using point coordinates
+
+                    // Use a simpler approach: downsample and upsample with proper dimensions
+                    if let croppedRegion = currentCGImage.cropping(to: rPixels) {
+                        print("Cropped region from \(rPixels), size: \(croppedRegion.width)x\(croppedRegion.height)")
+
+
+
+                        // Calculate downsampled dimensions
+                        let downsampledWidth = max(1, Int(CGFloat(croppedRegion.width) / pixelSize))
+                        let downsampledHeight = max(1, Int(CGFloat(croppedRegion.height) / pixelSize))
+
+                        print("Downsampling to: \(downsampledWidth)x\(downsampledHeight)")
+
+                        // Create a small context for downsampling
+                        let colorSpace = CGColorSpaceCreateDeviceRGB()
+                        if let downsampleContext = CGContext(
+                            data: nil,
+                            width: downsampledWidth,
+                            height: downsampledHeight,
+                            bitsPerComponent: 8,
+                            bytesPerRow: 0,
+                            space: colorSpace,
+                            bitmapInfo: CGImageAlphaInfo.premultipliedLast.rawValue
+                        ) {
+                            // Use high quality interpolation for downsampling to get average color
+                            downsampleContext.interpolationQuality = .high
+                            downsampleContext.draw(croppedRegion, in: CGRect(x: 0, y: 0, width: downsampledWidth, height: downsampledHeight))
+
+                            if let downsampledImage = downsampleContext.makeImage() {
+                                // Now create a full-size context to draw the pixelated result
+                                if let upsampleContext = CGContext(
+                                    data: nil,
+                                    width: croppedRegion.width,
+                                    height: croppedRegion.height,
+                                    bitsPerComponent: 8,
+                                    bytesPerRow: 0,
+                                    space: colorSpace,
+                                    bitmapInfo: CGImageAlphaInfo.premultipliedLast.rawValue
+                                ) {
+                                    // Use nearest neighbor (no interpolation) when upsampling for blocky effect
+                                    upsampleContext.interpolationQuality = .none
+                                    upsampleContext.draw(downsampledImage, in: CGRect(x: 0, y: 0, width: croppedRegion.width, height: croppedRegion.height))
+
+                                    if let pixelatedImage = upsampleContext.makeImage() {
+                                        NSGraphicsContext.current?.saveGraphicsState()
+
+                                        if let cgContext = NSGraphicsContext.current?.cgContext {
+                                            // Use r (bottom-left coords) for drawing, same as rectangles/lines
+                                            let pixelatedNSImage = NSImage(cgImage: pixelatedImage, size: r.size)
+
+                                            if blurObj.rotation != 0 {
+                                                NSGraphicsContext.current?.saveGraphicsState()
+
+                                                let imageCenter = CGPoint(x: r.midX, y: r.midY)
+                                                let clipPath = NSBezierPath(rect: r)
+                                                let transform = NSAffineTransform()
+                                                transform.translateX(by: imageCenter.x, yBy: imageCenter.y)
+                                                transform.rotate(byRadians: -blurObj.rotation)
+                                                transform.translateX(by: -imageCenter.x, yBy: -imageCenter.y)
+                                                clipPath.transform(using: transform as AffineTransform)
+                                                clipPath.addClip()
+
+                                                pixelatedNSImage.draw(in: r)
+                                                NSGraphicsContext.current?.restoreGraphicsState()
+                                            } else {
+                                                pixelatedNSImage.draw(in: r)
+                                            }
+                                        }
+
+                                        NSGraphicsContext.current?.restoreGraphicsState()
+                                        print("Drew pixelated region at \(r)")
+                                    } else {
+                                        print("Failed to create upsampled image")
+                                    }
+                                } else {
+                                    print("Failed to create upsample context")
+                                }
+                            } else {
+                                print("Failed to create downsampled image")
+                            }
+                        } else {
+                            print("Failed to create downsample context")
+                        }
+                    } else {
+                        print("Failed to crop region for pixelation")
+                    }
+                }
+
+                NSGraphicsContext.restoreGraphicsState()
             }
         }
         NSGraphicsContext.restoreGraphicsState()
