@@ -60,6 +60,9 @@ struct Screen_SnipApp: App {
         // Remove Settings scene entirely - no Settings menu item
         // Use an empty WindowGroup that we'll never show - all windows handled by WindowManager
         
+        
+        
+        
         Group {}
         .handlesExternalEvents(matching: Set(arrayLiteral: "never-match"))
         .onChange(of: hideDockIcon) { _,newValue in
@@ -98,6 +101,19 @@ final class AppDelegate: NSObject, NSApplicationDelegate, ObservableObject {
     }
     
     func applicationDidFinishLaunching(_ notification: Notification) {
+        
+        #if DEBUG
+        print("Running in Debug mode")
+        #else
+        print("Running in Release mode")
+        #endif
+
+        if ProcessInfo.processInfo.environment["APP_SANDBOX_CONTAINER_ID"] != nil {
+            print("App is sandboxed")
+        } else {
+            print("App is NOT sandboxed")
+        }
+        
         // Debug: show basic launch context
         let args = ProcessInfo.processInfo.arguments
         let env  = ProcessInfo.processInfo.environment
