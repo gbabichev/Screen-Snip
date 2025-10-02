@@ -238,7 +238,10 @@ struct ContentView: View {
     
     @State private var lastFittedSize: CGSize? = nil
     @State private var objectSpaceSize: CGSize? = nil  // tracks the UI coordinate space size the objects are authored in
-    
+
+    // Cache of pixelated images for blur objects
+    @State private var blurSnapshots: [UUID: NSImage] = [:]
+
     @State private var lastDraftTick: CFTimeInterval = 0
     
     @State private var lastTextEditDoubleClickAt: CFTimeInterval = 0
@@ -447,12 +450,22 @@ struct ContentView: View {
                                                     .rotationEffect(Angle(radians: o.rotation))
                                                     .position(x: o.rect.midX, y: o.rect.midY)
                                             case .blur(let o):
-                                                // Show blur as a semi-transparent white rect with dashed border for preview
-                                                o.drawPath(in: author)
-                                                    .fill(Color.white.opacity(0.5))
-                                                o.drawPath(in: author)
-                                                    .stroke(Color.gray,
-                                                            style: StrokeStyle(lineWidth: 2, dash: [4,4]))
+                                                // Show pixelated snapshot if available, otherwise show placeholder
+                                                if let snapshot = blurSnapshots[o.id] {
+                                                    Image(nsImage: snapshot)
+                                                        .resizable()
+                                                        .interpolation(.none)
+                                                        .frame(width: o.rect.width, height: o.rect.height)
+                                                        .rotationEffect(Angle(radians: o.rotation))
+                                                        .position(x: o.rect.midX, y: o.rect.midY)
+                                                } else {
+                                                    // Placeholder while snapshot is being generated
+                                                    o.drawPath(in: author)
+                                                        .fill(Color.white.opacity(0.5))
+                                                    o.drawPath(in: author)
+                                                        .stroke(Color.gray,
+                                                                style: StrokeStyle(lineWidth: 2, dash: [4,4]))
+                                                }
                                             }
                                         }
 
@@ -1944,7 +1957,7 @@ struct ContentView: View {
     
     private func downsampleImage(_ image: NSImage) -> NSImage {
         let pointSize = image.size
-        
+
         let rep = NSBitmapImageRep(bitmapDataPlanes: nil,
                                    pixelsWide: Int(pointSize.width),
                                    pixelsHigh: Int(pointSize.height),
@@ -1955,21 +1968,103 @@ struct ContentView: View {
                                    colorSpaceName: .deviceRGB,
                                    bytesPerRow: 0,
                                    bitsPerPixel: 0)
-        
+
         guard let rep = rep else { return image }
-        
+
         NSGraphicsContext.saveGraphicsState()
         NSGraphicsContext.current = NSGraphicsContext(bitmapImageRep: rep)
         image.draw(in: NSRect(origin: .zero, size: pointSize))
         NSGraphicsContext.restoreGraphicsState()
-        
+
         let downsampledImage = NSImage(size: pointSize)
         downsampledImage.addRepresentation(rep)
         return downsampledImage
     }
-    
-    
-    
+
+    /// Generate a pixelated snapshot for a blur object by rendering current state
+    private func generateBlurSnapshot(for blurObj: BlurRectObject) {
+        guard let url = selectedSnipURL else { return }
+        guard let base = NSImage(contentsOf: url) else { return }
+
+        let pixelSize = max(1, blurObj.blurRadius)
+
+        // Convert UI rect to image coordinates (same as flatten process)
+        let (pixelBL, _) = authorRectToPixelBL(
+            authorRect: blurObj.rect,
+            baseImage: base,
+            selectedImageSize: selectedImageSize,
+            imageDisplayMode: imageDisplayMode,
+            currentGeometrySize: currentGeometrySize,
+            objectSpaceSize: objectSpaceSize
+        )
+
+        // Get the base image as CGImage to crop from
+        guard let baseCG = base.cgImage(forProposedRect: nil, context: nil, hints: nil) else { return }
+
+        // Convert BL to TL for CGImage cropping (CGImage uses top-left origin)
+        let pixelTL = CGRect(
+            x: pixelBL.origin.x,
+            y: CGFloat(baseCG.height) - pixelBL.origin.y - pixelBL.height,
+            width: pixelBL.width,
+            height: pixelBL.height
+        )
+
+        // Clamp to image bounds
+        let rPixels = CGRect(
+            x: max(0, pixelTL.origin.x).rounded(.down),
+            y: max(0, pixelTL.origin.y).rounded(.down),
+            width: min(CGFloat(baseCG.width) - max(0, pixelTL.origin.x), pixelTL.width).rounded(.down),
+            height: min(CGFloat(baseCG.height) - max(0, pixelTL.origin.y), pixelTL.height).rounded(.down)
+        )
+
+        guard rPixels.width > 0, rPixels.height > 0 else { return }
+
+        // Crop the region from the base image
+        guard let cropped = baseCG.cropping(to: rPixels) else { return }
+
+        // Now apply pixelation to the cropped region
+        let downsampledWidth = max(1, Int(CGFloat(cropped.width) / pixelSize))
+        let downsampledHeight = max(1, Int(CGFloat(cropped.height) / pixelSize))
+
+        let colorSpace = CGColorSpaceCreateDeviceRGB()
+        guard let downsampleContext = CGContext(
+            data: nil,
+            width: downsampledWidth,
+            height: downsampledHeight,
+            bitsPerComponent: 8,
+            bytesPerRow: 0,
+            space: colorSpace,
+            bitmapInfo: CGImageAlphaInfo.premultipliedLast.rawValue
+        ) else { return }
+
+        downsampleContext.interpolationQuality = CGInterpolationQuality.high
+        downsampleContext.draw(cropped, in: CGRect(x: 0, y: 0, width: downsampledWidth, height: downsampledHeight))
+
+        guard let downsampledImage = downsampleContext.makeImage() else { return }
+
+        guard let upsampleContext = CGContext(
+            data: nil,
+            width: cropped.width,
+            height: cropped.height,
+            bitsPerComponent: 8,
+            bytesPerRow: 0,
+            space: colorSpace,
+            bitmapInfo: CGImageAlphaInfo.premultipliedLast.rawValue
+        ) else { return }
+
+        upsampleContext.interpolationQuality = CGInterpolationQuality.none
+        upsampleContext.draw(downsampledImage, in: CGRect(x: 0, y: 0, width: cropped.width, height: cropped.height))
+
+        guard let pixelatedCGImage = upsampleContext.makeImage() else { return }
+
+        let pixelatedNSImage = NSImage(cgImage: pixelatedCGImage, size: blurObj.rect.size)
+
+        // Update the cache
+        blurSnapshots[blurObj.id] = pixelatedNSImage
+    }
+
+
+
     private func cropHandleHitTest(_ rect: CGRect, at p: CGPoint) -> Handle {
         let r: CGFloat = 8
         let tl = CGRect(x: rect.minX-r, y: rect.minY-r, width: 2*r, height: 2*r)
@@ -2570,10 +2665,12 @@ struct ContentView: View {
 
                 defer { dragStartPoint = nil; pushedDragUndo = false; activeHandle = .none; draftRect = nil }
 
-                // If we were moving/resizing an existing blur rect, we're done
+                // If we were moving/resizing an existing blur rect, generate snapshot and we're done
                 if let _ = selectedObjectID,
                    let idx = objects.firstIndex(where: { $0.id == selectedObjectID }) {
-                    if case .blur = objects[idx] {
+                    if case .blur(let o) = objects[idx] {
+                        // Generate pixelated snapshot after modification
+                        generateBlurSnapshot(for: o)
                         return
                     }
                 }
@@ -2586,9 +2683,11 @@ struct ContentView: View {
                     objects.append(.blur(newObj))
                     if objectSpaceSize == nil { objectSpaceSize = author }
                     selectedObjectID = newObj.id
+                    // Generate pixelated snapshot for new blur object
+                    generateBlurSnapshot(for: newObj)
                 } else {
-                    // on simple click with no drag, create a default-sized square
-                    let d: CGFloat = 40
+                    // on simple click with no drag, create a default-sized square (larger than other tools)
+                    let d: CGFloat = 80
                     let rect = CGRect(x: max(0, pEnd.x - d/2), y: max(0, pEnd.y - d/2), width: d, height: d)
                     let clamped = clampRect(rect, in: author)
                     let newObj = BlurRectObject(rect: clamped, blurRadius: blurAmount)
@@ -2596,6 +2695,8 @@ struct ContentView: View {
                     objects.append(.blur(newObj))
                     if objectSpaceSize == nil { objectSpaceSize = author }
                     selectedObjectID = newObj.id
+                    // Generate pixelated snapshot for new blur object
+                    generateBlurSnapshot(for: newObj)
                 }
             }
     }
@@ -3290,6 +3391,14 @@ struct ContentView: View {
                 let dx = pEnd.x - pStart.x
                 let dy = pEnd.y - pStart.y
                 let _ = hypot(dx, dy) > 5
+
+                // Generate snapshot for blur object if it was modified
+                if let sel = selectedObjectID,
+                   let idx = objects.firstIndex(where: { $0.id == sel }) {
+                    if case .blur(let o) = objects[idx] {
+                        generateBlurSnapshot(for: o)
+                    }
+                }
 
                 // Reset rotation anchors (for Rect)
                 rectRotateStartAngle = nil
@@ -4287,6 +4396,12 @@ struct ContentView: View {
         }
         guard let sel = selectedObjectID, let idx = objects.firstIndex(where: { $0.id == sel }) else { return }
         pushUndoSnipshot()
+
+        // Clear blur snapshot if deleting a blur object
+        if case .blur = objects[idx] {
+            blurSnapshots[sel] = nil
+        }
+
         objects.remove(at: idx)
         selectedObjectID = nil
         activeHandle = .none
