@@ -1316,6 +1316,8 @@ struct ContentView: View {
                         ? .regular.tint(Color(nsColor: ovalColor).opacity(0.7))
                         : selectedTool == .rect
                         ? .regular.tint(Color(nsColor: rectColor).opacity(0.7))
+                        : selectedTool == .blur
+                        ? .regular.tint(Color.gray.opacity(0.5))
                         : .regular
                     )
                     .help("Click to draw a shape")
@@ -4339,7 +4341,7 @@ struct ContentView: View {
                                     if let pixelatedImage = upsampleContext.makeImage() {
                                         NSGraphicsContext.current?.saveGraphicsState()
 
-                                        if let cgContext = NSGraphicsContext.current?.cgContext {
+                                        if NSGraphicsContext.current?.cgContext != nil {
                                             // Use r (bottom-left coords) for drawing, same as rectangles/lines
                                             let pixelatedNSImage = NSImage(cgImage: pixelatedImage, size: r.size)
 
