@@ -7,7 +7,7 @@
 </picture>
 <br/><br/>
 
-A small yet powerful **macOS app** for taking & editing screenshots!
+A small yet powerful macOS App for taking & editing screenshots!
 
 Inspired by Greenshot on Windows - the goal is to make a tiny app that can do the basics and look great while doing it. 
 
@@ -109,6 +109,9 @@ open "Screen Snip.xcodeproj"
 
 ## 📝 Changelog
 
+### 1.2.0
+- Added "Blur" tool. 
+
 ### 1.1.1
 - Fixed rectangle tool not showing the users color during drawing when the display is in "Fit" mode. 
 
@@ -143,72 +146,3 @@ MIT — free for personal and commercial use.
 
 ## Support 
 <a href="Documentation/Support.html">Support</a>
-
-## Progress
-<details>
-<summary>Work in Progress</summary>
-
-</details>
-
-<details>
-<summary>Completed</summary> 
-
-- <del>Undo & Redo
-- <del>Add Text fields with font colors, sizes, and background fill.
-   - Click onto text area to adjust it. Not spwan new text boxes.
-- <del>Add lines with arrows. 
-- <del>Objects should be eraseable with delete key.
-- <del>Add auto increment numbers. 
-- <del>Add Crop.
-- <del>Lines, Arrows, Shapes, numbers, etc should all be moveable objects. 
-- <del>Add a highlighter
-- <del>Open existing file
-- <del>Paste on top & move stuff around. 
-- <del>Add User Settings 
-  - <del>User defined save folder. 
-  - <del>User defined output type (PNG / JPG / HEIC) & quality slider. 
-- <del>Refresh snaps button. 
-- <del>Limit snap previews to ~10.
-- <del>Add a Snap Browser
-- <del>Multi-Monitor snaps. 
-- <del>Global system hotkey for screenshots.</del> 
-- <del>Handle 1x, 2x (Retina) snaps.
-  - User setting to downsample retina in clipboard
-- <del>User adjustable setting for Snap "fills" or "fits". 
-- <del>Adjust liquid glass in app icon.
-- <del>Add cmd+scroll with mouse.
-- <del>Add pinch to zoom on trackpad.
-- <del>User friendly menus. 
-- <del>Hotkeys for tools.
-- <del>Working Menu Bar commands with icons.
-- <del>Add circle shape. 
-- <del>Adjust tools so i can also move objects around in the same tool. 
-- <del>Remove the double ContentView for the two modes.
-- <del>line, oval, rect need to have separate colors not share the same color. 
-- <del>Fix line colors changing.
-- <del>Pen colors, shape colors, etc should be saved across app launches.
-- <del>Update Pen & Oval tool menu bars being weird. 
-- <del>Fix RAM usage.
-- <del>Refresh thumbnail on click / copy to clipboard. 
-- <del>Update Snap Gallery so I can see dates.
-- <del>Add File and Edit Menu Bar entries. 
-- <del>Fix arrow design.
-- <del>Add double tap to zoom on mouse & trackpad.
-- <del>Add cmd0, cmd+, cmd- for zoom controls. 
-- <del>Remove debug prints.
-- <del>User adjustable dock icon.
-- <del>Fix crop, text, badge after reworking the canvas. 
-- <del>Rework settings UI
-- <del>Add Right click Open With menu. 
-- <del>Start on Login.
-- <del>Redesign permissions UI. 
-- <del>Redesign screen / mouse UI during screenshots. 
-- <del>Add "Help" section with support contact info. 
-- <del>Fixed cursor not always displaying correctly during capture.
-- <del>Added better UI for screen capture. 
-- <del>Optimized window closing/opening behavior. 
-- <del>Added keyboard navigation between existing thumbnails.
-- <del>Add rotate to Rectangle, Text, and Paste. 
-- <del>Update Gallery Window UI to better show the date of images being displayed. 
-- <del>Modified Zoom so that it can zoom out past 1 to -2x
-</details>

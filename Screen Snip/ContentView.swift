@@ -1630,7 +1630,7 @@ struct ContentView: View {
     
     // MARK: - Notification Handlers
     
-    // Merge all notifications into a single stream the view can subscribe to.
+    // Merge all fs into a single stream the view can subscribe to.
     private var notificationStream: AnyPublisher<Notification, Never> {
         let nc = NotificationCenter.default
         return Publishers.MergeMany([
@@ -1940,6 +1940,7 @@ struct ContentView: View {
         case "increment":   selectedTool = .badge
         case "text":        selectedTool = .text
         case "crop":        selectedTool = .crop
+        case "blur":        selectedTool = .blur
         default: break
         }
     }

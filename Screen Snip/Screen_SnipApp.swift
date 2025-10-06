@@ -16,6 +16,7 @@ enum ToolKind: String {
     case highlighter
     case rect
     case oval
+    case blur
     case increment
     case text
     case crop

@@ -58,14 +58,14 @@ struct AboutView: View {
                 .font(.footnote)
             
             // App version fetched dynamically from Info.plist; fallback to "1.0"
-            Text("Version \(Bundle.main.infoDictionary?["CFBundleShortVersionString"] as? String ?? "1.0")")
+            Text("Version \(Bundle.main.infoDictionary?["CFBundleShortVersionString"] as? String ?? "1.0") (\(Bundle.main.infoDictionary?["CFBundleVersion"] as? String ?? "1"))")
                 .foregroundColor(.secondary)
             // Current year dynamically retrieved for copyright notice
-            Text("© \(String(Calendar.current.component(.year, from: Date()))) George Babichev")
+            Link("© \(String(Calendar.current.component(.year, from: Date()))) George Babichev", destination: URL(string: "https://georgebabichev.com")!)
                 .font(.footnote)
-                .foregroundColor(.secondary)
+                .foregroundColor(.accentColor)
             // Link to the author's GitHub profile for project reference
-            Link("GitHub", destination: URL(string: "https://github.com/gbabichev/Screen-Snip")!)
+            Link("Website", destination: URL(string: "https://gbabichev.github.io/Screen-Snip/")!)
                 .font(.footnote)
                 .foregroundColor(.accentColor)
         }

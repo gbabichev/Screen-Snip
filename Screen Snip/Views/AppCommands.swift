@@ -155,6 +155,18 @@ struct AppCommands: Commands {
                 NotificationCenter.default.post(
                     name: .selectTool,
                     object: nil,
+                    userInfo: ["tool": ToolKind.blur.rawValue]
+                )
+            } label: {
+                Label("Blur", systemImage: "square.dotted")
+            }
+            .keyboardShortcut("5", modifiers: [.command, .option])
+            .disabled(!menuState.hasSelectedImage)
+            
+            Button {
+                NotificationCenter.default.post(
+                    name: .selectTool,
+                    object: nil,
                     userInfo: ["tool": ToolKind.oval.rawValue]
                 )
             } label: {
