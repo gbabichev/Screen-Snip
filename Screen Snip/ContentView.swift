@@ -179,6 +179,9 @@ struct ContentView: View {
     @State private var selectedSnipURL: URL? = nil
     @State private var objects: [Drawable] = []
     @State private var selectedObjectID: UUID? = nil
+    @State private var selectedObjectIDs: Set<UUID> = [] // Multi-selection support
+    @State private var selectionRect: CGRect? = nil // Rectangle selection for pointer tool
+    @State private var selectionDragStart: CGPoint? = nil // Start point for selection rectangle
     @State private var activeHandle: Handle = .none
     @State private var dragStartPoint: CGPoint? = nil
     
@@ -482,7 +485,49 @@ struct ContentView: View {
                                             case .blur(let o): selectionHandlesForBlur(o)
                                             }
                                         }
-                                        
+
+                                        // Multi-selection indicators
+                                        if !selectedObjectIDs.isEmpty {
+                                            ForEach(Array(selectedObjectIDs), id: \.self) { objID in
+                                                if let idx = objects.firstIndex(where: { $0.id == objID }) {
+                                                    // Draw a blue highlight around selected objects
+                                                    switch objects[idx] {
+                                                    case .line(let o):
+                                                        let minX = min(o.start.x, o.end.x) - 5
+                                                        let maxX = max(o.start.x, o.end.x) + 5
+                                                        let minY = min(o.start.y, o.end.y) - 5
+                                                        let maxY = max(o.start.y, o.end.y) + 5
+                                                        let bounds = CGRect(x: minX, y: minY, width: maxX - minX, height: maxY - minY)
+                                                        Rectangle().path(in: bounds)
+                                                            .stroke(Color.blue, style: StrokeStyle(lineWidth: 2))
+                                                    case .rect(let o):
+                                                        Rectangle().path(in: o.rect.insetBy(dx: -3, dy: -3))
+                                                            .stroke(Color.blue, style: StrokeStyle(lineWidth: 2))
+                                                    case .oval(let o):
+                                                        Ellipse().path(in: o.rect.insetBy(dx: -3, dy: -3))
+                                                            .stroke(Color.blue, style: StrokeStyle(lineWidth: 2))
+                                                    case .text(let o):
+                                                        Rectangle().path(in: o.rect.insetBy(dx: -3, dy: -3))
+                                                            .stroke(Color.blue, style: StrokeStyle(lineWidth: 2))
+                                                    case .badge(let o):
+                                                        Circle()
+                                                            .stroke(Color.blue, lineWidth: 2)
+                                                            .frame(width: o.rect.width + 6, height: o.rect.height + 6)
+                                                            .position(x: o.rect.midX, y: o.rect.midY)
+                                                    case .highlight(let o):
+                                                        Rectangle().path(in: o.rect.insetBy(dx: -3, dy: -3))
+                                                            .stroke(Color.blue, style: StrokeStyle(lineWidth: 2))
+                                                    case .image(let o):
+                                                        Rectangle().path(in: o.rect.insetBy(dx: -3, dy: -3))
+                                                            .stroke(Color.blue, style: StrokeStyle(lineWidth: 2))
+                                                    case .blur(let o):
+                                                        Rectangle().path(in: o.rect.insetBy(dx: -3, dy: -3))
+                                                            .stroke(Color.blue, style: StrokeStyle(lineWidth: 2))
+                                                    }
+                                                }
+                                            }
+                                        }
+
                                         // Drafts, crop visuals — leave exactly as your code has them
                                         if let d = draft {
                                             Path { p in p.move(to: d.start); p.addLine(to: d.end) }
@@ -547,6 +592,14 @@ struct ContentView: View {
                                                 .stroke(Color.orange.opacity(0.9),
                                                         style: StrokeStyle(lineWidth: max(1, strokeWidth), dash: [8,4]))
                                                 .overlay(Rectangle().path(in: cr).fill(Color.orange.opacity(0.12)))
+                                        }
+
+                                        // Selection rectangle for multi-select
+                                        if let sr = selectionRect {
+                                            Rectangle().path(in: sr)
+                                                .stroke(Color.blue.opacity(0.8),
+                                                        style: StrokeStyle(lineWidth: 1.5, dash: [4,3]))
+                                                .overlay(Rectangle().path(in: sr).fill(Color.blue.opacity(0.1)))
                                         }
                                     }
                                     .frame(width: author.width, height: author.height)
@@ -841,6 +894,10 @@ struct ContentView: View {
                     // If a TextEditor is focused, let it handle character deletion
                     if isTextEditorFocused {
                         return event // do not consume; pass to TextEditor
+                    }
+                    if !selectedObjectIDs.isEmpty {
+                        deleteMultipleSelectedObjects()
+                        return nil // consume so we don't propagate/beep
                     }
                     if selectedObjectID != nil {
                         deleteSelectedObject()
@@ -3076,6 +3133,8 @@ struct ContentView: View {
     @State private var rectRotateStartValue: CGFloat? = nil
     @State private var imageRotateStartAngle: CGFloat? = nil
     @State private var imageRotateStartValue: CGFloat? = nil
+    @State private var blurRotateStartAngle: CGFloat? = nil
+    @State private var blurRotateStartValue: CGFloat? = nil
 
     private func pointerGesture(insetOrigin: CGPoint, fitted: CGSize, author: CGSize) -> some Gesture {
         DragGesture(minimumDistance: 0)
@@ -3097,26 +3156,83 @@ struct ContentView: View {
                         case .blur(let o): return o.handleHitTest(p) != .none || o.hitTest(p)
                         }
                     }) {
-                        selectedObjectID = objects[idx].id
-                        switch objects[idx] {
-                        case .line(let o): activeHandle = o.handleHitTest(p)
-                        case .rect(let o): activeHandle = o.handleHitTest(p)
-                        case .oval(let o): activeHandle = o.handleHitTest(p)
-                        case .text(let o): activeHandle = o.handleHitTest(p)
-                        case .badge(let o): activeHandle = o.handleHitTest(p)
-                        case .highlight(let o): activeHandle = o.handleHitTest(p)
-                        case .image(let o): activeHandle = o.handleHitTest(p)
-                        case .blur(let o): activeHandle = o.handleHitTest(p)
+                        let clickedID = objects[idx].id
+                        // Check if clicked object is part of multi-selection
+                        if !selectedObjectIDs.isEmpty && selectedObjectIDs.contains(clickedID) {
+                            // Clicked on a multi-selected object - prepare to move all
+                            selectedObjectID = nil  // Don't show single selection handles
+                            activeHandle = .none
+                        } else {
+                            // Single object selection
+                            selectedObjectID = clickedID
+                            selectedObjectIDs.removeAll()  // Clear multi-selection
+                            switch objects[idx] {
+                            case .line(let o): activeHandle = o.handleHitTest(p)
+                            case .rect(let o): activeHandle = o.handleHitTest(p)
+                            case .oval(let o): activeHandle = o.handleHitTest(p)
+                            case .text(let o): activeHandle = o.handleHitTest(p)
+                            case .badge(let o): activeHandle = o.handleHitTest(p)
+                            case .highlight(let o): activeHandle = o.handleHitTest(p)
+                            case .image(let o): activeHandle = o.handleHitTest(p)
+                            case .blur(let o): activeHandle = o.handleHitTest(p)
+                            }
                         }
                         // On single click or drag, always clear focus (do not enter edit mode)
                         focusedTextID = nil
-                        
+
                     } else {
+                        // No object clicked - start selection rectangle
                         selectedObjectID = nil
                         activeHandle = .none
                         focusedTextID = nil
-                        
+                        selectionDragStart = p
+                        selectedObjectIDs.removeAll()
                     }
+                } else if let selStart = selectionDragStart {
+                    // Update selection rectangle
+                    let minX = min(selStart.x, p.x)
+                    let minY = min(selStart.y, p.y)
+                    let maxX = max(selStart.x, p.x)
+                    let maxY = max(selStart.y, p.y)
+                    selectionRect = CGRect(x: minX, y: minY, width: maxX - minX, height: maxY - minY)
+                } else if !selectedObjectIDs.isEmpty, let start = dragStartPoint {
+                    // Move all selected objects
+                    let delta = CGSize(width: p.x - start.x, height: p.y - start.y)
+                    if !pushedDragUndo {
+                        pushUndoSnipshot()
+                        pushedDragUndo = true
+                    }
+                    for i in objects.indices {
+                        if selectedObjectIDs.contains(objects[i].id) {
+                            switch objects[i] {
+                            case .line(let o):
+                                let moved = o.moved(by: delta)
+                                objects[i] = .line(moved)
+                            case .rect(let o):
+                                let moved = o.moved(by: delta)
+                                objects[i] = .rect(moved)
+                            case .oval(let o):
+                                let moved = o.moved(by: delta)
+                                objects[i] = .oval(moved)
+                            case .text(let o):
+                                let moved = o.moved(by: delta)
+                                objects[i] = .text(moved)
+                            case .badge(let o):
+                                let moved = o.moved(by: delta)
+                                objects[i] = .badge(moved)
+                            case .highlight(let o):
+                                let moved = o.moved(by: delta)
+                                objects[i] = .highlight(moved)
+                            case .image(let o):
+                                let moved = o.moved(by: delta)
+                                objects[i] = .image(moved)
+                            case .blur(let o):
+                                let moved = o.moved(by: delta)
+                                objects[i] = .blur(moved)
+                            }
+                        }
+                    }
+                    dragStartPoint = p
                 } else if let sel = selectedObjectID, let start = dragStartPoint, let idx = objects.firstIndex(where: { $0.id == sel }) {
                     let delta = CGSize(width: p.x - start.x, height: p.y - start.y)
                     if !pushedDragUndo {
@@ -3395,6 +3511,19 @@ struct ContentView: View {
                 let dy = pEnd.y - pStart.y
                 let _ = hypot(dx, dy) > 5
 
+                // Handle selection rectangle end
+                if let rect = selectionRect {
+                    // Find all objects that intersect with the selection rectangle
+                    selectedObjectIDs.removeAll()
+                    for obj in objects {
+                        if objectIntersects(obj, with: rect) {
+                            selectedObjectIDs.insert(obj.id)
+                        }
+                    }
+                    selectionRect = nil
+                    selectionDragStart = nil
+                }
+
                 // Generate snapshot for blur object if it was modified
                 if let sel = selectedObjectID,
                    let idx = objects.firstIndex(where: { $0.id == sel }) {
@@ -3410,6 +3539,8 @@ struct ContentView: View {
                 textRotateStartValue = nil
                 imageRotateStartAngle = nil
                 imageRotateStartValue = nil
+                blurRotateStartAngle = nil
+                blurRotateStartValue = nil
 
                 dragStartPoint = nil
                 pushedDragUndo = false
@@ -4409,7 +4540,34 @@ struct ContentView: View {
         selectedObjectID = nil
         activeHandle = .none
     }
-    
+
+    private func deleteMultipleSelectedObjects() {
+        if isTextEditorFocused {
+            return
+        }
+        guard !selectedObjectIDs.isEmpty else { return }
+        pushUndoSnipshot()
+
+        // Clear blur snapshots for any blur objects being deleted
+        for objID in selectedObjectIDs {
+            if let idx = objects.firstIndex(where: { $0.id == objID }) {
+                if case .blur = objects[idx] {
+                    blurSnapshots[objID] = nil
+                }
+            }
+        }
+
+        // Remove all selected objects
+        objects.removeAll { obj in
+            selectedObjectIDs.contains(obj.id)
+        }
+
+        // Clear selection
+        selectedObjectIDs.removeAll()
+        selectedObjectID = nil
+        activeHandle = .none
+    }
+
     private func performUndo() {
         guard let prev = undoStack.popLast() else { return }
         let current = Snipshot(imageURL: selectedSnipURL, objects: objects)
@@ -4440,11 +4598,11 @@ struct ContentView: View {
     private func clampRect(_ r: CGRect, in fitted: CGSize) -> CGRect {
         // Preserve the original size
         var rect = r
-        
+
         // Clamp the position to keep the object within bounds without deforming it
         rect.origin.x = max(0, min(rect.origin.x, fitted.width - rect.width))
         rect.origin.y = max(0, min(rect.origin.y, fitted.height - rect.height))
-        
+
         // Only adjust size if the object is larger than the container
         if rect.width > fitted.width {
             rect.size.width = fitted.width
@@ -4454,10 +4612,37 @@ struct ContentView: View {
             rect.size.height = fitted.height
             rect.origin.y = 0
         }
-        
+
         return rect
     }
-    
+
+    private func objectIntersects(_ obj: Drawable, with selectionRect: CGRect) -> Bool {
+        switch obj {
+        case .line(let o):
+            // Check if line's bounding box intersects with selection rect
+            let minX = min(o.start.x, o.end.x)
+            let maxX = max(o.start.x, o.end.x)
+            let minY = min(o.start.y, o.end.y)
+            let maxY = max(o.start.y, o.end.y)
+            let lineBounds = CGRect(x: minX, y: minY, width: maxX - minX, height: maxY - minY)
+            return selectionRect.intersects(lineBounds)
+        case .rect(let o):
+            return selectionRect.intersects(o.rect)
+        case .oval(let o):
+            return selectionRect.intersects(o.rect)
+        case .text(let o):
+            return selectionRect.intersects(o.rect)
+        case .badge(let o):
+            return selectionRect.intersects(o.rect)
+        case .highlight(let o):
+            return selectionRect.intersects(o.rect)
+        case .image(let o):
+            return selectionRect.intersects(o.rect)
+        case .blur(let o):
+            return selectionRect.intersects(o.rect)
+        }
+    }
+
     private func fittedImageSize(original: CGSize, in container: CGSize) -> CGSize {
         let scale = min(container.width / max(1, original.width), container.height / max(1, original.height))
         return CGSize(width: original.width * scale, height: original.height * scale)

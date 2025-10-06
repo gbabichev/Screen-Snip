@@ -43,21 +43,22 @@ Inspired by Greenshot on Windows - the goal is to make a tiny app that can do th
 
 ### Tools
 
-| Tool       | Shortcut   | Notes              |
-|:---------------|:--------:|-------------------:|
-| Take Screenshot              | ⌘ , ⇧ , 2     | Command + Shift + 2       |
-| Pointer Tool                 | ⌘ , 1         | Moves objects around      |
-| Pen Tool                     | ⌘ , 2         | Draw lines. |
-| Arrow Tool                   | ⌘ , 3         | Draw lines with arrows.|
-| Highlighter                  | ⌘ , 4         | Highlights. |
-| Rectangle Tool               | ⌘ , 5         | Draw squres / rectangles |
-| Oval Tool                    | ⌘ , 6         | Draw circles / ovals |
-| Badge Tool                   | ⌘ , 7         | Incremental Numbers |
-| Text Tool                    | ⌘ , 8         | Insert text. Colored backgrounds optional.  |
-| Crop Tool                    | ⌘ , 9         | Crops. |
-| Reset Zoom                   | ⌘ , 0         |  |
-| Zoom In                      | ⌘ , +         |  |
-| Zoom Out                     | ⌘ , -         |  |
+| Tool                         | Shortcut          | Notes                                          |
+|:----------------------------:|:-----------------:|:-----------------------------------------------|
+| Take Screenshot              | ⌘ ⇧ 2             | Command + Shift + 2                            |
+| Pointer Tool                 | ⌘ 1               | Moves objects around with multi select         |
+| Pen Tool                     | ⌘ 2               | Draw lines                                     |
+| Arrow Tool                   | ⌘ 3               | Draw lines with arrows                         |
+| Highlighter                  | ⌘ 4               | Highlights                                     |
+| Rectangle Tool               | ⌘ 5               | Draw squares / rectangles                      |
+| Blur Tool                    | ⌘ ⌥ 5             | Blur areas (pixelate)                          |
+| Oval Tool                    | ⌘ 6               | Draw circles / ovals                           |
+| Badge Tool                   | ⌘ 7               | Incremental numbers                            |
+| Text Tool                    | ⌘ 8               | Insert text. Colored backgrounds optional      |
+| Crop Tool                    | ⌘ 9               | Crops                                          |
+| Reset Zoom                   | ⌘ 0               | Reset zoom to 100%                             |
+| Zoom In                      | ⌘ +               | Increase zoom                                  |
+| Zoom Out                     | ⌘ -               | Decrease zoom                                  |
 
 ### Settings
 
@@ -110,7 +111,8 @@ open "Screen Snip.xcodeproj"
 ## 📝 Changelog
 
 ### 1.2.0
-- Added "Blur" tool. 
+- Added Blur tool. 
+- Selection tool can now select multiple objects. 
 
 ### 1.1.1
 - Fixed rectangle tool not showing the users color during drawing when the display is in "Fit" mode. 
