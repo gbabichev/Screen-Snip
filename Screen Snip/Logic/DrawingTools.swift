@@ -143,12 +143,10 @@ struct RectObject: @MainActor DrawableObject {
         // Convert the point into the rectangle's local (unrotated) space
         let c = CGPoint(x: rect.midX, y: rect.midY)
         let localP = p.rotated(around: c, by: -rotation)
-        
-        let outerInset = -max(6, width + 6)
-        let innerInset =  max(6, width + 6)
-        let outer = rect.insetBy(dx: outerInset, dy: outerInset)
-        let inner = rect.insetBy(dx: innerInset,  dy: innerInset)
-        return outer.contains(localP) && !inner.contains(localP)
+
+        // Allow clicking anywhere inside the rectangle (with tolerance)
+        let hitRect = rect.insetBy(dx: -6, dy: -6)
+        return hitRect.contains(localP)
     }
     
     func handleHitTest(_ p: CGPoint) -> Handle {

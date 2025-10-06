@@ -3144,7 +3144,14 @@ struct ContentView: View {
                 let p = fittedToAuthorPoint(pFit, fitted: fitted, author: author)
                 if dragStartPoint == nil {
                     dragStartPoint = p
-                    if let idx = objects.firstIndex(where: { obj in
+
+                    // First check if clicking inside multi-selection bounding box
+                    if !selectedObjectIDs.isEmpty, let boundingBox = boundingBoxOfSelectedObjects(), boundingBox.contains(p) {
+                        // Clicked inside bounding box of multi-selection - prepare to move all
+                        selectedObjectID = nil  // Don't show single selection handles
+                        activeHandle = .none
+                        focusedTextID = nil
+                    } else if let idx = objects.firstIndex(where: { obj in
                         switch obj {
                         case .line(let o): return o.handleHitTest(p) != .none || o.hitTest(p)
                         case .rect(let o): return o.handleHitTest(p) != .none || o.hitTest(p)
@@ -4641,6 +4648,65 @@ struct ContentView: View {
         case .blur(let o):
             return selectionRect.intersects(o.rect)
         }
+    }
+
+    private func boundingBoxOfSelectedObjects() -> CGRect? {
+        guard !selectedObjectIDs.isEmpty else { return nil }
+
+        var minX = CGFloat.infinity
+        var minY = CGFloat.infinity
+        var maxX = -CGFloat.infinity
+        var maxY = -CGFloat.infinity
+
+        for obj in objects {
+            guard selectedObjectIDs.contains(obj.id) else { continue }
+
+            switch obj {
+            case .line(let o):
+                minX = min(minX, min(o.start.x, o.end.x))
+                maxX = max(maxX, max(o.start.x, o.end.x))
+                minY = min(minY, min(o.start.y, o.end.y))
+                maxY = max(maxY, max(o.start.y, o.end.y))
+            case .rect(let o):
+                minX = min(minX, o.rect.minX)
+                maxX = max(maxX, o.rect.maxX)
+                minY = min(minY, o.rect.minY)
+                maxY = max(maxY, o.rect.maxY)
+            case .oval(let o):
+                minX = min(minX, o.rect.minX)
+                maxX = max(maxX, o.rect.maxX)
+                minY = min(minY, o.rect.minY)
+                maxY = max(maxY, o.rect.maxY)
+            case .text(let o):
+                minX = min(minX, o.rect.minX)
+                maxX = max(maxX, o.rect.maxX)
+                minY = min(minY, o.rect.minY)
+                maxY = max(maxY, o.rect.maxY)
+            case .badge(let o):
+                minX = min(minX, o.rect.minX)
+                maxX = max(maxX, o.rect.maxX)
+                minY = min(minY, o.rect.minY)
+                maxY = max(maxY, o.rect.maxY)
+            case .highlight(let o):
+                minX = min(minX, o.rect.minX)
+                maxX = max(maxX, o.rect.maxX)
+                minY = min(minY, o.rect.minY)
+                maxY = max(maxY, o.rect.maxY)
+            case .image(let o):
+                minX = min(minX, o.rect.minX)
+                maxX = max(maxX, o.rect.maxX)
+                minY = min(minY, o.rect.minY)
+                maxY = max(maxY, o.rect.maxY)
+            case .blur(let o):
+                minX = min(minX, o.rect.minX)
+                maxX = max(maxX, o.rect.maxX)
+                minY = min(minY, o.rect.minY)
+                maxY = max(maxY, o.rect.maxY)
+            }
+        }
+
+        guard minX != .infinity else { return nil }
+        return CGRect(x: minX, y: minY, width: maxX - minX, height: maxY - minY)
     }
 
     private func fittedImageSize(original: CGSize, in container: CGSize) -> CGSize {
