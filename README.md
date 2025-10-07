@@ -7,9 +7,8 @@
 </picture>
 <br/><br/>
 
-A small yet powerful macOS App for taking & editing screenshots!
-
-Inspired by Greenshot on Windows - the goal is to make a tiny app that can do the basics and look great while doing it. 
+<h2>Fast, powerful, and beautifully simple screenshots for Mac.</h>
+<br><br>
 
 </div>
 
@@ -44,7 +43,7 @@ Inspired by Greenshot on Windows - the goal is to make a tiny app that can do th
 ### Tools
 
 | Tool                         | Shortcut          | Notes                                          |
-|:----------------------------:|:-----------------:|:-----------------------------------------------|
+|:----------------------------:|:-----------------:|:----------------------------------------------:|
 | Take Screenshot              | ⌘ ⇧ 2             | Command + Shift + 2                            |
 | Pointer Tool                 | ⌘ 1               | Moves objects around with multi select         |
 | Pen Tool                     | ⌘ 2               | Draw lines                                     |
@@ -69,9 +68,9 @@ These settings are customizable by you.
   - JPG (With Quality Slider)
   - HEIC (With Quality Slider)
 - Downsample Retina Screenshots 
-  - If you take a screenshot on a Retina or High-DPI display, it will downsample it to 1x immediately. 
+  - If you take a screenshot on a Retina or High-DPI (4K) display, it will downsample it to 1x immediately. 
 - Automatically Save on Copy
-  - When you take a screenshot, it can automatically save to disk. 
+  - When you copy to clipboard, the app can auto-save to disk. 
 - Downsample Retina Screenshots for Copy
   - If a High-DPI screenshot exists, we can automatically downsample it to 1x for easier & quicker sharing. 
 - Fit Images to Window
