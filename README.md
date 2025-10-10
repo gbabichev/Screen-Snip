@@ -7,7 +7,7 @@
 </picture>
 <br/><br/>
 
-<h2>Fast, powerful, and beautifully simple screenshots for Mac.</h>
+<h2>Fast, powerful, and beautifully simple screenshots for Mac.</h2>
 <br><br>
 
 </div>
