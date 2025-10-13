@@ -3348,8 +3348,12 @@ struct ContentView: View {
                         } else {
                             updated = o.resizing(activeHandle, to: p)
                         }
+                        // Clamp based on rotation
                         if updated.rotation == 0 {
                             let clamped = clampRect(updated.rect, in: author)
+                            updated.rect = clamped
+                        } else {
+                            let clamped = clampRotatedRect(updated.rect, rotation: updated.rotation, in: author)
                             updated.rect = clamped
                         }
                         objects[idx] = .rect(updated)
@@ -3408,8 +3412,14 @@ struct ContentView: View {
                         } else {
                             updated = o.resizing(activeHandle, to: p)
                         }
-                        let clamped = clampRect(updated.rect, in: author)
-                        updated.rect = clamped
+                        // Clamp based on rotation
+                        if updated.rotation == 0 {
+                            let clamped = clampRect(updated.rect, in: author)
+                            updated.rect = clamped
+                        } else {
+                            let clamped = clampRotatedRect(updated.rect, rotation: updated.rotation, in: author)
+                            updated.rect = clamped
+                        }
                         objects[idx] = .text(updated)
                     case .badge(let o):
                         let updated = (activeHandle == .none) ? o.moved(by: delta) : o.resizing(activeHandle, to: p)
@@ -3469,8 +3479,14 @@ struct ContentView: View {
                         } else {
                             updated = o.resizing(activeHandle, to: p)
                         }
-                        let clamped = clampRect(updated.rect, in: author)
-                        updated.rect = clamped
+                        // Clamp based on rotation
+                        if updated.rotation == 0 {
+                            let clamped = clampRect(updated.rect, in: author)
+                            updated.rect = clamped
+                        } else {
+                            let clamped = clampRotatedRect(updated.rect, rotation: updated.rotation, in: author)
+                            updated.rect = clamped
+                        }
                         objects[idx] = .image(updated)
                     case .blur(let o):
                         var updated = o
@@ -3520,8 +3536,12 @@ struct ContentView: View {
                         } else {
                             updated = o.resizing(activeHandle, to: p)
                         }
+                        // Clamp based on rotation
                         if updated.rotation == 0 {
                             let clamped = clampRect(updated.rect, in: author)
+                            updated.rect = clamped
+                        } else {
+                            let clamped = clampRotatedRect(updated.rect, rotation: updated.rotation, in: author)
                             updated.rect = clamped
                         }
                         objects[idx] = .blur(updated)
@@ -4623,26 +4643,46 @@ struct ContentView: View {
                 y: min(max(0, p.y), fitted.height))
     }
     
+    /// Clamps a non-rotated rect to stay within canvas bounds
     private func clampRect(_ r: CGRect, in fitted: CGSize) -> CGRect {
         var rect = r
 
         // Clamp the rect to stay within canvas bounds
-        // Don't allow the origin to go negative
+        // For moving/positioning: keep the object's size and just adjust position
+        // For resizing: the size might exceed bounds, so trim it
+
+        // If origin is negative (object moved past top/left edge)
         if rect.origin.x < 0 {
-            rect.size.width += rect.origin.x  // Reduce width by the amount we're moving right
+            // If the size extends beyond the opposite edge, we're resizing - trim the size
+            if rect.maxX > fitted.width {
+                rect.size.width = fitted.width
+            }
             rect.origin.x = 0
         }
         if rect.origin.y < 0 {
-            rect.size.height += rect.origin.y  // Reduce height by the amount we're moving down
+            // If the size extends beyond the opposite edge, we're resizing - trim the size
+            if rect.maxY > fitted.height {
+                rect.size.height = fitted.height
+            }
             rect.origin.y = 0
         }
 
-        // Don't allow the rect to extend past the right/bottom edges
+        // Clamp position to keep object within bounds (for moving)
         if rect.maxX > fitted.width {
-            rect.size.width = fitted.width - rect.origin.x
+            rect.origin.x = max(0, fitted.width - rect.size.width)
         }
         if rect.maxY > fitted.height {
-            rect.size.height = fitted.height - rect.origin.y
+            rect.origin.y = max(0, fitted.height - rect.size.height)
+        }
+
+        // If object is larger than canvas, shrink it
+        if rect.size.width > fitted.width {
+            rect.size.width = fitted.width
+            rect.origin.x = 0
+        }
+        if rect.size.height > fitted.height {
+            rect.size.height = fitted.height
+            rect.origin.y = 0
         }
 
         // Ensure minimum size
@@ -4650,6 +4690,59 @@ struct ContentView: View {
         rect.size.height = max(2, rect.size.height)
 
         return rect
+    }
+
+    /// Clamps a rotated rect to stay within canvas bounds by adjusting its position
+    /// Returns the new rect with clamped center position
+    private func clampRotatedRect(_ r: CGRect, rotation: CGFloat, in fitted: CGSize) -> CGRect {
+        // Calculate the axis-aligned bounding box of the rotated rect
+        let center = CGPoint(x: r.midX, y: r.midY)
+        let corners = [
+            CGPoint(x: r.minX, y: r.minY),
+            CGPoint(x: r.maxX, y: r.minY),
+            CGPoint(x: r.minX, y: r.maxY),
+            CGPoint(x: r.maxX, y: r.maxY)
+        ]
+
+        // Rotate corners around the center
+        let s = sin(rotation), co = cos(rotation)
+        let rotatedCorners = corners.map { corner -> CGPoint in
+            let dx = corner.x - center.x
+            let dy = corner.y - center.y
+            return CGPoint(
+                x: center.x + dx * co - dy * s,
+                y: center.y + dx * s + dy * co
+            )
+        }
+
+        // Find the AABB of rotated corners
+        let minX = rotatedCorners.map { $0.x }.min() ?? center.x
+        let maxX = rotatedCorners.map { $0.x }.max() ?? center.x
+        let minY = rotatedCorners.map { $0.y }.min() ?? center.y
+        let maxY = rotatedCorners.map { $0.y }.max() ?? center.y
+
+        // Calculate how much the AABB extends beyond canvas bounds
+        var offsetX: CGFloat = 0
+        var offsetY: CGFloat = 0
+
+        if minX < 0 {
+            offsetX = -minX
+        } else if maxX > fitted.width {
+            offsetX = fitted.width - maxX
+        }
+
+        if minY < 0 {
+            offsetY = -minY
+        } else if maxY > fitted.height {
+            offsetY = fitted.height - maxY
+        }
+
+        // Apply the offset to the rect's center
+        var result = r
+        result.origin.x += offsetX
+        result.origin.y += offsetY
+
+        return result
     }
 
     private func objectIntersects(_ obj: Drawable, with selectionRect: CGRect) -> Bool {
