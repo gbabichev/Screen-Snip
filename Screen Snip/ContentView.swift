@@ -4624,22 +4624,30 @@ struct ContentView: View {
     }
     
     private func clampRect(_ r: CGRect, in fitted: CGSize) -> CGRect {
-        // Preserve the original size
         var rect = r
 
-        // Clamp the position to keep the object within bounds without deforming it
-        rect.origin.x = max(0, min(rect.origin.x, fitted.width - rect.width))
-        rect.origin.y = max(0, min(rect.origin.y, fitted.height - rect.height))
-
-        // Only adjust size if the object is larger than the container
-        if rect.width > fitted.width {
-            rect.size.width = fitted.width
+        // Clamp the rect to stay within canvas bounds
+        // Don't allow the origin to go negative
+        if rect.origin.x < 0 {
+            rect.size.width += rect.origin.x  // Reduce width by the amount we're moving right
             rect.origin.x = 0
         }
-        if rect.height > fitted.height {
-            rect.size.height = fitted.height
+        if rect.origin.y < 0 {
+            rect.size.height += rect.origin.y  // Reduce height by the amount we're moving down
             rect.origin.y = 0
         }
+
+        // Don't allow the rect to extend past the right/bottom edges
+        if rect.maxX > fitted.width {
+            rect.size.width = fitted.width - rect.origin.x
+        }
+        if rect.maxY > fitted.height {
+            rect.size.height = fitted.height - rect.origin.y
+        }
+
+        // Ensure minimum size
+        rect.size.width = max(2, rect.size.width)
+        rect.size.height = max(2, rect.size.height)
 
         return rect
     }
