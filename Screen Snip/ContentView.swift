@@ -2159,94 +2159,115 @@ struct ContentView: View {
     }
     
     private func copyToPasteboard(_ image: NSImage) {
-        // 1) ALWAYS flatten first so annotations are included
-        let flattened: NSImage = {
-            if let f = rasterize(base: image, objects: objects) { return f }
-            return image // graceful fallback
-        }()
-        
-        // 2) Respect user toggle: only downsample if requested AND the image is retina
-        let shouldDownsample = downsampleToNonRetinaClipboard && isRetinaImage(flattened)
-        let source: NSImage = shouldDownsample ? downsampleImage(flattened) : flattened
-        
-        // 3) Put pixel-accurate PNG bytes on the pasteboard to avoid implicit 1x collapse
-        let pb = NSPasteboard.general
-        pb.clearContents()
-        
-        // Prefer the backing bitmap rep's CGImage to avoid collapsing to 1x
-        let bestRep = source.representations
-            .compactMap { $0 as? NSBitmapImageRep }
-            .max(by: { $0.pixelsWide * $0.pixelsHigh < $1.pixelsWide * $1.pixelsHigh })
-        
-        if let cg = bestRep?.cgImage ?? source.cgImage(forProposedRect: nil, context: nil, hints: nil) {
-            let rep = NSBitmapImageRep(cgImage: cg)
-            if let data = rep.representation(using: .png, properties: [:]) {
-                pb.setData(data, forType: .png)
-            } else {
-                pb.writeObjects([source])
-            }
-        } else {
-            pb.writeObjects([source])
-        }
-        
-        // 4) Optional: Save the rasterized image to disk when enabled in settings (non-destructive)
-        if UserDefaults.standard.bool(forKey: "saveOnCopy") {
-            if let url = selectedSnipURL {
-                if ImageSaver.writeImage(source, to: url, format: preferredSaveFormat.rawValue, quality: saveQuality, preserveAttributes: true) {
-                    
-                    // NEW: Clear all drawn objects after successful save
-                    objects.removeAll()
-                    selectedObjectID = nil
-                    activeHandle = .none
-                    focusedTextID = nil
-                    cropRect = nil
-                    cropDraftRect = nil
-                    cropHandle = .none
-                    
-                    refreshGalleryAfterSaving(to: url)
-                    reloadCurrentImage()
-                    
-                    
-                    
+        // Capture necessary state
+        let objectsSnapshot = objects
+        let saveOnCopy = UserDefaults.standard.bool(forKey: "saveOnCopy")
+        let selectedURL = selectedSnipURL
+        let format = preferredSaveFormat.rawValue
+        let quality = saveQuality
+        let downsampleSetting = downsampleToNonRetinaClipboard
+
+        // Move heavy image processing to .utility thread to avoid priority inversion
+        DispatchQueue.global(qos: .utility).async {
+            // 1) ALWAYS flatten first so annotations are included
+            let flattened: NSImage = {
+                // Use DispatchQueue.main.sync to safely call main-actor methods
+                return DispatchQueue.main.sync {
+                    if let f = self.rasterize(base: image, objects: objectsSnapshot) { return f }
+                    return image // graceful fallback
                 }
-            } else if let dir = SnipsDirectory() {
-                let newName = ImageSaver.generateFilename(for: preferredSaveFormat.rawValue)
-                let dest = dir.appendingPathComponent(newName)
-                if ImageSaver.writeImage(source, to: dest, format: preferredSaveFormat.rawValue, quality: saveQuality, preserveAttributes: true) {
-                    
-                    // NEW: Clear all drawn objects after successful save
-                    objects.removeAll()
-                    selectedObjectID = nil
-                    activeHandle = .none
-                    focusedTextID = nil
-                    cropRect = nil
-                    cropDraftRect = nil
-                    cropHandle = .none
-                    
-                    selectedSnipURL = dest
-                    refreshGalleryAfterSaving(to: dest)
-                    reloadCurrentImage()
-                    
-                }
-            } else {
-                // Fallback if no directory available
-                saveAsCurrent()
-                
-                // NEW: Clear objects after saveAsCurrent completes successfully
-                // Note: You might want to modify saveAsCurrent to return a Bool indicating success
-                objects.removeAll()
-                selectedObjectID = nil
-                activeHandle = .none
-                focusedTextID = nil
-                cropRect = nil
-                cropDraftRect = nil
-                cropHandle = .none
+            }()
+
+            // 2) Respect user toggle: only downsample if requested AND the image is retina
+            let shouldDownsample = DispatchQueue.main.sync { downsampleSetting && self.isRetinaImage(flattened) }
+            let source: NSImage = shouldDownsample ? DispatchQueue.main.sync { self.downsampleImage(flattened) } : flattened
+
+            // 3) Generate PNG data on utility thread
+            var pngData: Data?
+            let bestRep = source.representations
+                .compactMap { $0 as? NSBitmapImageRep }
+                .max(by: { $0.pixelsWide * $0.pixelsHigh < $1.pixelsWide * $1.pixelsHigh })
+
+            if let cg = bestRep?.cgImage ?? source.cgImage(forProposedRect: nil, context: nil, hints: nil) {
+                let rep = NSBitmapImageRep(cgImage: cg)
+                pngData = rep.representation(using: .png, properties: [:])
             }
-        }
-        
-        withAnimation { showCopiedHUD = true }
-        DispatchQueue.main.asyncAfter(deadline: .now() + 1.2) {
-            withAnimation { showCopiedHUD = false }
+
+            // 4) Update pasteboard on main thread (required for pasteboard operations)
+            DispatchQueue.main.async {
+                let pb = NSPasteboard.general
+                pb.clearContents()
+
+                if let data = pngData {
+                    pb.setData(data, forType: .png)
+                } else {
+                    pb.writeObjects([source])
+                }
+
+                // Show HUD after pasteboard is updated
+                withAnimation { self.showCopiedHUD = true }
+                DispatchQueue.main.asyncAfter(deadline: .now() + 1.2) {
+                    withAnimation { self.showCopiedHUD = false }
+                }
+            }
+
+            // 5) Optional: Save the rasterized image to disk when enabled in settings
+            if saveOnCopy {
+                if let url = selectedURL {
+                    if ImageSaver.writeImage(source, to: url, format: format, quality: quality, preserveAttributes: true) {
+                        DispatchQueue.main.async {
+                            // Clear all drawn objects after successful save
+                            self.objects.removeAll()
+                            self.selectedObjectID = nil
+                            self.activeHandle = .none
+                            self.focusedTextID = nil
+                            self.cropRect = nil
+                            self.cropDraftRect = nil
+                            self.cropHandle = .none
+
+                            self.refreshGalleryAfterSaving(to: url)
+                            self.reloadCurrentImage()
+                        }
+                    }
+                } else {
+                    DispatchQueue.main.sync {
+                        if let dir = self.SnipsDirectory() {
+                            let newName = ImageSaver.generateFilename(for: format)
+                            let dest = dir.appendingPathComponent(newName)
+                            DispatchQueue.global(qos: .utility).async {
+                                if ImageSaver.writeImage(source, to: dest, format: format, quality: quality, preserveAttributes: true) {
+                                    DispatchQueue.main.async {
+                                        // Clear all drawn objects after successful save
+                                        self.objects.removeAll()
+                                        self.selectedObjectID = nil
+                                        self.activeHandle = .none
+                                        self.focusedTextID = nil
+                                        self.cropRect = nil
+                                        self.cropDraftRect = nil
+                                        self.cropHandle = .none
+
+                                        self.selectedSnipURL = dest
+                                        self.refreshGalleryAfterSaving(to: dest)
+                                        self.reloadCurrentImage()
+                                    }
+                                }
+                            }
+                        } else {
+                            // Fallback if no directory available - must be on main thread
+                            self.saveAsCurrent()
+
+                            // Clear objects after saveAsCurrent completes successfully
+                            self.objects.removeAll()
+                            self.selectedObjectID = nil
+                            self.activeHandle = .none
+                            self.focusedTextID = nil
+                            self.cropRect = nil
+                            self.cropDraftRect = nil
+                            self.cropHandle = .none
+                        }
+                    }
+                }
+            }
         }
     }
     /// Flattens the current canvas into the image, refreshes state, then copies the latest to the clipboard.

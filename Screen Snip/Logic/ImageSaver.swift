@@ -78,7 +78,7 @@ struct ImageSaver {
         return "\(nameWithoutExtension).\(fileExtension)"
     }
     
-    static func writeImage(_ image: NSImage, to url: URL, format: String, quality: Double, preserveAttributes: Bool = false) -> Bool {
+    nonisolated static func writeImage(_ image: NSImage, to url: URL, format: String, quality: Double, preserveAttributes: Bool = false) -> Bool {
         var originalCreationDate: Date? = nil
         
         // Capture original creation date if preserving and file exists
