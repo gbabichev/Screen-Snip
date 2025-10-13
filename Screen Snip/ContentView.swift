@@ -1574,7 +1574,7 @@ struct ContentView: View {
             contentType: preferredSaveFormat.utType,
             defaultFilename: {
                 if let sel = selectedSnipURL {
-                    return sel.lastPathComponent
+                    return ImageSaver.replaceExtension(of: sel.lastPathComponent, with: preferredSaveFormat.rawValue)
                 } else {
                     return ImageSaver.generateFilename(for: preferredSaveFormat.rawValue)
                 }
@@ -2295,7 +2295,7 @@ struct ContentView: View {
         }
         if let sel = selectedSnipURL {
             panel.directoryURL = sel.deletingLastPathComponent()
-            panel.nameFieldStringValue = sel.lastPathComponent
+            panel.nameFieldStringValue = ImageSaver.replaceExtension(of: sel.lastPathComponent, with: preferredSaveFormat.rawValue)
         } else if let dir = SnipsDirectory() {
             panel.directoryURL = dir
             panel.nameFieldStringValue = ImageSaver.generateFilename(for: preferredSaveFormat.rawValue)

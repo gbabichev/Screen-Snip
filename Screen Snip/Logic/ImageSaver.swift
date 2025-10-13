@@ -62,6 +62,21 @@ struct ImageSaver {
         }()
         return generateFilename(fileExtension: fileExtension)
     }
+
+    /// Replaces the file extension of a given filename with the extension for the specified format
+    static func replaceExtension(of filename: String, with format: String) -> String {
+        let fileExtension: String = {
+            switch format {
+            case "jpeg": return "jpg"
+            case "heic": return "heic"
+            default: return "png"
+            }
+        }()
+
+        let url = URL(fileURLWithPath: filename)
+        let nameWithoutExtension = url.deletingPathExtension().lastPathComponent
+        return "\(nameWithoutExtension).\(fileExtension)"
+    }
     
     static func writeImage(_ image: NSImage, to url: URL, format: String, quality: Double, preserveAttributes: Bool = false) -> Bool {
         var originalCreationDate: Date? = nil
@@ -270,24 +285,37 @@ struct ImageSaver {
     
     
     nonisolated static func imageData(from image: NSImage, format: String, quality: Double) -> Data? {
-        guard let bestRep = image.representations
-            .compactMap({ $0 as? NSBitmapImageRep })
-            .max(by: { $0.pixelsWide * $0.pixelsHigh < $1.pixelsWide * $1.pixelsHigh }) else { return nil }
-        
-        switch format.lowercased() {
-        case "png":
-            return bestRep.representation(using: .png, properties: [:])
-        case "jpeg", "jpg":
-            return bestRep.representation(using: .jpeg, properties: [.compressionFactor: quality])
-        case "heic":
-            if let heicType = NSBitmapImageRep.FileType(rawValue: 10) {
-                return bestRep.representation(using: heicType, properties: [.compressionFactor: quality])
-            } else {
-                // Fallback to JPEG if HEIC type is not available
-                return bestRep.representation(using: .jpeg, properties: [.compressionFactor: quality])
-            }        default:
-            return bestRep.representation(using: .png, properties: [:])
+        // For PNG, use NSBitmapImageRep since it's reliable and simple
+        if format.lowercased() == "png" {
+            guard let tiff = image.tiffRepresentation,
+                  let rep = NSBitmapImageRep(data: tiff),
+                  let pngData = rep.representation(using: .png, properties: [:]) else { return nil }
+            return pngData
         }
+
+        // For JPEG and HEIC, use CGImageDestination which properly supports both formats
+        guard let cgImage = image.cgImage(forProposedRect: nil, context: nil, hints: nil) else { return nil }
+
+        let utType: CFString = {
+            switch format.lowercased() {
+            case "jpeg", "jpg": return UTType.jpeg.identifier as CFString
+            case "heic": return UTType.heic.identifier as CFString
+            default: return UTType.png.identifier as CFString
+            }
+        }()
+
+        let mutableData = NSMutableData()
+        guard let destination = CGImageDestinationCreateWithData(mutableData, utType, 1, nil) else { return nil }
+
+        let properties: [CFString: Any] = [
+            kCGImageDestinationLossyCompressionQuality: quality
+        ]
+
+        CGImageDestinationAddImage(destination, cgImage, properties as CFDictionary)
+
+        guard CGImageDestinationFinalize(destination) else { return nil }
+
+        return mutableData as Data
     }
     
 }
