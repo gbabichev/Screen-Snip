@@ -430,8 +430,8 @@ struct ContentView: View {
                                                     Text(o.text.isEmpty ? " " : o.text)
                                                         .font(.system(size: o.fontSize))
                                                         .foregroundStyle(Color(nsColor: o.textColor))
-                                                        .padding(.horizontal, 10)
-                                                        .padding(.vertical, 10)
+                                                        .padding(.horizontal, TextObject.halfHorizontalPadding)
+                                                        .padding(.vertical, TextObject.halfVerticalPadding)
                                                         .frame(width: o.rect.width, height: o.rect.height, alignment: .topLeading)
                                                         .background(o.bgEnabled ? Color(nsColor: o.bgColor) : Color.clear)
                                                         .rotationEffect(Angle(radians: o.rotation))
@@ -2419,15 +2419,15 @@ struct ContentView: View {
                 
                 // 2) Create new text box only on single click in empty space
                 if !isDoubleClick {
-                    let defaultSize = CGSize(width: textFontSize * 4,   // 4 characters worth
-                                            height: textFontSize * 1.5)
+                    let defaultText = "Text"
+                    let defaultSize = TextObject.intrinsicSize(for: defaultText, fontSize: textFontSize)
                     let rect = CGRect(x: max(0, pEnd.x - defaultSize.width/2),
                                       y: max(0, pEnd.y - defaultSize.height/2),
                                       width: defaultSize.width,
                                       height: defaultSize.height)
                     let rectClamped = clampRect(rect, in: author)
                     let newObj = TextObject(rect: rectClamped,
-                                            text: "Text",
+                                            text: defaultText,
                                             fontSize: textFontSize,
                                             textColor: textColor,
                                             bgEnabled: textBGEnabled,

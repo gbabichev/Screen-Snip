@@ -677,8 +677,10 @@ struct HighlightObject: @MainActor DrawableObject {
 struct TextObject: @MainActor DrawableObject {
     private static let hardMinWidth: CGFloat = 10
     private static let hardMinHeight: CGFloat = 10
-    private static let horizontalPadding: CGFloat = 20   // 10pt padding on each horizontal edge when rendering
-    private static let verticalPadding: CGFloat = 20
+    static let horizontalPadding: CGFloat = 24   // total padding across both horizontal edges
+    static let verticalPadding: CGFloat = 24
+    static var halfHorizontalPadding: CGFloat { horizontalPadding / 2 }
+    static var halfVerticalPadding: CGFloat { verticalPadding / 2 }
 
     let id: UUID
     var rect: CGRect
@@ -715,6 +717,25 @@ struct TextObject: @MainActor DrawableObject {
         let requiredHeight = contentHeight + TextObject.verticalPadding
 
         return CGSize(width: requiredWidth, height: requiredHeight)
+    }
+
+    static func intrinsicSize(for text: String, fontSize: CGFloat) -> CGSize {
+        let font = NSFont.systemFont(ofSize: fontSize)
+        let effectiveText = text.isEmpty ? " " : text
+        let attributed = NSAttributedString(string: effectiveText, attributes: [.font: font])
+        let bounds = attributed.boundingRect(
+            with: CGSize(width: CGFloat.greatestFiniteMagnitude, height: CGFloat.greatestFiniteMagnitude),
+            options: [.usesLineFragmentOrigin, .usesFontLeading]
+        )
+
+        let baseLineHeight = ceil(font.ascender - font.descender + font.leading)
+        let contentWidth = ceil(bounds.width)
+        let contentHeight = max(ceil(bounds.height), baseLineHeight)
+
+        let width = max(hardMinWidth, contentWidth + horizontalPadding)
+        let height = max(hardMinHeight, contentHeight + verticalPadding)
+
+        return CGSize(width: width, height: height)
     }
 
     private func minimumWidthForCurrentText() -> CGFloat {

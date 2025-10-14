@@ -833,22 +833,28 @@ extension ContentView {
             
             // TextEditor for focused text (also needs to be in scaled context with rotation)
             if focusedTextID == o.id {
-                TextEditor(text: Binding(
-                    get: { o.text },
-                    set: { newVal in
-                        if let idx = objects.firstIndex(where: { $0.id == o.id }) {
-                            if case .text(var t) = objects[idx] {
-                                t.text = newVal
-                                objects[idx] = .text(t)
+                InlineTextEditor(
+                    text: Binding(
+                        get: { o.text },
+                        set: { newVal in
+                            if let idx = objects.firstIndex(where: { $0.id == o.id }) {
+                                if case .text(var t) = objects[idx] {
+                                    t.text = newVal
+                                    objects[idx] = .text(t)
+                                }
                             }
                         }
-                    }
-                ))
-                .font(.system(size: o.fontSize))
-                .foregroundStyle(Color(nsColor: o.textColor))
-                .padding(.horizontal, 10)
-                .padding(.vertical, 10)
-                .scrollContentBackground(.hidden)
+                    ),
+                    fontSize: o.fontSize,
+                    textColor: o.textColor,
+                    backgroundColor: o.bgEnabled ? o.bgColor : nil,
+                    isFocused: Binding(
+                        get: { isTextEditorFocused },
+                        set: { isTextEditorFocused = $0 }
+                    )
+                )
+                .padding(.horizontal, TextObject.halfHorizontalPadding)
+                .padding(.vertical, TextObject.halfVerticalPadding)
                 .frame(width: o.rect.width, height: o.rect.height, alignment: .topLeading)
                 .background(o.bgEnabled ? Color(nsColor: o.bgColor) : Color.clear)
                 .rotationEffect(Angle(radians: o.rotation))
