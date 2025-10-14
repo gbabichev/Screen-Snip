@@ -855,9 +855,7 @@ struct ContentView: View {
                                         lastFittedSize = nil
                                         imageReloadTrigger = UUID()
                                         zoomLevel = 1.0
-                                        if savedURL != url {
-                                            refreshGalleryAfterSaving(to: savedURL)
-                                        }
+                                        refreshGalleryAfterSaving(to: savedURL)
                                     }
                                 }
                             }
