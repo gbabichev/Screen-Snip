@@ -3299,63 +3299,81 @@ struct ContentView: View {
                     selectionRect = CGRect(x: minX, y: minY, width: maxX - minX, height: maxY - minY)
                 } else if !selectedObjectIDs.isEmpty, let start = dragStartPoint {
                     // Move all selected objects
-                    let delta = CGSize(width: p.x - start.x, height: p.y - start.y)
+                    let desiredDelta = CGSize(width: p.x - start.x, height: p.y - start.y)
                     if !pushedDragUndo {
                         pushUndoSnipshot()
                         pushedDragUndo = true
                     }
-                    for i in objects.indices {
-                        if selectedObjectIDs.contains(objects[i].id) {
-                            switch objects[i] {
+
+                    var resolvedDelta = desiredDelta
+                    var selectedIndices: [Int] = []
+
+                    for idx in objects.indices where selectedObjectIDs.contains(objects[idx].id) {
+                        selectedIndices.append(idx)
+
+                        let allowed: CGSize
+                        switch objects[idx] {
+                        case .line(let o):
+                            allowed = clampedDeltaForLine(o, delta: desiredDelta, in: author)
+                        case .rect(let o):
+                            allowed = o.rotation != 0
+                                ? clampedDeltaForRotatedRect(o.rect, rotation: o.rotation, delta: desiredDelta, in: author)
+                                : clampedDeltaForRect(o.rect, delta: desiredDelta, in: author)
+                        case .oval(let o):
+                            allowed = clampedDeltaForRect(o.rect, delta: desiredDelta, in: author)
+                        case .text(let o):
+                            allowed = o.rotation != 0
+                                ? clampedDeltaForRotatedRect(o.rect, rotation: o.rotation, delta: desiredDelta, in: author)
+                                : clampedDeltaForRect(o.rect, delta: desiredDelta, in: author)
+                        case .badge(let o):
+                            allowed = clampedDeltaForRect(o.rect, delta: desiredDelta, in: author)
+                        case .highlight(let o):
+                            allowed = clampedDeltaForRect(o.rect, delta: desiredDelta, in: author)
+                        case .image(let o):
+                            allowed = o.rotation != 0
+                                ? clampedDeltaForRotatedRect(o.rect, rotation: o.rotation, delta: desiredDelta, in: author)
+                                : clampedDeltaForRect(o.rect, delta: desiredDelta, in: author)
+                        case .blur(let o):
+                            allowed = o.rotation != 0
+                                ? clampedDeltaForRotatedRect(o.rect, rotation: o.rotation, delta: desiredDelta, in: author)
+                                : clampedDeltaForRect(o.rect, delta: desiredDelta, in: author)
+                        }
+
+                        resolvedDelta.width = adjustedDeltaComponent(desired: desiredDelta.width, current: resolvedDelta.width, allowed: allowed.width)
+                        resolvedDelta.height = adjustedDeltaComponent(desired: desiredDelta.height, current: resolvedDelta.height, allowed: allowed.height)
+                    }
+
+                    if resolvedDelta.width != 0 || resolvedDelta.height != 0 {
+                        for idx in selectedIndices {
+                            switch objects[idx] {
                             case .line(var o):
-                                o = o.moved(by: delta)
-                                // Clamp line endpoints
-                                o.start = clampPoint(o.start, in: author)
-                                o.end = clampPoint(o.end, in: author)
-                                objects[i] = .line(o)
+                                o = o.moved(by: resolvedDelta)
+                                objects[idx] = .line(o)
                             case .rect(var o):
-                                // Clamp delta before moving
-                                let moveDelta = o.rotation != 0
-                                    ? clampedDeltaForRotatedRect(o.rect, rotation: o.rotation, delta: delta, in: author)
-                                    : clampedDeltaForRect(o.rect, delta: delta, in: author)
-                                o = o.moved(by: moveDelta)
-                                objects[i] = .rect(o)
+                                o = o.moved(by: resolvedDelta)
+                                objects[idx] = .rect(o)
                             case .oval(var o):
-                                let moveDelta = clampedDeltaForRect(o.rect, delta: delta, in: author)
-                                o = o.moved(by: moveDelta)
-                                objects[i] = .oval(o)
+                                o = o.moved(by: resolvedDelta)
+                                objects[idx] = .oval(o)
                             case .text(var o):
-                                // Clamp delta before moving
-                                let moveDelta = o.rotation != 0
-                                    ? clampedDeltaForRotatedRect(o.rect, rotation: o.rotation, delta: delta, in: author)
-                                    : clampedDeltaForRect(o.rect, delta: delta, in: author)
-                                o = o.moved(by: moveDelta)
-                                objects[i] = .text(o)
+                                o = o.moved(by: resolvedDelta)
+                                objects[idx] = .text(o)
                             case .badge(var o):
-                                let moveDelta = clampedDeltaForRect(o.rect, delta: delta, in: author)
-                                o = o.moved(by: moveDelta)
-                                objects[i] = .badge(o)
+                                o = o.moved(by: resolvedDelta)
+                                objects[idx] = .badge(o)
                             case .highlight(var o):
-                                let moveDelta = clampedDeltaForRect(o.rect, delta: delta, in: author)
-                                o = o.moved(by: moveDelta)
-                                objects[i] = .highlight(o)
+                                o = o.moved(by: resolvedDelta)
+                                objects[idx] = .highlight(o)
                             case .image(var o):
-                                // Clamp delta before moving
-                                let moveDelta = o.rotation != 0
-                                    ? clampedDeltaForRotatedRect(o.rect, rotation: o.rotation, delta: delta, in: author)
-                                    : clampedDeltaForRect(o.rect, delta: delta, in: author)
-                                o = o.moved(by: moveDelta)
-                                objects[i] = .image(o)
+                                o = o.moved(by: resolvedDelta)
+                                objects[idx] = .image(o)
                             case .blur(var o):
-                                // Clamp delta before moving
-                                let moveDelta = o.rotation != 0
-                                    ? clampedDeltaForRotatedRect(o.rect, rotation: o.rotation, delta: delta, in: author)
-                                    : clampedDeltaForRect(o.rect, delta: delta, in: author)
-                                o = o.moved(by: moveDelta)
-                                objects[i] = .blur(o)
+                                o = o.moved(by: resolvedDelta)
+                                objects[idx] = .blur(o)
                             }
                         }
                     }
+
                     dragStartPoint = p
                 } else if let sel = selectedObjectID, let start = dragStartPoint, let idx = objects.firstIndex(where: { $0.id == sel }) {
                     let delta = CGSize(width: p.x - start.x, height: p.y - start.y)
@@ -4867,6 +4885,15 @@ struct ContentView: View {
         return minX >= 0 && maxX <= fitted.width && minY >= 0 && maxY <= fitted.height
     }
 
+    private func adjustedDeltaComponent(desired: CGFloat, current: CGFloat, allowed: CGFloat) -> CGFloat {
+        guard desired != 0 else { return 0 }
+        if desired > 0 {
+            return min(current, allowed)
+        } else {
+            return max(current, allowed)
+        }
+    }
+
     /// Calculates the maximum allowed delta for moving a non-rotated rect without going off-canvas
     /// Returns a clamped delta that keeps the rect within bounds
     private func clampedDeltaForRect(_ rect: CGRect, delta: CGSize, in fitted: CGSize) -> CGSize {
@@ -4890,6 +4917,28 @@ struct ContentView: View {
             clampedDelta.height = delta.height - newMinY
         } else if newMaxY > fitted.height {
             clampedDelta.height = delta.height - (newMaxY - fitted.height)
+        }
+
+        return clampedDelta
+    }
+
+    private func clampedDeltaForLine(_ line: LineObject, delta: CGSize, in fitted: CGSize) -> CGSize {
+        var clampedDelta = delta
+
+        let minX = min(line.start.x, line.end.x)
+        let maxX = max(line.start.x, line.end.x)
+        if delta.width < 0 {
+            clampedDelta.width = max(delta.width, -minX)
+        } else if delta.width > 0 {
+            clampedDelta.width = min(delta.width, fitted.width - maxX)
+        }
+
+        let minY = min(line.start.y, line.end.y)
+        let maxY = max(line.start.y, line.end.y)
+        if delta.height < 0 {
+            clampedDelta.height = max(delta.height, -minY)
+        } else if delta.height > 0 {
+            clampedDelta.height = min(delta.height, fitted.height - maxY)
         }
 
         return clampedDelta
@@ -5377,5 +5426,3 @@ struct ContentView: View {
     }
     
 }
-
-
