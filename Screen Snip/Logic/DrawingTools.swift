@@ -675,6 +675,11 @@ struct HighlightObject: @MainActor DrawableObject {
 }
 
 struct TextObject: @MainActor DrawableObject {
+    private static let hardMinWidth: CGFloat = 10
+    private static let hardMinHeight: CGFloat = 10
+    private static let horizontalPadding: CGFloat = 20   // 10pt padding on each horizontal edge when rendering
+    private static let verticalPadding: CGFloat = 20
+
     let id: UUID
     var rect: CGRect
     var text: String
@@ -690,6 +695,48 @@ struct TextObject: @MainActor DrawableObject {
     
     static func == (lhs: TextObject, rhs: TextObject) -> Bool {
         lhs.id == rhs.id && lhs.rect == rhs.rect && lhs.text == rhs.text && lhs.fontSize == rhs.fontSize && lhs.textColor == rhs.textColor && lhs.bgEnabled == rhs.bgEnabled && lhs.bgColor == rhs.bgColor && lhs.rotation == rhs.rotation  // Include rotation in equality
+    }
+    
+    private func requiredContentSize(for targetWidth: CGFloat) -> CGSize {
+        let font = NSFont.systemFont(ofSize: fontSize)
+        let effectiveText = text.isEmpty ? " " : text
+        let attributed = NSAttributedString(string: effectiveText, attributes: [.font: font])
+        let constrainedWidth = max(1, targetWidth - TextObject.horizontalPadding)
+        let bounds = attributed.boundingRect(
+            with: CGSize(width: constrainedWidth, height: .greatestFiniteMagnitude),
+            options: [.usesLineFragmentOrigin, .usesFontLeading]
+        )
+
+        let baseLineHeight = ceil(font.ascender - font.descender + font.leading)
+        let contentWidth = ceil(bounds.width)
+        let contentHeight = max(ceil(bounds.height), baseLineHeight)
+
+        let requiredWidth = contentWidth + TextObject.horizontalPadding
+        let requiredHeight = contentHeight + TextObject.verticalPadding
+
+        return CGSize(width: requiredWidth, height: requiredHeight)
+    }
+
+    private func minimumWidthForCurrentText() -> CGFloat {
+        let font = NSFont.systemFont(ofSize: fontSize)
+        let effectiveText = text.isEmpty ? " " : text
+
+        let wordSeparators = CharacterSet.whitespacesAndNewlines
+        let tokens = effectiveText.components(separatedBy: wordSeparators).filter { !$0.isEmpty }
+
+        var maxTokenWidth: CGFloat = 0
+        for token in tokens {
+            let width = ceil(NSString(string: token).size(withAttributes: [.font: font]).width)
+            if width > maxTokenWidth {
+                maxTokenWidth = width
+            }
+        }
+
+        if maxTokenWidth == 0 {
+            maxTokenWidth = ceil(NSString(string: effectiveText).size(withAttributes: [.font: font]).width)
+        }
+
+        return max(TextObject.hardMinWidth, maxTokenWidth + TextObject.horizontalPadding)
     }
     
     func hitTest(_ p: CGPoint) -> Bool {
@@ -747,30 +794,61 @@ struct TextObject: @MainActor DrawableObject {
         case .rectTopLeft, .rectTopRight, .rectBottomLeft, .rectBottomRight:
             // Convert the drag point into local/unrotated space
             let lp = p.rotated(around: center, by: -rotation)
+            var left = rect.minX
+            var right = rect.maxX
+            var top = rect.minY
+            var bottom = rect.maxY
 
-            var x0 = rect.minX, y0 = rect.minY
-            var x1 = rect.maxX, y1 = rect.maxY
+            let baseMinWidth = TextObject.hardMinWidth
+            let baseMinHeight = TextObject.hardMinHeight
 
             switch handle {
             case .rectTopLeft:
-                x0 = lp.x; y0 = lp.y
+                left = min(lp.x, rect.maxX - baseMinWidth)
+                top = min(lp.y, rect.maxY - baseMinHeight)
             case .rectTopRight:
-                x1 = lp.x; y0 = lp.y
+                right = max(lp.x, rect.minX + baseMinWidth)
+                top = min(lp.y, rect.maxY - baseMinHeight)
             case .rectBottomLeft:
-                x0 = lp.x; y1 = lp.y
+                left = min(lp.x, rect.maxX - baseMinWidth)
+                bottom = max(lp.y, rect.minY + baseMinHeight)
             case .rectBottomRight:
-                x1 = lp.x; y1 = lp.y
-            default: break
+                right = max(lp.x, rect.minX + baseMinWidth)
+                bottom = max(lp.y, rect.minY + baseMinHeight)
+            default:
+                break
             }
 
-            // Normalize in case the drag crosses the opposite corner
-            let nx0 = min(x0, x1), nx1 = max(x0, x1)
-            let ny0 = min(y0, y1), ny1 = max(y0, y1)
-            cpy.rect = CGRect(x: nx0, y: ny0, width: nx1 - nx0, height: ny1 - ny0)
-            
-            // Maintain minimum size
-            cpy.rect.size.width = max(10, cpy.rect.size.width)
-            cpy.rect.size.height = max(10, cpy.rect.size.height)
+            // Enforce content-aware minimum dimensions so text never clips or wraps letters.
+            let affectsLeft = handle == .rectTopLeft || handle == .rectBottomLeft
+            let affectsRight = handle == .rectTopRight || handle == .rectBottomRight
+            let affectsTop = handle == .rectTopLeft || handle == .rectTopRight
+            let affectsBottom = handle == .rectBottomLeft || handle == .rectBottomRight
+
+            var width = right - left
+            let minWidth = minimumWidthForCurrentText()
+            if width < minWidth {
+                if affectsLeft {
+                    left = right - minWidth
+                } else if affectsRight {
+                    right = left + minWidth
+                }
+                width = right - left
+            }
+
+            let requiredSize = requiredContentSize(for: width)
+            let minHeight = max(TextObject.hardMinHeight, requiredSize.height)
+            let height = bottom - top
+            if height < minHeight {
+                if affectsTop {
+                    top = bottom - minHeight
+                } else if affectsBottom {
+                    bottom = top + minHeight
+                }
+            }
+
+            // Reconstruct the rect after clamping so the dragged handle never crosses the opposite side.
+            cpy.rect = CGRect(x: left, y: top, width: right - left, height: bottom - top)
             return cpy
 
         default:
@@ -1097,5 +1175,3 @@ struct Line: Identifiable {
     var end: CGPoint
     var width: CGFloat
 }
-
-

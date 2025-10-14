@@ -846,9 +846,11 @@ extension ContentView {
                 ))
                 .font(.system(size: o.fontSize))
                 .foregroundStyle(Color(nsColor: o.textColor))
-                .background(o.bgEnabled ? Color(nsColor: o.bgColor) : Color.clear)
+                .padding(.horizontal, 10)
+                .padding(.vertical, 10)
                 .scrollContentBackground(.hidden)
-                .frame(width: o.rect.width, height: o.rect.height)
+                .frame(width: o.rect.width, height: o.rect.height, alignment: .topLeading)
+                .background(o.bgEnabled ? Color(nsColor: o.bgColor) : Color.clear)
                 .rotationEffect(Angle(radians: o.rotation))
                 .position(x: o.rect.midX, y: o.rect.midY)
                 .overlay(

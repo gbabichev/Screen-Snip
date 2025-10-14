@@ -113,6 +113,7 @@ open "Screen Snip.xcodeproj"
 - Fixed: HEIC not saving correclty in certain cases. 
 - Fixed: Objects not resizing correctly on edges. 
 - Fixed: Moving multiple objects resulted in glitchy behavior when hitting edges.
+- Fixed: Resizing the text box caused unwanted behavior
 
 ### 1.2.0
 - Added Blur tool. 
