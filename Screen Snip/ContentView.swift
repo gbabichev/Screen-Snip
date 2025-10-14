@@ -73,11 +73,11 @@ struct ContentView: View {
     
     
     
-    private var hasPermissionIssues: Bool {
+    var hasPermissionIssues: Bool {
         appDelegate.needsAccessibilityPermission || appDelegate.needsScreenRecordingPermission
     }
     
-    private var aboutOverlayBinding: Binding<Bool> {
+    var aboutOverlayBinding: Binding<Bool> {
         Binding(
             get: { appDelegate.showAboutOverlay },
             set: { newValue in
@@ -91,71 +91,71 @@ struct ContentView: View {
     
     
     // MARK: - Launch On Logon
-    private static let loginHelperIdentifier = "com.georgebabichev.Screen-Snip-Helper"
-    @State private var logonChecked: Bool = {
+    static let loginHelperIdentifier = "com.georgebabichev.Screen-Snip-Helper"
+    @State var logonChecked: Bool = {
         let loginService = SMAppService.loginItem(identifier: loginHelperIdentifier)
         return loginService.status == .enabled   // True if login item is currently enabled
     }()
     
     // MARK: - Vars
-    @Environment(\.openWindow) private var openWindow  // Add this line
-    @State private var showingFileExporter = false
-    @State private var exportImage: NSImage? = nil
+    @Environment(\.openWindow) var openWindow  // Add this line
+    @State var showingFileExporter = false
+    @State var exportImage: NSImage? = nil
     
-    @AppStorage("captureMode") private var captureModeRaw: String = CaptureMode.captureWithWindows.rawValue
+    @AppStorage("captureMode") var captureModeRaw: String = CaptureMode.captureWithWindows.rawValue
 
     
-    @State private var currentGeometrySize: CGSize = CGSize(width: 800, height: 600)
+    @State var currentGeometrySize: CGSize = CGSize(width: 800, height: 600)
     
     
-    @State private var thumbnailRefreshTrigger = UUID()
+    @State var thumbnailRefreshTrigger = UUID()
     
-    @State private var selectedImageSize: CGSize? = nil
-    @State private var imageReloadTrigger = UUID()
-    @State private var missingSnipURLs: Set<URL> = []
-    @State private var zoomLevel: Double = 1.0
-    @State private var pinchBaseZoom: Double? = nil
+    @State var selectedImageSize: CGSize? = nil
+    @State var imageReloadTrigger = UUID()
+    @State var missingSnipURLs: Set<URL> = []
+    @State var zoomLevel: Double = 1.0
+    @State var pinchBaseZoom: Double? = nil
     
-    @State private var showSettingsPopover = false
-    @AppStorage("preferredSaveFormat") private var preferredSaveFormatRaw: String = SaveFormat.png.rawValue
-    private var preferredSaveFormat: SaveFormat {
+    @State var showSettingsPopover = false
+    @AppStorage("preferredSaveFormat") var preferredSaveFormatRaw: String = SaveFormat.png.rawValue
+    var preferredSaveFormat: SaveFormat {
         get { SaveFormat(rawValue: preferredSaveFormatRaw) ?? .png }
         set { preferredSaveFormatRaw = newValue.rawValue }
     }
     
-    @AppStorage("hideDockIcon") private var hideDockIcon: Bool = false
-    @AppStorage("saveQuality") private var saveQuality: Double = 0.9
-    @AppStorage("saveDirectoryPath") private var saveDirectoryPath: String = ""
-    @AppStorage("downsampleToNonRetinaClipboard") private var downsampleToNonRetinaClipboard: Bool = true
-    @AppStorage("downsampleToNonRetinaForSave") private var downsampleToNonRetinaForSave: Bool = false
-    @AppStorage("imageDisplayMode") private var imageDisplayMode: String = "fit" // "actual" or "fit"
-    @AppStorage("saveOnCopy") private var saveOnCopy: Bool = false
+    @AppStorage("hideDockIcon") var hideDockIcon: Bool = false
+    @AppStorage("saveQuality") var saveQuality: Double = 0.9
+    @AppStorage("saveDirectoryPath") var saveDirectoryPath: String = ""
+    @AppStorage("downsampleToNonRetinaClipboard") var downsampleToNonRetinaClipboard: Bool = true
+    @AppStorage("downsampleToNonRetinaForSave") var downsampleToNonRetinaForSave: Bool = false
+    @AppStorage("imageDisplayMode") var imageDisplayMode: String = "fit" // "actual" or "fit"
+    @AppStorage("saveOnCopy") var saveOnCopy: Bool = false
     
     
-    private enum ImporterKind { case image, folder }
-    @State private var activeImporter: ImporterKind? = nil
+    enum ImporterKind { case image, folder }
+    @State var activeImporter: ImporterKind? = nil
     
-    @FocusState private var isTextEditorFocused: Bool
+    @FocusState var isTextEditorFocused: Bool
     
-    @State private var focusedTextID: UUID? = nil
-    @State private var showCopiedHUD = false
-    @State private var selectedTool: Tool = .pointer
+    @State var focusedTextID: UUID? = nil
+    @State var showCopiedHUD = false
+    @State var selectedTool: Tool = .pointer
     // Removed lines buffer; we now auto-commit each line on mouse-up.
-    @State private var draft: Line? = nil
-    @State private var draftRect: CGRect? = nil
-    @State private var cropDraftRect: CGRect? = nil
-    @State private var cropRect: CGRect? = nil
-    @State private var cropHandle: Handle = .none
-    @State private var cropDragStart: CGPoint? = nil
-    @State private var cropOriginalRect: CGRect? = nil
-    @AppStorage("strokeWidth") private var strokeWidth: Double = 3
-    @AppStorage("blurAmount") private var blurAmount: Double = 8
-    @AppStorage("lineColor") private var lineColorRaw: String = "#000000FF"
-    private var lineColor: NSColor {
+    @State var draft: Line? = nil
+    @State var draftRect: CGRect? = nil
+    @State var cropDraftRect: CGRect? = nil
+    @State var cropRect: CGRect? = nil
+    @State var cropHandle: Handle = .none
+    @State var cropDragStart: CGPoint? = nil
+    @State var cropOriginalRect: CGRect? = nil
+    @AppStorage("strokeWidth") var strokeWidth: Double = 3
+    @AppStorage("blurAmount") var blurAmount: Double = 8
+    @AppStorage("lineColor") var lineColorRaw: String = "#000000FF"
+    var lineColor: NSColor {
         get { NSColor(hexRGBA: lineColorRaw) ?? .black }
         set { lineColorRaw = newValue.toHexRGBA() }
     }
-    private var lineColorBinding: Binding<NSColor> {
+    var lineColorBinding: Binding<NSColor> {
         Binding(
             get: { lineColor },
             set: { newValue in
@@ -163,113 +163,113 @@ struct ContentView: View {
             }
         )
     }
-    @AppStorage("rectColor") private var rectColorRaw: String = "#000000FF"
-    private var rectColor: NSColor {
+    @AppStorage("rectColor") var rectColorRaw: String = "#000000FF"
+    var rectColor: NSColor {
         get { NSColor(hexRGBA: rectColorRaw) ?? .black }
         set { rectColorRaw = newValue.toHexRGBA() }
     }
-    private var rectColorBinding: Binding<NSColor> {
+    var rectColorBinding: Binding<NSColor> {
         Binding(
             get: { rectColor },
             set: { newValue in rectColorRaw = newValue.toHexRGBA() }
         )
     }
-    @AppStorage("ovalColor") private var ovalColorRaw: String = "#000000FF"
-    private var ovalColor: NSColor {
+    @AppStorage("ovalColor") var ovalColorRaw: String = "#000000FF"
+    var ovalColor: NSColor {
         get { NSColor(hexRGBA: ovalColorRaw) ?? .black }
         set { ovalColorRaw = newValue.toHexRGBA() }
     }
-    private var ovalColorBinding: Binding<NSColor> {
+    var ovalColorBinding: Binding<NSColor> {
         Binding(
             get: { ovalColor },
             set: { newValue in ovalColorRaw = newValue.toHexRGBA() }
         )
     }
-    @State private var lineHasArrow: Bool = false
+    @State var lineHasArrow: Bool = false
     // Snips persisted on disk (newest first). Each element is a file URL to a PNG.
-    @State private var SnipURLs: [URL] = []
-    @State private var selectedSnipURL: URL? = nil
-    @State private var objects: [Drawable] = []
-    @State private var selectedObjectID: UUID? = nil
-    @State private var selectedObjectIDs: Set<UUID> = [] // Multi-selection support
-    @State private var selectionRect: CGRect? = nil // Rectangle selection for pointer tool
-    @State private var selectionDragStart: CGPoint? = nil // Start point for selection rectangle
-    @State private var activeHandle: Handle = .none
-    @State private var dragStartPoint: CGPoint? = nil
+    @State var SnipURLs: [URL] = []
+    @State var selectedSnipURL: URL? = nil
+    @State var objects: [Drawable] = []
+    @State var selectedObjectID: UUID? = nil
+    @State var selectedObjectIDs: Set<UUID> = [] // Multi-selection support
+    @State var selectionRect: CGRect? = nil // Rectangle selection for pointer tool
+    @State var selectionDragStart: CGPoint? = nil // Start point for selection rectangle
+    @State var activeHandle: Handle = .none
+    @State var dragStartPoint: CGPoint? = nil
     
     // Undo/Redo stacks of full images and overlays (save-in-place, memory-bounded by user behavior)
-    private struct Snipshot {
+    struct Snipshot {
         let imageURL: URL?
         let objects: [Drawable]
     }
     
-    @State private var undoStack: [Snipshot] = []
-    @State private var redoStack: [Snipshot] = []
-    @State private var pushedDragUndo = false
-    @State private var keyMonitor: Any? = nil
+    @State var undoStack: [Snipshot] = []
+    @State var redoStack: [Snipshot] = []
+    @State var pushedDragUndo = false
+    @State var keyMonitor: Any? = nil
     
-    @AppStorage("textFontSize") private var textFontSize: Double = 18
+    @AppStorage("textFontSize") var textFontSize: Double = 18
     
-    @AppStorage("textColor") private var textColorRaw: String = "#000000FF"
-    private var textColor: NSColor {
+    @AppStorage("textColor") var textColorRaw: String = "#000000FF"
+    var textColor: NSColor {
         get { NSColor(hexRGBA: textColorRaw) ?? .black }
         set { textColorRaw = newValue.toHexRGBA() }
     }
-    private var textColorBinding: Binding<NSColor> {
+    var textColorBinding: Binding<NSColor> {
         Binding(get: { textColor }, set: { textColorRaw = $0.toHexRGBA() })
     }
     
-    @AppStorage("textBGEnabled") private var textBGEnabled: Bool = false
+    @AppStorage("textBGEnabled") var textBGEnabled: Bool = false
 
     
-    @AppStorage("textBGColor") private var textBGColorRaw: String = "#00000099"
-    private var textBGColor: NSColor {
+    @AppStorage("textBGColor") var textBGColorRaw: String = "#00000099"
+    var textBGColor: NSColor {
         get { NSColor(hexRGBA: textBGColorRaw) ?? NSColor.black.withAlphaComponent(0.6) }
         set { textBGColorRaw = newValue.toHexRGBA() }
     }
-    private var textBGColorBinding: Binding<NSColor> {
+    var textBGColorBinding: Binding<NSColor> {
         Binding(get: { textBGColor }, set: { textBGColorRaw = $0.toHexRGBA() })
     }
     
-    @AppStorage("badgeColor") private var badgeColorRaw: String = "#FF0000FF"
-    private var badgeColor: NSColor {
+    @AppStorage("badgeColor") var badgeColorRaw: String = "#FF0000FF"
+    var badgeColor: NSColor {
         get { NSColor(hexRGBA: badgeColorRaw) ?? .red }
         set { badgeColorRaw = newValue.toHexRGBA() }
     }
-    private var badgeColorBinding: Binding<NSColor> {
+    var badgeColorBinding: Binding<NSColor> {
         Binding(get: { badgeColor }, set: { badgeColorRaw = $0.toHexRGBA() })
     }
     
-    @State private var badgeCount: Int = 0
+    @State var badgeCount: Int = 0
     
-    @AppStorage("highlighterColor") private var highlighterColorRaw: String = NSColor.systemYellow.withAlphaComponent(0.35).toHexRGBA()
-    private var highlighterColor: NSColor {
+    @AppStorage("highlighterColor") var highlighterColorRaw: String = NSColor.systemYellow.withAlphaComponent(0.35).toHexRGBA()
+    var highlighterColor: NSColor {
         get { NSColor(hexRGBA: highlighterColorRaw) ?? NSColor.systemYellow.withAlphaComponent(0.35) }
         set { highlighterColorRaw = newValue.toHexRGBA() }
     }
-    private var highlighterColorBinding: Binding<NSColor> {
+    var highlighterColorBinding: Binding<NSColor> {
         Binding(get: { highlighterColor }, set: { highlighterColorRaw = $0.toHexRGBA() })
     }
     
-    @State private var lastFittedSize: CGSize? = nil
-    @State private var objectSpaceSize: CGSize? = nil  // tracks the UI coordinate space size the objects are authored in
+    @State var lastFittedSize: CGSize? = nil
+    @State var objectSpaceSize: CGSize? = nil  // tracks the UI coordinate space size the objects are authored in
 
     // Cache of pixelated images for blur objects
-    @State private var blurSnapshots: [UUID: NSImage] = [:]
+    @State var blurSnapshots: [UUID: NSImage] = [:]
 
-    @State private var lastDraftTick: CFTimeInterval = 0
+    @State var lastDraftTick: CFTimeInterval = 0
     
-    @State private var lastTextEditDoubleClickAt: CFTimeInterval = 0
+    @State var lastTextEditDoubleClickAt: CFTimeInterval = 0
     
     // Throttle rapid draft updates to ~90 Hz (for drag gestures)
-    private func allowDraftTick(interval: Double = 1.0/90.0) -> Bool {
+    func allowDraftTick(interval: Double = 1.0/90.0) -> Bool {
         let now = CACurrentMediaTime()
         if now - lastDraftTick < interval { return false }
         lastDraftTick = now
         return true
     }
     
-    private func getActualDisplaySize(_ pixelSize: CGSize) -> CGSize {
+    func getActualDisplaySize(_ pixelSize: CGSize) -> CGSize {
         guard let url = selectedSnipURL else { return pixelSize }
         
         // Load NSImage to get proper point size (retina-aware)
@@ -285,7 +285,7 @@ struct ContentView: View {
         return pixelSize
     }
     
-    private func authorRectToPixelBL(
+    func authorRectToPixelBL(
         authorRect: CGRect,
         baseImage: NSImage,
         selectedImageSize: CGSize?,
@@ -1613,11 +1613,11 @@ struct ContentView: View {
     }
     
 
-    private enum NavigationDirection {
+    enum NavigationDirection {
         case previous, next
     }
 
-    private func navigateToAdjacentThumbnail(direction: NavigationDirection) {
+    func navigateToAdjacentThumbnail(direction: NavigationDirection) {
         guard !SnipURLs.isEmpty else { return }
         
         let currentIndex: Int
@@ -1674,7 +1674,7 @@ struct ContentView: View {
 
     // MARK: - Launch On Logon Helpers
     // Handles enabling or disabling the login helper at login
-    private func toggleLaunchAtLogin(_ enabled: Bool) {
+    func toggleLaunchAtLogin(_ enabled: Bool) {
         // Create a reference to the login item service using the static identifier
         let loginService = SMAppService.loginItem(identifier: Self.loginHelperIdentifier)
         do {
@@ -1692,7 +1692,7 @@ struct ContentView: View {
     }
 
     // Utility to show an error alert dialog to the user
-    private func showErrorAlert(message: String, info: String? = nil) {
+    func showErrorAlert(message: String, info: String? = nil) {
         let alert = NSAlert()                  // Create a new alert
         alert.messageText = message            // Set the main alert message
         if let info = info {                   // Optionally set additional error details
@@ -1707,7 +1707,7 @@ struct ContentView: View {
     // MARK: - Notification Handlers
     
     // Merge all fs into a single stream the view can subscribe to.
-    private var notificationStream: AnyPublisher<Notification, Never> {
+    var notificationStream: AnyPublisher<Notification, Never> {
         let nc = NotificationCenter.default
         return Publishers.MergeMany([
             nc.publisher(for: Notification.Name("com.georgebabichev.screenSnip.beginSnipFromIntent")),
@@ -1726,7 +1726,7 @@ struct ContentView: View {
     }
     
     // Central handler so the `.onReceive` body stays tiny.
-    private func handleAppNotification(_ note: Notification) {
+    func handleAppNotification(_ note: Notification) {
         switch note.name {
         case Notification.Name("com.georgebabichev.screenSnip.beginSnipFromIntent"):
             onBeginSnipFromIntent(note)
@@ -1764,7 +1764,7 @@ struct ContentView: View {
     }
     
     
-    private func onBeginSnipFromIntent(_ note: Notification) {
+    func onBeginSnipFromIntent(_ note: Notification) {
         print("🔥 [DEBUG] ContentView received beginSnipFromIntent notification")
         
         // Extract URL and activation flag from userInfo
@@ -1807,13 +1807,13 @@ struct ContentView: View {
         selectedImageSize = probeImageSize(url)
         updateMenuState()
     }
-    private func onSelectToolNotification(_ note: Notification) {
+    func onSelectToolNotification(_ note: Notification) {
         guard let raw = note.userInfo?["tool"] as? String else { return }
         print(raw)
         handleSelectTool(raw)
     }
-    private func onOpenImageFile() { activeImporter = .image}
-    private func onCopyToClipboard() {
+    func onOpenImageFile() { activeImporter = .image}
+    func onCopyToClipboard() {
         guard selectedSnipURL != nil else { return }
         flattenRefreshAndCopy()
         selectedTool = .pointer
@@ -1824,17 +1824,17 @@ struct ContentView: View {
         cropHandle = .none
         focusedTextID = nil
     }
-    private func onPerformUndo() { performUndo() }
-    private func onPerformRedo() { performRedo() }
-    private func onSaveImage() {
+    func onPerformUndo() { performUndo() }
+    func onPerformRedo() { performRedo() }
+    func onSaveImage() {
         guard selectedSnipURL != nil else { return }
         flattenAndSaveInPlace()
     }
-    private func onSaveAsImage() {
+    func onSaveAsImage() {
         guard selectedSnipURL != nil else { return }
         flattenAndSaveAs()
     }
-    private func onZoomNotification(_ notification: Notification) {
+    func onZoomNotification(_ notification: Notification) {
         switch notification.name {
         case .zoomIn:    zoomLevel = min(zoomLevel * 1.25, 3.0)
         case .zoomOut:   zoomLevel = max(zoomLevel / 1.25, 1.0)
@@ -1844,13 +1844,13 @@ struct ContentView: View {
     }
     
     
-    private func updateMenuState() {
+    func updateMenuState() {
         MenuState.shared.canUndo = !undoStack.isEmpty
         MenuState.shared.canRedo = !redoStack.isEmpty
         MenuState.shared.hasSelectedImage = selectedSnipURL != nil
     }
     
-    private func reloadCurrentImage() {
+    func reloadCurrentImage() {
         guard let url = selectedSnipURL else { return }
         
         // Force AsyncImage to reload by changing the trigger
@@ -1865,7 +1865,7 @@ struct ContentView: View {
         
     
     /// Probe image dimensions without instantiating NSImage (low RAM)
-    private func probeImageSize(_ url: URL) -> CGSize? {
+    func probeImageSize(_ url: URL) -> CGSize? {
         guard let src = CGImageSourceCreateWithURL(url as CFURL, nil),
               let props = CGImageSourceCopyPropertiesAtIndex(src, 0, nil) as? [CFString: Any] else { return nil }
         let w = (props[kCGImagePropertyPixelWidth]  as? NSNumber)?.doubleValue ?? 0
@@ -1874,7 +1874,7 @@ struct ContentView: View {
     }
     
     /// Returns the pixel dimensions of an NSImage by inspecting its best bitmap representation.
-    private func pixelSize(of image: NSImage) -> CGSize {
+    func pixelSize(of image: NSImage) -> CGSize {
         if let bestRep = image.representations
             .compactMap({ $0 as? NSBitmapImageRep })
             .max(by: { $0.pixelsWide * $0.pixelsHigh < $1.pixelsWide * $1.pixelsHigh }) {
@@ -1888,7 +1888,7 @@ struct ContentView: View {
     ///   - crpRect: Rect drawn in fitted-space (top-left origin inside SwiftUI, but our math uses sizes so origin is fine).
     ///   - fitted: The size of the fitted image as shown in the UI.
     ///   - imagePx: The pixel size of the underlying image (CGImage/bitmap rep).
-    private func fittedRectToImageBottomLeftRect(crpRect: CGRect, fitted: CGSize, imagePx: CGSize) -> CGRect {
+    func fittedRectToImageBottomLeftRect(crpRect: CGRect, fitted: CGSize, imagePx: CGSize) -> CGRect {
         let sx = imagePx.width / max(1, fitted.width)
         let sy = imagePx.height / max(1, fitted.height)
         
@@ -1988,7 +1988,7 @@ struct ContentView: View {
     }
         
     // Centralized tool switching used by menu notifications
-    private func handleSelectTool(_ raw: String) {
+    func handleSelectTool(_ raw: String) {
         switch raw {
         case "pointer":
             selectedTool = .pointer
@@ -2022,7 +2022,7 @@ struct ContentView: View {
     }
     
     // Settings - Downsample from Retina
-    private func isRetinaImage(_ image: NSImage) -> Bool {
+    func isRetinaImage(_ image: NSImage) -> Bool {
         guard let rep = image.representations.first as? NSBitmapImageRep else { return false }
         
         let pointSize = image.size
@@ -2034,7 +2034,7 @@ struct ContentView: View {
         return scaleX > 1.5 || scaleY > 1.5
     }
     
-    private func downsampleImage(_ image: NSImage) -> NSImage {
+    func downsampleImage(_ image: NSImage) -> NSImage {
         let pointSize = image.size
 
         let rep = NSBitmapImageRep(bitmapDataPlanes: nil,
@@ -2061,7 +2061,7 @@ struct ContentView: View {
     }
 
     /// Generate a pixelated snapshot for a blur object by rendering current state
-    private func generateBlurSnapshot(for blurObj: BlurRectObject) {
+    func generateBlurSnapshot(for blurObj: BlurRectObject) {
         guard let url = selectedSnipURL else { return }
         guard let base = NSImage(contentsOf: url) else { return }
 
@@ -2144,7 +2144,7 @@ struct ContentView: View {
 
 
 
-    private func cropHandleHitTest(_ rect: CGRect, at p: CGPoint) -> Handle {
+    func cropHandleHitTest(_ rect: CGRect, at p: CGPoint) -> Handle {
         let r: CGFloat = 8
         let tl = CGRect(x: rect.minX-r, y: rect.minY-r, width: 2*r, height: 2*r)
         let tr = CGRect(x: rect.maxX-r, y: rect.minY-r, width: 2*r, height: 2*r)
@@ -2157,7 +2157,7 @@ struct ContentView: View {
         return .none
     }
     
-    private func resizeRect(_ rect: CGRect, handle: Handle, to p: CGPoint) -> CGRect {
+    func resizeRect(_ rect: CGRect, handle: Handle, to p: CGPoint) -> CGRect {
         var c = rect
         switch handle {
         case .rectTopLeft:
@@ -2177,7 +2177,7 @@ struct ContentView: View {
         return c
     }
     
-    private func copyToPasteboard(_ image: NSImage) {
+    func copyToPasteboard(_ image: NSImage) {
         // Capture necessary state
         let objectsSnapshot = objects
         let saveOnCopy = UserDefaults.standard.bool(forKey: "saveOnCopy")
@@ -2290,7 +2290,7 @@ struct ContentView: View {
         }
     }
     /// Flattens the current canvas into the image, refreshes state, then copies the latest to the clipboard.
-    private func flattenRefreshAndCopy() {
+    func flattenRefreshAndCopy() {
         // 1) Flatten into currentImage (and save) using existing logic
         //flattenAndSaveInPlace()
         // 2) On the next run loop, copy the refreshed image so we don't grab stale state
@@ -2301,7 +2301,7 @@ struct ContentView: View {
         }
     }
     
-    private func pushUndoSnipshot() {
+    func pushUndoSnipshot() {
         undoStack.append(Snipshot(imageURL: selectedSnipURL, objects: objects))
         // Limit for 24/7 operation
         while undoStack.count > 3 { undoStack.removeFirst() }
@@ -2314,7 +2314,7 @@ struct ContentView: View {
     // MARK: - Save / Save As
     
     // Reset the custom save folder back to the default Pictures/Screen Snip directory.
-    private func resetSaveDirectoryToDefault() {
+    func resetSaveDirectoryToDefault() {
         // Remove any previously stored security-scoped bookmark + path
         UserDefaults.standard.removeObject(forKey: "saveDirectoryBookmark")
         saveDirectoryPath = ""
@@ -2324,7 +2324,7 @@ struct ContentView: View {
     }
     
     /// Save As… — prompts for a destination, updates gallery if under Snips folder.
-    private func saveAsCurrent() {
+    func saveAsCurrent() {
         guard let img = currentImage else { return }
         let panel = NSSavePanel()
         panel.allowedContentTypes = [preferredSaveFormat.utType]
@@ -2352,7 +2352,7 @@ struct ContentView: View {
     }
     
     /// If saved file is within our Snips directory, update the gallery list.
-    private func refreshGalleryAfterSaving(to url: URL) {
+    func refreshGalleryAfterSaving(to url: URL) {
         if let dir = SnipsDirectory(), url.path.hasPrefix(dir.path) {
             loadExistingSnips()
         }
@@ -2363,7 +2363,7 @@ struct ContentView: View {
     }
     
     
-    private func lineGesture(insetOrigin: CGPoint, fitted: CGSize, author: CGSize) -> some Gesture {
+    func lineGesture(insetOrigin: CGPoint, fitted: CGSize, author: CGSize) -> some Gesture {
         DragGesture(minimumDistance: 0)
             .onChanged { value in
                 guard allowDraftTick() else { return }
@@ -2473,7 +2473,7 @@ struct ContentView: View {
     }
     
     @inline(__always)
-    private func normalizedAngleDelta(from a: CGFloat, to b: CGFloat) -> CGFloat {
+    func normalizedAngleDelta(from a: CGFloat, to b: CGFloat) -> CGFloat {
         var d = b - a
         let twoPi = CGFloat.pi * 2
         // Wrap into [-π, π]
@@ -2485,7 +2485,7 @@ struct ContentView: View {
         return d
     }
 
-    private func rectGesture(insetOrigin: CGPoint, fitted: CGSize, author: CGSize) -> some Gesture {
+    func rectGesture(insetOrigin: CGPoint, fitted: CGSize, author: CGSize) -> some Gesture {
         DragGesture(minimumDistance: 0)
             .onChanged { value in
                 guard allowDraftTick() else { return }
@@ -2657,7 +2657,7 @@ struct ContentView: View {
             }
     }
 
-    private func blurGesture(insetOrigin: CGPoint, fitted: CGSize, author: CGSize) -> some Gesture {
+    func blurGesture(insetOrigin: CGPoint, fitted: CGSize, author: CGSize) -> some Gesture {
         DragGesture(minimumDistance: 0)
             .onChanged { value in
                 guard allowDraftTick() else { return }
@@ -2835,7 +2835,7 @@ struct ContentView: View {
             }
     }
 
-    private func ovalGesture(insetOrigin: CGPoint, fitted: CGSize, author: CGSize) -> some Gesture {
+    func ovalGesture(insetOrigin: CGPoint, fitted: CGSize, author: CGSize) -> some Gesture {
         DragGesture(minimumDistance: 0)
             .onChanged { value in
                 guard allowDraftTick() else { return }
@@ -2916,7 +2916,7 @@ struct ContentView: View {
             }
     }
     
-    private func highlightGesture(insetOrigin: CGPoint, fitted: CGSize, author: CGSize) -> some Gesture {
+    func highlightGesture(insetOrigin: CGPoint, fitted: CGSize, author: CGSize) -> some Gesture {
         DragGesture(minimumDistance: 0)
             .onChanged { value in
                 guard allowDraftTick() else { return }
@@ -3009,10 +3009,10 @@ struct ContentView: View {
     }
     
     // Add these state variables at the top of ContentView with the other rotation anchors
-    @State private var textRotateStartAngle: CGFloat? = nil
-    @State private var textRotateStartValue: CGFloat? = nil
+    @State var textRotateStartAngle: CGFloat? = nil
+    @State var textRotateStartValue: CGFloat? = nil
 
-    private func textGesture(insetOrigin: CGPoint, fitted: CGSize, author: CGSize) -> some Gesture {
+    func textGesture(insetOrigin: CGPoint, fitted: CGSize, author: CGSize) -> some Gesture {
         DragGesture(minimumDistance: 0)
             .onChanged { value in
                 guard allowDraftTick() else { return }
@@ -3224,1563 +3224,14 @@ struct ContentView: View {
     
     
     // Rotation gesture anchors for Rect (keep one anchor per drag)
-    @State private var rectRotateStartAngle: CGFloat? = nil
-    @State private var rectRotateStartValue: CGFloat? = nil
-    @State private var imageRotateStartAngle: CGFloat? = nil
-    @State private var imageRotateStartValue: CGFloat? = nil
-    @State private var blurRotateStartAngle: CGFloat? = nil
-    @State private var blurRotateStartValue: CGFloat? = nil
-
-    private func pointerGesture(insetOrigin: CGPoint, fitted: CGSize, author: CGSize) -> some Gesture {
-        DragGesture(minimumDistance: 0)
-            .onChanged { value in
-                guard allowDraftTick() else { return }
-                let pFit = CGPoint(x: value.location.x - insetOrigin.x, y: value.location.y - insetOrigin.y)
-                let p = fittedToAuthorPoint(pFit, fitted: fitted, author: author)
-                if dragStartPoint == nil {
-                    dragStartPoint = p
-
-                    // First check if clicking inside multi-selection bounding box
-                    if !selectedObjectIDs.isEmpty, let boundingBox = boundingBoxOfSelectedObjects(), boundingBox.contains(p) {
-                        // Clicked inside bounding box of multi-selection - prepare to move all
-                        selectedObjectID = nil  // Don't show single selection handles
-                        activeHandle = .none
-                        focusedTextID = nil
-                    } else if let idx = objects.firstIndex(where: { obj in
-                        switch obj {
-                        case .line(let o): return o.handleHitTest(p) != .none || o.hitTest(p)
-                        case .rect(let o): return o.handleHitTest(p) != .none || o.hitTest(p)
-                        case .oval(let o): return o.handleHitTest(p) != .none || o.hitTest(p)
-                        case .text(let o): return o.handleHitTest(p) != .none || o.hitTest(p)
-                        case .badge(let o): return o.handleHitTest(p) != .none || o.hitTest(p)
-                        case .highlight(let o): return o.handleHitTest(p) != .none || o.hitTest(p)
-                        case .image(let o): return o.handleHitTest(p) != .none || o.hitTest(p)
-                        case .blur(let o): return o.handleHitTest(p) != .none || o.hitTest(p)
-                        }
-                    }) {
-                        let clickedID = objects[idx].id
-                        // Check if clicked object is part of multi-selection
-                        if !selectedObjectIDs.isEmpty && selectedObjectIDs.contains(clickedID) {
-                            // Clicked on a multi-selected object - prepare to move all
-                            selectedObjectID = nil  // Don't show single selection handles
-                            activeHandle = .none
-                        } else {
-                            // Single object selection
-                            selectedObjectID = clickedID
-                            selectedObjectIDs.removeAll()  // Clear multi-selection
-                            switch objects[idx] {
-                            case .line(let o): activeHandle = o.handleHitTest(p)
-                            case .rect(let o): activeHandle = o.handleHitTest(p)
-                            case .oval(let o): activeHandle = o.handleHitTest(p)
-                            case .text(let o): activeHandle = o.handleHitTest(p)
-                            case .badge(let o): activeHandle = o.handleHitTest(p)
-                            case .highlight(let o): activeHandle = o.handleHitTest(p)
-                            case .image(let o): activeHandle = o.handleHitTest(p)
-                            case .blur(let o): activeHandle = o.handleHitTest(p)
-                            }
-                        }
-                        // On single click or drag, always clear focus (do not enter edit mode)
-                        focusedTextID = nil
-
-                    } else {
-                        // No object clicked - start selection rectangle
-                        selectedObjectID = nil
-                        activeHandle = .none
-                        focusedTextID = nil
-                        selectionDragStart = p
-                        selectedObjectIDs.removeAll()
-                    }
-                } else if let selStart = selectionDragStart {
-                    // Update selection rectangle
-                    let minX = min(selStart.x, p.x)
-                    let minY = min(selStart.y, p.y)
-                    let maxX = max(selStart.x, p.x)
-                    let maxY = max(selStart.y, p.y)
-                    selectionRect = CGRect(x: minX, y: minY, width: maxX - minX, height: maxY - minY)
-                } else if !selectedObjectIDs.isEmpty, let start = dragStartPoint {
-                    // Move all selected objects
-                    let desiredDelta = CGSize(width: p.x - start.x, height: p.y - start.y)
-                    if !pushedDragUndo {
-                        pushUndoSnipshot()
-                        pushedDragUndo = true
-                    }
-
-                    var resolvedDelta = desiredDelta
-                    var selectedIndices: [Int] = []
-
-                    for idx in objects.indices where selectedObjectIDs.contains(objects[idx].id) {
-                        selectedIndices.append(idx)
-
-                        let allowed: CGSize
-                        switch objects[idx] {
-                        case .line(let o):
-                            allowed = clampedDeltaForLine(o, delta: desiredDelta, in: author)
-                        case .rect(let o):
-                            allowed = o.rotation != 0
-                                ? clampedDeltaForRotatedRect(o.rect, rotation: o.rotation, delta: desiredDelta, in: author)
-                                : clampedDeltaForRect(o.rect, delta: desiredDelta, in: author)
-                        case .oval(let o):
-                            allowed = clampedDeltaForRect(o.rect, delta: desiredDelta, in: author)
-                        case .text(let o):
-                            allowed = o.rotation != 0
-                                ? clampedDeltaForRotatedRect(o.rect, rotation: o.rotation, delta: desiredDelta, in: author)
-                                : clampedDeltaForRect(o.rect, delta: desiredDelta, in: author)
-                        case .badge(let o):
-                            allowed = clampedDeltaForRect(o.rect, delta: desiredDelta, in: author)
-                        case .highlight(let o):
-                            allowed = clampedDeltaForRect(o.rect, delta: desiredDelta, in: author)
-                        case .image(let o):
-                            allowed = o.rotation != 0
-                                ? clampedDeltaForRotatedRect(o.rect, rotation: o.rotation, delta: desiredDelta, in: author)
-                                : clampedDeltaForRect(o.rect, delta: desiredDelta, in: author)
-                        case .blur(let o):
-                            allowed = o.rotation != 0
-                                ? clampedDeltaForRotatedRect(o.rect, rotation: o.rotation, delta: desiredDelta, in: author)
-                                : clampedDeltaForRect(o.rect, delta: desiredDelta, in: author)
-                        }
-
-                        resolvedDelta.width = adjustedDeltaComponent(desired: desiredDelta.width, current: resolvedDelta.width, allowed: allowed.width)
-                        resolvedDelta.height = adjustedDeltaComponent(desired: desiredDelta.height, current: resolvedDelta.height, allowed: allowed.height)
-                    }
-
-                    if resolvedDelta.width != 0 || resolvedDelta.height != 0 {
-                        for idx in selectedIndices {
-                            switch objects[idx] {
-                            case .line(var o):
-                                o = o.moved(by: resolvedDelta)
-                                objects[idx] = .line(o)
-                            case .rect(var o):
-                                o = o.moved(by: resolvedDelta)
-                                objects[idx] = .rect(o)
-                            case .oval(var o):
-                                o = o.moved(by: resolvedDelta)
-                                objects[idx] = .oval(o)
-                            case .text(var o):
-                                o = o.moved(by: resolvedDelta)
-                                objects[idx] = .text(o)
-                            case .badge(var o):
-                                o = o.moved(by: resolvedDelta)
-                                objects[idx] = .badge(o)
-                            case .highlight(var o):
-                                o = o.moved(by: resolvedDelta)
-                                objects[idx] = .highlight(o)
-                            case .image(var o):
-                                o = o.moved(by: resolvedDelta)
-                                objects[idx] = .image(o)
-                            case .blur(var o):
-                                o = o.moved(by: resolvedDelta)
-                                objects[idx] = .blur(o)
-                            }
-                        }
-                    }
-
-                    dragStartPoint = p
-                } else if let sel = selectedObjectID, let start = dragStartPoint, let idx = objects.firstIndex(where: { $0.id == sel }) {
-                    let delta = CGSize(width: p.x - start.x, height: p.y - start.y)
-                    if !pushedDragUndo {
-                        pushUndoSnipshot()
-                        pushedDragUndo = true
-                    }
-                    switch objects[idx] {
-                    case .line(let o):
-                        if activeHandle == .none {
-                            // Move whole line without warping — clamp the delta so both endpoints remain inside the canvas
-                            // Clamp X
-                            let proposedStartX = o.start.x + delta.width
-                            let proposedEndX   = o.end.x   + delta.width
-                            var dx = delta.width
-                            let minX = min(proposedStartX, proposedEndX)
-                            let maxX = max(proposedStartX, proposedEndX)
-                            if minX < 0 { dx -= minX }
-                            if maxX > author.width { dx -= (maxX - author.width) }
-                            // Clamp Y
-                            let proposedStartY = o.start.y + delta.height
-                            let proposedEndY   = o.end.y   + delta.height
-                            var dy = delta.height
-                            let minY = min(proposedStartY, proposedEndY)
-                            let maxY = max(proposedStartY, proposedEndY)
-                            if minY < 0 { dy -= minY }
-                            if maxY > author.height { dy -= (maxY - author.height) }
-                            let clampedDelta = CGSize(width: dx, height: dy)
-                            let moved = o.moved(by: clampedDelta)
-                            objects[idx] = .line(moved)
-                        } else {
-                            // Resizing endpoint: clamp that endpoint after resize
-                            var updated = o.resizing(activeHandle, to: p)
-                            updated.start = clampPoint(updated.start, in: author)
-                            updated.end   = clampPoint(updated.end,   in: author)
-                            objects[idx] = .line(updated)
-                        }
-                    case .rect(let o):
-                        var updated = o
-                        if activeHandle == .none {
-                            print("DEBUG pointerGesture rect move: rotation=\(o.rotation), delta=\(delta)")
-                            // Clamp delta before moving to prevent going off-canvas (works for both rotated and non-rotated)
-                            let moveDelta = o.rotation != 0
-                                ? clampedDeltaForRotatedRect(o.rect, rotation: o.rotation, delta: delta, in: author)
-                                : clampedDeltaForRect(o.rect, delta: delta, in: author)
-                            print("DEBUG pointerGesture rect move: moveDelta=\(moveDelta)")
-                            updated = o.moved(by: moveDelta)
-                        } else if activeHandle == .rotate {
-                            // Absolute-angle rotation anchored at gesture begin; no per-tick anchor drift
-                            let c = CGPoint(x: o.rect.midX, y: o.rect.midY)
-
-                            // Initialize anchors on first rotate tick for this drag
-                            if rectRotateStartAngle == nil || rectRotateStartValue == nil {
-                                // Use the initial dragStartPoint as the pointer anchor at mouse-down
-                                if let s = dragStartPoint {
-                                    rectRotateStartAngle = atan2(s.y - c.y, s.x - c.x)
-                                } else {
-                                    rectRotateStartAngle = atan2(p.y - c.y, p.x - c.x)
-                                }
-                                rectRotateStartValue = o.rotation
-                            }
-
-                            guard let startAngle = rectRotateStartAngle, let baseRotation = rectRotateStartValue else {
-                                return
-                            }
-
-                            // Current pointer angle
-                            let currAngle = atan2(p.y - c.y, p.x - c.x)
-
-                            // Absolute target = base rotation + delta from initial pointer angle to current pointer angle
-                            var target = baseRotation + normalizedAngleDelta(from: startAngle, to: currAngle)
-
-                            // Modifier-based snapping: Option=1°, Command=5°, Shift=15°; none=free
-                            let mods = NSEvent.modifierFlags
-                            if mods.contains(.option) {
-                                let inc = CGFloat.pi / 180 // 1°
-                                target = round(target / inc) * inc
-                            } else if mods.contains(.command) {
-                                let inc = CGFloat.pi / 36 // 5°
-                                target = round(target / inc) * inc
-                            } else if mods.contains(.shift) {
-                                let inc = CGFloat.pi / 12 // 15°
-                                target = round(target / inc) * inc
-                            }
-
-                            updated.rotation = target
-
-                            // Do NOT clamp rect while rotating; geometry doesn't change
-                            objects[idx] = .rect(updated)
-                            // Important: keep anchors stable; do not mutate dragStartPoint here
-                            return
-                        } else {
-                            // For resizing, use unclamped point for rotated objects (clamping before resize breaks the math)
-                            let resizePoint = o.rotation != 0 ? p : clampPoint(p, in: author)
-                            let resized = o.resizing(activeHandle, to: resizePoint)
-
-                            // For rotated objects, check if resize would go off-canvas
-                            if o.rotation != 0 {
-                                // Only apply resize if it stays within bounds
-                                if rotatedRectFitsInBounds(resized.rect, rotation: resized.rotation, in: author) {
-                                    updated = resized
-                                }
-                                // If it doesn't fit, keep the old rect (updated = o, which was set earlier)
-                            } else {
-                                // For non-rotated, apply normal clamping
-                                updated = resized
-                                updated.rect = clampRect(updated.rect, in: author)
-                            }
-                        }
-                        objects[idx] = .rect(updated)
-                    case .oval(let o):
-                        let clampedP = clampPoint(p, in: author)
-                        let updated = (activeHandle == .none) ? o.moved(by: delta) : o.resizing(activeHandle, to: clampedP)
-                        let clamped = clampRect(updated.rect, in: author)
-                        var u = updated; u.rect = clamped
-                        objects[idx] = .oval(u)
-                    case .text(let o):
-                        var updated = o
-                        if activeHandle == .none {
-                            // Clamp delta before moving to prevent going off-canvas (works for both rotated and non-rotated)
-                            let moveDelta = o.rotation != 0
-                                ? clampedDeltaForRotatedRect(o.rect, rotation: o.rotation, delta: delta, in: author)
-                                : clampedDeltaForRect(o.rect, delta: delta, in: author)
-                            updated = o.moved(by: moveDelta)
-                        } else if activeHandle == .rotate {
-                            // Absolute-angle rotation anchored at gesture begin; no per-tick anchor drift
-                            let c = CGPoint(x: o.rect.midX, y: o.rect.midY)
-
-                            // Initialize anchors on first rotate tick for this drag
-                            if textRotateStartAngle == nil || textRotateStartValue == nil {
-                                // Use the initial dragStartPoint as the pointer anchor at mouse-down
-                                if let s = dragStartPoint {
-                                    textRotateStartAngle = atan2(s.y - c.y, s.x - c.x)
-                                } else {
-                                    textRotateStartAngle = atan2(p.y - c.y, p.x - c.x)
-                                }
-                                textRotateStartValue = o.rotation
-                            }
-
-                            guard let startAngle = textRotateStartAngle, let baseRotation = textRotateStartValue else {
-                                return
-                            }
-
-                            // Current pointer angle
-                            let currAngle = atan2(p.y - c.y, p.x - c.x)
-
-                            // Absolute target = base rotation + delta from initial pointer angle to current pointer angle
-                            var target = baseRotation + normalizedAngleDelta(from: startAngle, to: currAngle)
-
-                            // Modifier-based snapping: Option=1°, Command=5°, Shift=15°; none=free
-                            let mods = NSEvent.modifierFlags
-                            if mods.contains(.option) {
-                                let inc = CGFloat.pi / 180 // 1°
-                                target = round(target / inc) * inc
-                            } else if mods.contains(.command) {
-                                let inc = CGFloat.pi / 36 // 5°
-                                target = round(target / inc) * inc
-                            } else if mods.contains(.shift) {
-                                let inc = CGFloat.pi / 12 // 15°
-                                target = round(target / inc) * inc
-                            }
-
-                            updated.rotation = target
-
-                            objects[idx] = .text(updated)
-                            // Important: keep anchors stable; do not mutate dragStartPoint here
-                            return
-                        } else {
-                            // For resizing, use unclamped point for rotated objects (clamping before resize breaks the math)
-                            let resizePoint = o.rotation != 0 ? p : clampPoint(p, in: author)
-                            let resized = o.resizing(activeHandle, to: resizePoint)
-
-                            // For rotated objects, check if resize would go off-canvas
-                            if o.rotation != 0 {
-                                // Only apply resize if it stays within bounds
-                                if rotatedRectFitsInBounds(resized.rect, rotation: resized.rotation, in: author) {
-                                    updated = resized
-                                }
-                                // If it doesn't fit, keep the old rect (updated = o, which was set earlier)
-                            } else {
-                                // For non-rotated, apply normal clamping
-                                updated = resized
-                                updated.rect = clampRect(updated.rect, in: author)
-                            }
-                        }
-                        objects[idx] = .text(updated)
-                    case .badge(let o):
-                        let clampedP = clampPoint(p, in: author)
-                        let updated = (activeHandle == .none) ? o.moved(by: delta) : o.resizing(activeHandle, to: clampedP)
-                        let clamped = clampRect(updated.rect, in: author)
-                        var u = updated; u.rect = clamped
-                        objects[idx] = .badge(u)
-                    case .highlight(let o):
-                        let clampedP = clampPoint(p, in: author)
-                        let updated = (activeHandle == .none) ? o.moved(by: delta) : o.resizing(activeHandle, to: clampedP)
-                        let clamped = clampRect(updated.rect, in: author)
-                        var u = updated; u.rect = clamped
-                        objects[idx] = .highlight(u)
-                    case .image(let o):
-                        var updated = o
-                        if activeHandle == .none {
-                            // Clamp delta before moving to prevent going off-canvas (works for both rotated and non-rotated)
-                            let moveDelta = o.rotation != 0
-                                ? clampedDeltaForRotatedRect(o.rect, rotation: o.rotation, delta: delta, in: author)
-                                : clampedDeltaForRect(o.rect, delta: delta, in: author)
-                            updated = o.moved(by: moveDelta)
-                        } else if activeHandle == .rotate {
-                            // Absolute-angle rotation anchored at gesture begin; no per-tick anchor drift
-                            let c = CGPoint(x: o.rect.midX, y: o.rect.midY)
-
-                            // Initialize anchors on first rotate tick for this drag
-                            if imageRotateStartAngle == nil || imageRotateStartValue == nil {
-                                if let s = dragStartPoint {
-                                    imageRotateStartAngle = atan2(s.y - c.y, s.x - c.x)
-                                } else {
-                                    imageRotateStartAngle = atan2(p.y - c.y, p.x - c.x)
-                                }
-                                imageRotateStartValue = o.rotation
-                            }
-
-                            guard let startAngle = imageRotateStartAngle, let baseRotation = imageRotateStartValue else {
-                                return
-                            }
-
-                            // Current pointer angle
-                            let currAngle = atan2(p.y - c.y, p.x - c.x)
-
-                            // Absolute target = base rotation + delta from initial pointer angle to current pointer angle
-                            var target = baseRotation + normalizedAngleDelta(from: startAngle, to: currAngle)
-
-                            // Modifier-based snapping: Option=1°, Command=5°, Shift=15°; none=free
-                            let mods = NSEvent.modifierFlags
-                            if mods.contains(.option) {
-                                let inc = CGFloat.pi / 180 // 1°
-                                target = round(target / inc) * inc
-                            } else if mods.contains(.command) {
-                                let inc = CGFloat.pi / 36  // 5°
-                                target = round(target / inc) * inc
-                            } else if mods.contains(.shift) {
-                                let inc = CGFloat.pi / 12  // 15°
-                                target = round(target / inc) * inc
-                            }
-
-                            updated.rotation = target
-                            objects[idx] = .image(updated)
-                            // Important: keep anchors stable; do not mutate dragStartPoint here
-                            return
-                        } else {
-                            // For resizing, use unclamped point for rotated objects (clamping before resize breaks the math)
-                            let resizePoint = o.rotation != 0 ? p : clampPoint(p, in: author)
-                            let resized = o.resizing(activeHandle, to: resizePoint)
-
-                            // For rotated objects, check if resize would go off-canvas
-                            if o.rotation != 0 {
-                                // Only apply resize if it stays within bounds
-                                if rotatedRectFitsInBounds(resized.rect, rotation: resized.rotation, in: author) {
-                                    updated = resized
-                                }
-                                // If it doesn't fit, keep the old rect (updated = o, which was set earlier)
-                            } else {
-                                // For non-rotated, apply normal clamping
-                                updated = resized
-                                updated.rect = clampRect(updated.rect, in: author)
-                            }
-                        }
-                        objects[idx] = .image(updated)
-                    case .blur(let o):
-                        var updated = o
-                        if activeHandle == .none {
-                            // Clamp delta before moving to prevent going off-canvas (works for both rotated and non-rotated)
-                            let moveDelta = o.rotation != 0
-                                ? clampedDeltaForRotatedRect(o.rect, rotation: o.rotation, delta: delta, in: author)
-                                : clampedDeltaForRect(o.rect, delta: delta, in: author)
-                            updated = o.moved(by: moveDelta)
-                        } else if activeHandle == .rotate {
-                            // Absolute-angle rotation anchored at gesture begin; no per-tick anchor drift
-                            let c = CGPoint(x: o.rect.midX, y: o.rect.midY)
-
-                            // Initialize anchors on first rotate tick for this drag
-                            if rectRotateStartAngle == nil || rectRotateStartValue == nil {
-                                if let s = dragStartPoint {
-                                    rectRotateStartAngle = atan2(s.y - c.y, s.x - c.x)
-                                } else {
-                                    rectRotateStartAngle = atan2(p.y - c.y, p.x - c.x)
-                                }
-                                rectRotateStartValue = o.rotation
-                            }
-
-                            guard let startAngle = rectRotateStartAngle, let baseRotation = rectRotateStartValue else {
-                                return
-                            }
-
-                            // Current pointer angle
-                            let currAngle = atan2(p.y - c.y, p.x - c.x)
-
-                            // Absolute target = base rotation + delta from initial pointer angle to current pointer angle
-                            var target = baseRotation + normalizedAngleDelta(from: startAngle, to: currAngle)
-
-                            // Modifier-based snapping: Option=1°, Command=5°, Shift=15°; none=free
-                            let mods = NSEvent.modifierFlags
-                            if mods.contains(.option) {
-                                let inc = CGFloat.pi / 180 // 1°
-                                target = round(target / inc) * inc
-                            } else if mods.contains(.command) {
-                                let inc = CGFloat.pi / 36  // 5°
-                                target = round(target / inc) * inc
-                            } else if mods.contains(.shift) {
-                                let inc = CGFloat.pi / 12  // 15°
-                                target = round(target / inc) * inc
-                            }
-
-                            updated.rotation = target
-                            objects[idx] = .blur(updated)
-                            // Important: keep anchors stable; do not mutate dragStartPoint here
-                            return
-                        } else {
-                            // For resizing, use unclamped point for rotated objects (clamping before resize breaks the math)
-                            let resizePoint = o.rotation != 0 ? p : clampPoint(p, in: author)
-                            let resized = o.resizing(activeHandle, to: resizePoint)
-
-                            // For rotated objects, check if resize would go off-canvas
-                            if o.rotation != 0 {
-                                // Only apply resize if it stays within bounds
-                                if rotatedRectFitsInBounds(resized.rect, rotation: resized.rotation, in: author) {
-                                    updated = resized
-                                }
-                                // If it doesn't fit, keep the old rect (updated = o, which was set earlier)
-                            } else {
-                                // For non-rotated, apply normal clamping
-                                updated = resized
-                                updated.rect = clampRect(updated.rect, in: author)
-                            }
-                        }
-                        objects[idx] = .blur(updated)
-                    }
-                    dragStartPoint = p
-                }
-            }
-            .onEnded { value in  // Add 'value in' parameter here
-                let endFit = CGPoint(x: value.location.x - insetOrigin.x, y: value.location.y - insetOrigin.y)
-                let startFit = CGPoint(x: value.startLocation.x - insetOrigin.x, y: value.startLocation.y - insetOrigin.y)
-                let pEnd = fittedToAuthorPoint(endFit, fitted: fitted, author: author)
-                let pStart = fittedToAuthorPoint(startFit, fitted: fitted, author: author)
-
-                let dx = pEnd.x - pStart.x
-                let dy = pEnd.y - pStart.y
-                let _ = hypot(dx, dy) > 5
-
-                // Handle selection rectangle end
-                if let rect = selectionRect {
-                    // Find all objects that intersect with the selection rectangle
-                    selectedObjectIDs.removeAll()
-                    for obj in objects {
-                        if objectIntersects(obj, with: rect) {
-                            selectedObjectIDs.insert(obj.id)
-                        }
-                    }
-                    selectionRect = nil
-                    selectionDragStart = nil
-                }
-
-                // Generate snapshot for blur object if it was modified
-                if let sel = selectedObjectID,
-                   let idx = objects.firstIndex(where: { $0.id == sel }) {
-                    if case .blur(let o) = objects[idx] {
-                        generateBlurSnapshot(for: o)
-                    }
-                }
-
-                // Reset rotation anchors (for Rect)
-                rectRotateStartAngle = nil
-                rectRotateStartValue = nil
-                textRotateStartAngle = nil
-                textRotateStartValue = nil
-                imageRotateStartAngle = nil
-                imageRotateStartValue = nil
-                blurRotateStartAngle = nil
-                blurRotateStartValue = nil
-
-                dragStartPoint = nil
-                pushedDragUndo = false
-            }
-    }
-    
-    private func badgeGesture(insetOrigin: CGPoint, fitted: CGSize, author: CGSize) -> some Gesture {
-        DragGesture(minimumDistance: 0)
-            .onChanged { value in
-                guard allowDraftTick() else { return }
-                let pFit = CGPoint(x: value.location.x - insetOrigin.x, y: value.location.y - insetOrigin.y)
-                let p = fittedToAuthorPoint(pFit, fitted: fitted, author: author)
-                
-                if dragStartPoint == nil {
-                    dragStartPoint = p
-                    // If starting on a badge, select it and decide handle (resize vs move)
-                    if let idx = objects.lastIndex(where: { obj in
-                        switch obj {
-                        case .badge(let o): return o.handleHitTest(p) != .none || o.hitTest(p)
-                        default: return false
-                        }
-                    }) {
-                        selectedObjectID = objects[idx].id
-                        if case .badge(let o) = objects[idx] { activeHandle = o.handleHitTest(p) }
-                    } else {
-                        selectedObjectID = nil
-                        activeHandle = .none
-                    }
-                } else if
-                    let sel = selectedObjectID,
-                    let start = dragStartPoint,
-                    let idx = objects.firstIndex(where: { $0.id == sel })
-                {
-                    let delta = CGSize(width: p.x - start.x, height: p.y - start.y)
-                    let dragDistance = hypot(delta.width, delta.height)
-                    
-                    if dragDistance > 0.5 { // any movement begins interaction
-                        if !pushedDragUndo { pushUndoSnipshot(); pushedDragUndo = true }
-                        switch objects[idx] {
-                        case .badge(let o):
-                            let clampedP = clampPoint(p, in: author)
-                            let updated = (activeHandle == .none) ? o.moved(by: delta) : o.resizing(activeHandle, to: clampedP)
-                            let clamped = clampRect(updated.rect, in: author)
-                            var u = updated; u.rect = clamped
-                            objects[idx] = .badge(u)
-                        default:
-                            break
-                        }
-                        dragStartPoint = p
-                    }
-                }
-            }
-            .onEnded { value in
-                let endFit = CGPoint(x: value.location.x - insetOrigin.x, y: value.location.y - insetOrigin.y)
-                let startFit = CGPoint(x: value.startLocation.x - insetOrigin.x, y: value.startLocation.y - insetOrigin.y)
-                let pEnd = fittedToAuthorPoint(endFit, fitted: fitted, author: author)
-                let pStart = fittedToAuthorPoint(startFit, fitted: fitted, author: author)
-                
-                let dx = pEnd.x - pStart.x
-                let dy = pEnd.y - pStart.y
-                let moved = hypot(dx, dy) > 5 // threshold similar to text/pointer
-                
-                defer { dragStartPoint = nil; pushedDragUndo = false; activeHandle = .none }
-                
-                // If we interacted with an existing badge (moved/resized), do not create a new one
-                if moved, selectedObjectID != nil {
-                    return
-                }
-                
-                // If we started on a badge but didn’t move enough, just select it and return
-                if let sel = selectedObjectID, let idx = objects.firstIndex(where: { $0.id == sel }) {
-                    if case .badge(let o) = objects[idx], o.hitTest(pStart) || o.handleHitTest(pStart) != .none {
-                        return
-                    }
-                }
-                
-                // Otherwise, create a new badge at the click location
-                let diameter: CGFloat = 32
-                let rect = CGRect(x: max(0, pEnd.x - diameter/2),
-                                  y: max(0, pEnd.y - diameter/2),
-                                  width: diameter,
-                                  height: diameter)
-                let rectClamped = clampRect(rect, in: author)
-                badgeCount &+= 1
-                let newObj = BadgeObject(rect: rectClamped, number: badgeCount, fillColor: badgeColor, textColor: .white)
-                pushUndoSnipshot()
-                objects.append(.badge(newObj))
-                if objectSpaceSize == nil { objectSpaceSize = author }
-                selectedObjectID = newObj.id
-            }
-    }
-    
-    @inline(__always)
-    private func fittedToAuthorPoint(_ p: CGPoint, fitted: CGSize, author: CGSize) -> CGPoint {
-        let sx = author.width  / max(1, fitted.width)
-        let sy = author.height / max(1, fitted.height)
-        return CGPoint(x: p.x * sx, y: p.y * sy)
-    }
-    
-    @inline(__always)
-    private func normalizeRect(_ r: CGRect) -> CGRect {
-        CGRect(x: min(r.minX, r.maxX),
-               y: min(r.minY, r.maxY),
-               width: abs(r.width),
-               height: abs(r.height))
-    }
-    
-    
-    private func cropGesture(insetOrigin: CGPoint, fitted: CGSize, author: CGSize) -> some Gesture {
-        DragGesture(minimumDistance: 0)
-            .onChanged { value in
-                // 1) Pointer in fitted space (subtract centering inset)
-                let locFitted = CGPoint(
-                    x: value.location.x - insetOrigin.x,
-                    y: value.location.y - insetOrigin.y
-                )
-                // 2) Clamp to the visible fitted image
-                let clampedFitted = CGPoint(
-                    x: min(max(0, locFitted.x), fitted.width),
-                    y: min(max(0, locFitted.y), fitted.height)
-                )
-                // 3) Convert to author/object space where overlay lives
-                let locAuthor = fittedToAuthorPoint(clampedFitted, fitted: fitted, author: author)
-                
-                if cropDragStart == nil {
-                    // First event of this drag
-                    cropDragStart = locAuthor
-                    // If we already have a rect, check for handle resize
-                    if let existing = cropRect {
-                        let handle = cropHandleHitTest(existing, at: locAuthor)
-                        if handle != .none {
-                            cropHandle = handle
-                            cropOriginalRect = existing
-                            return
-                        }
-                    }
-                }
-                
-                if cropHandle != .none, let original = cropOriginalRect {
-                    // Resizing existing rect
-                    cropRect = normalizeRect(resizeRect(original, handle: cropHandle, to: locAuthor))
-                    cropDraftRect = nil
-                } else if let start = cropDragStart {
-                    // Drafting a new rect during drag
-                    cropDraftRect = normalizeRect(CGRect(
-                        x: min(start.x, locAuthor.x),
-                        y: min(start.y, locAuthor.y),
-                        width: abs(locAuthor.x - start.x),
-                        height: abs(locAuthor.y - start.y)
-                    ))
-                }
-            }
-            .onEnded { _ in
-                defer {
-                    cropDragStart = nil
-                    cropOriginalRect = nil
-                    cropHandle = .none
-                }
-                
-                if cropHandle != .none, let updated = cropRect {
-                    // Finished a resize — keep normalized
-                    cropRect = normalizeRect(updated)
-                    cropDraftRect = nil
-                    return
-                }
-                
-                if let draft = cropDraftRect {
-                    // Commit new rect
-                    cropRect = normalizeRect(draft)
-                    cropDraftRect = nil
-                }
-            }
-    }
-    
-    // MARK: - Editing Tools
-    
-    private func selectionHandlesForLine(_ o: LineObject) -> some View {
-        ZStack {
-            Circle().stroke(.blue, lineWidth: 1)
-                .background(Circle().fill(.white))
-                .frame(width: 12, height: 12)
-                .position(o.start)
-            
-            Circle().stroke(.blue, lineWidth: 1)
-                .background(Circle().fill(.white))
-                .frame(width: 12, height: 12)
-                .position(o.end)
-        }
-    }
-    
-    @inline(__always)
-    private func rotatePoint(_ p: CGPoint, around c: CGPoint, by angle: CGFloat) -> CGPoint {
-        let s = sin(angle), co = cos(angle)
-        let dx = p.x - c.x, dy = p.y - c.y
-        return CGPoint(x: c.x + dx * co - dy * s,
-                       y: c.y + dx * s + dy * co)
-    }
-
-    private func selectionHandlesForRect(_ o: RectObject) -> some View {
-        let rotateOffset: CGFloat = 20
-        let c = CGPoint(x: o.rect.midX, y: o.rect.midY)
-
-        // Raw unrotated positions
-        let rawPts = [
-            CGPoint(x: o.rect.minX, y: o.rect.minY),
-            CGPoint(x: o.rect.maxX, y: o.rect.minY),
-            CGPoint(x: o.rect.minX, y: o.rect.maxY),
-            CGPoint(x: o.rect.maxX, y: o.rect.maxY)
-        ]
-        let rawRotate = CGPoint(x: o.rect.maxX + rotateOffset, y: o.rect.minY - rotateOffset)
-
-        // Rotate positions to match the rotated rectangle
-        let pts = rawPts.map { rotatePoint($0, around: c, by: o.rotation) }
-        let rotatePos = rotatePoint(rawRotate, around: c, by: o.rotation)
-
-        return ZStack {
-            ForEach(Array(pts.enumerated()), id: \.offset) { _, pt in
-                Circle()
-                    .stroke(.blue, lineWidth: 1)
-                    .background(Circle().fill(.white))
-                    .frame(width: 12, height: 12)
-                    .position(pt)
-            }
-            Image(systemName: "arrow.clockwise")
-                .foregroundColor(.blue)
-                .background(Circle().fill(.white).frame(width: 16, height: 16))
-                .position(rotatePos)
-        }
-    }
-
-    private func selectionHandlesForBlur(_ o: BlurRectObject) -> some View {
-        let rotateOffset: CGFloat = 20
-        let c = CGPoint(x: o.rect.midX, y: o.rect.midY)
-
-        // Raw unrotated positions
-        let rawPts = [
-            CGPoint(x: o.rect.minX, y: o.rect.minY),
-            CGPoint(x: o.rect.maxX, y: o.rect.minY),
-            CGPoint(x: o.rect.minX, y: o.rect.maxY),
-            CGPoint(x: o.rect.maxX, y: o.rect.maxY)
-        ]
-        let rawRotate = CGPoint(x: o.rect.maxX + rotateOffset, y: o.rect.minY - rotateOffset)
-
-        // Rotate positions to match the rotated rectangle
-        let pts = rawPts.map { rotatePoint($0, around: c, by: o.rotation) }
-        let rotatePos = rotatePoint(rawRotate, around: c, by: o.rotation)
-
-        return ZStack {
-            ForEach(Array(pts.enumerated()), id: \.offset) { _, pt in
-                Circle()
-                    .stroke(.blue, lineWidth: 1)
-                    .background(Circle().fill(.white))
-                    .frame(width: 12, height: 12)
-                    .position(pt)
-            }
-            Image(systemName: "arrow.clockwise")
-                .foregroundColor(.blue)
-                .background(Circle().fill(.white).frame(width: 16, height: 16))
-                .position(rotatePos)
-        }
-    }
-    
-    private func selectionHandlesForOval(_ o: OvalObject) -> some View {
-        let pts = [
-            CGPoint(x: o.rect.minX, y: o.rect.minY),
-            CGPoint(x: o.rect.maxX, y: o.rect.minY),
-            CGPoint(x: o.rect.minX, y: o.rect.maxY),
-            CGPoint(x: o.rect.maxX, y: o.rect.maxY)
-        ]
-        return ZStack {
-            ForEach(Array(pts.enumerated()), id: \.offset) { _, pt in
-                Circle()
-                    .stroke(.blue, lineWidth: 1)
-                    .background(Circle().fill(.white))
-                    .frame(width: 12, height: 12)
-                    .position(pt)
-            }
-        }
-    }
-    
-    private func selectionHandlesForText(_ o: TextObject) -> some View {
-        let rotateOffset: CGFloat = 20
-        let c = CGPoint(x: o.rect.midX, y: o.rect.midY)
-        
-        // Raw unrotated positions
-        let rawPts = [
-            CGPoint(x: o.rect.minX, y: o.rect.minY),
-            CGPoint(x: o.rect.maxX, y: o.rect.minY),
-            CGPoint(x: o.rect.minX, y: o.rect.maxY),
-            CGPoint(x: o.rect.maxX, y: o.rect.maxY)
-        ]
-        let rawRotate = CGPoint(x: o.rect.maxX + rotateOffset, y: o.rect.minY - rotateOffset)
-        
-        // Rotate positions to match the rotated text box
-        let pts = rawPts.map { rotatePoint($0, around: c, by: o.rotation) }
-        let rotatePos = rotatePoint(rawRotate, around: c, by: o.rotation)
-        
-        return ZStack {
-            ForEach(Array(pts.enumerated()), id: \.offset) { _, pt in
-                Circle()
-                    .stroke(.blue, lineWidth: 1)
-                    .background(Circle().fill(.white))
-                    .frame(width: 12, height: 12)
-                    .position(pt)
-            }
-            
-            Image(systemName: "arrow.clockwise")
-                .foregroundColor(.blue)
-                .background(Circle().fill(.white).frame(width: 16, height: 16))
-                .position(rotatePos)
-            
-            // TextEditor for focused text (also needs to be in scaled context with rotation)
-            if focusedTextID == o.id {
-                TextEditor(text: Binding(
-                    get: { o.text },
-                    set: { newVal in
-                        if let idx = objects.firstIndex(where: { $0.id == o.id }) {
-                            if case .text(var t) = objects[idx] {
-                                t.text = newVal
-                                objects[idx] = .text(t)
-                            }
-                        }
-                    }
-                ))
-                .font(.system(size: o.fontSize))
-                .foregroundStyle(Color(nsColor: o.textColor))
-                .background(o.bgEnabled ? Color(nsColor: o.bgColor) : Color.clear)
-                .scrollContentBackground(.hidden)
-                .frame(width: o.rect.width, height: o.rect.height)
-                .rotationEffect(Angle(radians: o.rotation))
-                .position(x: o.rect.midX, y: o.rect.midY)
-                .overlay(
-                    RoundedRectangle(cornerRadius: 4)
-                        .stroke(.blue.opacity(0.6), lineWidth: 1)
-                        .rotationEffect(Angle(radians: o.rotation))
-                )
-                .contentShape(Rectangle())
-                .focused($isTextEditorFocused)
-                .onAppear {
-                    DispatchQueue.main.async {
-                        isTextEditorFocused = true
-                    }
-                }
-                .onChange(of: focusedTextID) { _,newValue in
-                    isTextEditorFocused = (newValue == o.id)
-                }
-            }
-        }
-    }
-    
-    
-    private func selectionHandlesForBadge(_ o: BadgeObject) -> some View {
-        let pts = [
-            CGPoint(x: o.rect.minX, y: o.rect.minY),
-            CGPoint(x: o.rect.maxX, y: o.rect.minY),
-            CGPoint(x: o.rect.minX, y: o.rect.maxY),
-            CGPoint(x: o.rect.maxX, y: o.rect.maxY)
-        ]
-        return ZStack {
-            ForEach(Array(pts.enumerated()), id: \.offset) { _, pt in
-                Circle()
-                    .stroke(.blue, lineWidth: 1)
-                    .background(Circle().fill(.white))
-                    .frame(width: 12, height: 12)
-                    .position(pt)
-            }
-        }
-    }
-    
-    private func selectionHandlesForHighlight(_ o: HighlightObject) -> some View {
-        let pts = [
-            CGPoint(x: o.rect.minX, y: o.rect.minY),
-            CGPoint(x: o.rect.maxX, y: o.rect.minY),
-            CGPoint(x: o.rect.minX, y: o.rect.maxY),
-            CGPoint(x: o.rect.maxX, y: o.rect.maxY)
-        ]
-        return ZStack {
-            ForEach(Array(pts.enumerated()), id: \.offset) { _, pt in
-                Circle()
-                    .stroke(.blue, lineWidth: 1)
-                    .background(Circle().fill(.white))
-                    .frame(width: 12, height: 12)
-                    .position(pt)
-            }
-        }
-    }
-    
-    private func selectionHandlesForImage(_ o: PastedImageObject) -> some View {
-        let rotateOffset: CGFloat = 20
-        let c = CGPoint(x: o.rect.midX, y: o.rect.midY)
-        
-        // Raw unrotated positions
-        let rawPts = [
-            CGPoint(x: o.rect.minX, y: o.rect.minY),
-            CGPoint(x: o.rect.maxX, y: o.rect.minY),
-            CGPoint(x: o.rect.minX, y: o.rect.maxY),
-            CGPoint(x: o.rect.maxX, y: o.rect.maxY)
-        ]
-        let rawRotate = CGPoint(x: o.rect.maxX + rotateOffset, y: o.rect.minY - rotateOffset)
-        
-        // Rotate positions to match the rotated image
-        let pts = rawPts.map { rotatePoint($0, around: c, by: o.rotation) }
-        let rotatePos = rotatePoint(rawRotate, around: c, by: o.rotation)
-        
-        return ZStack {
-            ForEach(Array(pts.enumerated()), id: \.offset) { _, pt in
-                Circle()
-                    .stroke(.blue, lineWidth: 1)
-                    .background(Circle().fill(.white))
-                    .frame(width: 12, height: 12)
-                    .position(pt)
-            }
-            
-            Image(systemName: "arrow.clockwise")
-                .foregroundColor(.blue)
-                .background(Circle().fill(.white).frame(width: 16, height: 16))
-                .position(rotatePos)
-        }
-    }
-    
-    // Arrow Tool
-    private func arrowHeadPath(from start: CGPoint, to end: CGPoint, lineWidth: CGFloat) -> Path {
-        var path = Path()
-        let dx = end.x - start.x
-        let dy = end.y - start.y
-        let len = hypot(dx, dy)
-        guard len > 0.0001 else { return path }
-        
-        // Direction unit vector from start -> end
-        let ux = dx / len
-        let uy = dy / len
-        
-        // Bigger head: scale with stroke width, but cap by a fraction of the line length
-        let desired = max(16, lineWidth * 6.0)
-        let capped  = min(len * 0.35, 280)
-        let headLength = min(desired, capped)
-        let headWidth  = headLength * 0.90
-        
-        let tip = end
-        let baseX = tip.x - headLength * ux
-        let baseY = tip.y - headLength * uy
-        
-        let px = -uy, py = ux // perpendicular
-        let left  = CGPoint(x: baseX + (headWidth * 0.5) * px, y: baseY + (headWidth * 0.5) * py)
-        let right = CGPoint(x: baseX - (headWidth * 0.5) * px, y: baseY - (headWidth * 0.5) * py)
-        
-        path.move(to: tip)
-        path.addLine(to: left)
-        path.addLine(to: right)
-        path.closeSubpath()
-        return path
-    }
-    
-    
-    private func flattenAndSaveInPlace() {
-        guard let img = currentImage else { return }
-        if objectSpaceSize == nil { objectSpaceSize = lastFittedSize ?? img.size }
-        pushUndoSnipshot()
-        if let flattened = rasterize(base: img, objects: objects) {
-            objects.removeAll()
-            if let url = selectedSnipURL {
-                // Write the flattened image back to the same file, preserving creation date
-                if ImageSaver.writeImage(flattened, to: url, format: preferredSaveFormat.rawValue, quality: saveQuality, preserveAttributes: true) {
-                    reloadCurrentImage()
-                    thumbnailRefreshTrigger = UUID()
-                }
-            } else {
-                saveAsCurrent()
-            }
-        }
-    }
-    
-    private func flattenAndSaveAs() {
-        guard let img = currentImage else { return }
-        if objectSpaceSize == nil { objectSpaceSize = lastFittedSize ?? img.size }
-        pushUndoSnipshot()
-        if let flattened = rasterize(base: img, objects: objects) {
-            objects.removeAll()
-            exportImage = flattened
-            showingFileExporter = true
-        }
-    }
-    
-    private func rasterize(base: NSImage, objects: [Drawable]) -> NSImage? {
-        // Keep logical canvas in points (matches editor), but render into a bitmap using the base image's backing pixels.
-        let imgSize = base.size // points
-        
-        // Determine backing pixel dimensions (prefer CGImage; else largest bitmap rep; else fall back to points)
-        let pixelDims: (w: Int, h: Int) = {
-            if let cg = base.cgImage(forProposedRect: nil, context: nil, hints: nil) {
-                return (cg.width, cg.height)
-            }
-            if let best = base.representations
-                .compactMap({ $0 as? NSBitmapImageRep })
-                .max(by: { $0.pixelsWide * $0.pixelsHigh < $1.pixelsWide * $1.pixelsHigh }) {
-                return (best.pixelsWide, best.pixelsHigh)
-            }
-            return (Int(round(imgSize.width)), Int(round(imgSize.height)))
-        }()
-        
-        guard let rep = NSBitmapImageRep(
-            bitmapDataPlanes: nil,
-            pixelsWide: max(1, pixelDims.w),
-            pixelsHigh: max(1, pixelDims.h),
-            bitsPerSample: 8,
-            samplesPerPixel: 4,
-            hasAlpha: true,
-            isPlanar: false,
-            colorSpaceName: .deviceRGB,
-            bytesPerRow: 0,
-            bitsPerPixel: 0
-        ) else { return nil }
-        
-        // Critical: set logical size (points). Drawing uses points; pixels are handled by the rep's pixel size.
-        rep.size = imgSize
-        
-        let composed = NSImage(size: imgSize)
-        composed.addRepresentation(rep)
-        
-        NSGraphicsContext.saveGraphicsState()
-        if let ctx = NSGraphicsContext(bitmapImageRep: rep) {
-            NSGraphicsContext.current = ctx
-            ctx.imageInterpolation = .high
-            
-            // Render overlay objects. These utilities assume `image` is in points, which matches `imgSize`.
-            let fitted = objectSpaceSize ?? lastFittedSize ?? imgSize
-
-            // Draw the base image to fill the logical canvas
-            print("DEBUG: base.size = \(base.size), drawing into imgSize = \(imgSize), fitted = \(fitted)")
-            base.draw(in: CGRect(origin: .zero, size: imgSize))
-            let scaleX = imgSize.width / max(1, fitted.width)
-            let scaleY = imgSize.height / max(1, fitted.height)
-            let scaleW = (scaleX + scaleY) / 2
-
-            // Collect blur objects for second pass
-            var blurObjects: [(BlurRectObject, Int)] = []
-
-            for (index, obj) in objects.enumerated() {
-                // Skip blur objects in first pass
-                if case .blur(let o) = obj {
-                    blurObjects.append((o, index))
-                    continue
-                }
-
-                switch obj {
-                case .line(let o):
-                    let s = uiToImagePoint(o.start, fitted: fitted, image: imgSize)
-                    let e = uiToImagePoint(o.end,   fitted: fitted, image: imgSize)
-                    let widthScaled = o.width * scaleW
-                    o.color.setStroke(); o.color.setFill()
-                    let path = NSBezierPath()
-                    path.lineWidth = widthScaled
-                    path.lineCapStyle = o.arrow ? .butt : .round
-                    path.move(to: s)
-                    
-                    // If arrow, shorten the line so it doesn't extend under the arrow head
-                    if o.arrow {
-                        let dx = e.x - s.x, dy = e.y - s.y
-                        let len = max(1, hypot(dx, dy))
-                        let ux = dx / len, uy = dy / len
-                        
-                        let desired = max(16, widthScaled * 6.0)
-                        let capped  = min(len * 0.35, 280)
-                        let headLength = min(desired, capped)
-                        
-                        // Stop the line at the base of the arrow head
-                        let lineEnd = CGPoint(x: e.x - ux * headLength, y: e.y - uy * headLength)
-                        path.line(to: lineEnd)
-                    } else {
-                        path.line(to: e)
-                    }
-                    
-                    path.stroke()
-                    
-                    if o.arrow {
-                        let dx = e.x - s.x, dy = e.y - s.y
-                        let len = max(1, hypot(dx, dy))
-                        let ux = dx / len, uy = dy / len
-                        
-                        let desired = max(16, widthScaled * 6.0)
-                        let capped  = min(len * 0.35, 280)
-                        let headLength = min(desired, capped)
-                        let headWidth  = headLength * 0.90
-                        
-                        // Arrow head at the exact end point
-                        let bx = e.x - ux * headLength
-                        let by = e.y - uy * headLength
-                        let px = -uy, py = ux
-                        let p1 = CGPoint(x: bx + (headWidth * 0.5) * px, y: by + (headWidth * 0.5) * py)
-                        let p2 = CGPoint(x: bx - (headWidth * 0.5) * px, y: by - (headWidth * 0.5) * py)
-                        
-                        let tri = NSBezierPath()
-                        tri.move(to: e)  // Tip at exact end point
-                        tri.line(to: p1)
-                        tri.line(to: p2)
-                        tri.close()
-                        tri.fill()
-                    }
-                case .rect(let o):
-                    o.color.setStroke()
-                    
-                    if o.rotation != 0 {
-                        NSGraphicsContext.current?.saveGraphicsState()
-                        
-                        // Apply rotation in UI space first, then transform to image space
-                        let uiCenter = CGPoint(x: o.rect.midX, y: o.rect.midY)
-                        
-                        // Create the four corners of the rectangle in UI space
-                        let corners = [
-                            CGPoint(x: o.rect.minX, y: o.rect.minY),
-                            CGPoint(x: o.rect.maxX, y: o.rect.minY),
-                            CGPoint(x: o.rect.maxX, y: o.rect.maxY),
-                            CGPoint(x: o.rect.minX, y: o.rect.maxY)
-                        ]
-                        
-                        // Rotate corners around center in UI space
-                        let rotatedCorners = corners.map { corner in
-                            let dx = corner.x - uiCenter.x
-                            let dy = corner.y - uiCenter.y
-                            let cos = Foundation.cos(o.rotation)
-                            let sin = Foundation.sin(o.rotation)
-                            return CGPoint(
-                                x: uiCenter.x + dx * cos - dy * sin,
-                                y: uiCenter.y + dx * sin + dy * cos
-                            )
-                        }
-                        
-                        // Transform each rotated corner to image space
-                        let imageCorners = rotatedCorners.map {
-                            uiToImagePoint($0, fitted: fitted, image: imgSize)
-                        }
-                        
-                        // Draw the rotated rectangle as a polygon
-                        let path = NSBezierPath()
-                        path.move(to: imageCorners[0])
-                        for i in 1..<imageCorners.count {
-                            path.line(to: imageCorners[i])
-                        }
-                        path.close()
-                        path.lineWidth = o.width * scaleW
-                        path.stroke()
-                        
-                        NSGraphicsContext.current?.restoreGraphicsState()
-                    } else {
-                        let r = uiRectToImageRect(o.rect, fitted: fitted, image: imgSize)
-                        let path = NSBezierPath(rect: r)
-                        path.lineWidth = o.width * scaleW
-                        path.stroke()
-                    }
-                case .oval(let o):
-                    let r = uiRectToImageRect(o.rect, fitted: fitted, image: imgSize)
-                    o.color.setStroke()
-                    let path = NSBezierPath(ovalIn: r)
-                    path.lineWidth = o.width * scaleW
-                    path.stroke()
-                case .text(let o):
-                    // For rotated text, we need to work entirely in UI space first, then convert to image space
-                    if o.rotation != 0 {
-                        NSGraphicsContext.current?.saveGraphicsState()
-                        
-                        // 1. Get the UI space rect and center
-                        let uiRect = o.rect
-                        let uiCenter = CGPoint(x: uiRect.midX, y: uiRect.midY)
-                        
-                        // 2. Convert center to image space
-                        let imageCenter = uiToImagePoint(uiCenter, fitted: fitted, image: imgSize)
-                        
-                        // 3. Convert size to image space (no Y-flip for size)
-                        let imageSize = CGSize(
-                            width: uiRect.width * (imgSize.width / max(1, fitted.width)),
-                            height: uiRect.height * (imgSize.height / max(1, fitted.height))
-                        )
-                        
-                        // 4. Create image rect centered at the converted center
-                        let imageRect = CGRect(
-                            x: imageCenter.x - imageSize.width / 2,
-                            y: imageCenter.y - imageSize.height / 2,
-                            width: imageSize.width,
-                            height: imageSize.height
-                        )
-                        
-                        // 5. Apply rotation in image space around the image center
-                        // Note: Negate the rotation because image Y is flipped from UI Y
-                        let transform = NSAffineTransform()
-                        transform.translateX(by: imageCenter.x, yBy: imageCenter.y)
-                        transform.rotate(byRadians: -o.rotation)  // Negate rotation for flipped coordinate system
-                        transform.translateX(by: -imageCenter.x, yBy: -imageCenter.y)
-                        transform.concat()
-                        
-                        // 6. Draw background if enabled
-                        if o.bgEnabled {
-                            let paddingScaled = 4 * scaleW
-                            let bgRect = imageRect.insetBy(dx: -paddingScaled, dy: -paddingScaled)
-                            let bg = NSBezierPath(rect: bgRect)
-                            o.bgColor.setFill()
-                            bg.fill()
-                        }
-                        
-                        // 7. Draw text
-                        let para = NSMutableParagraphStyle()
-                        para.alignment = .left
-                        para.lineBreakMode = .byWordWrapping
-                        let attrs: [NSAttributedString.Key: Any] = [
-                            .font: NSFont.systemFont(ofSize: o.fontSize * scaleW),
-                            .foregroundColor: o.textColor,
-                            .paragraphStyle: para
-                        ]
-                        
-                        NSString(string: o.text).draw(in: imageRect, withAttributes: attrs)
-                        
-                        NSGraphicsContext.current?.restoreGraphicsState()
-                    } else {
-                        // Non-rotated text - use existing logic
-                        let r = uiRectToImageRect(o.rect, fitted: fitted, image: imgSize)
-                        let paddingScaled = 4 * scaleW
-                        
-                        // Draw background with proper padding to match SwiftUI rendering
-                        if o.bgEnabled {
-                            let bgRect = r.insetBy(dx: -paddingScaled, dy: -paddingScaled)
-                            let bg = NSBezierPath(rect: bgRect)
-                            o.bgColor.setFill()
-                            bg.fill()
-                        }
-                        
-                        // Draw text
-                        let para = NSMutableParagraphStyle()
-                        para.alignment = .left
-                        para.lineBreakMode = .byWordWrapping
-                        let attrs: [NSAttributedString.Key: Any] = [
-                            .font: NSFont.systemFont(ofSize: o.fontSize * scaleW),
-                            .foregroundColor: o.textColor,
-                            .paragraphStyle: para
-                        ]
-                        
-                        NSString(string: o.text).draw(in: r, withAttributes: attrs)
-                    }
-                case .badge(let o):
-                    let r = uiRectToImageRect(o.rect, fitted: fitted, image: imgSize)
-                    
-                    // Draw the circle background
-                    let circle = NSBezierPath(ovalIn: r)
-                    o.fillColor.setFill()
-                    circle.fill()
-                    
-                    // Calculate font size
-                    let fontSize = min(r.width, r.height) * 0.6
-                    let font = NSFont.systemFont(ofSize: fontSize, weight: .bold)
-                    
-                    // Create attributed string
-                    let numberString = "\(o.number)"
-                    let attrs: [NSAttributedString.Key: Any] = [
-                        .font: font,
-                        .foregroundColor: o.textColor
-                    ]
-                    let attributedString = NSAttributedString(string: numberString, attributes: attrs)
-                    
-                    // Calculate text size and center it manually
-                    let textSize = attributedString.size()
-                    let textRect = CGRect(
-                        x: r.midX - textSize.width / 2,
-                        y: r.midY - textSize.height / 2,
-                        width: textSize.width,
-                        height: textSize.height
-                    )
-                    
-                    // Draw the text at the calculated position
-                    attributedString.draw(in: textRect)
-                case .highlight(let o):
-                    let r = uiRectToImageRect(o.rect, fitted: fitted, image: imgSize)
-                    o.color.setFill(); NSBezierPath(rect: r).fill()
-                case .image(let o):
-                    if o.rotation != 0 {
-                        NSGraphicsContext.current?.saveGraphicsState()
-
-                        // 1. Get the UI space rect and center
-                        let uiRect = o.rect
-                        let uiCenter = CGPoint(x: uiRect.midX, y: uiRect.midY)
-
-                        // 2. Convert center to image space
-                        let imageCenter = uiToImagePoint(uiCenter, fitted: fitted, image: imgSize)
-
-                        // 3. Convert size to image space (no Y-flip for size)
-                        let imageSize = CGSize(
-                            width: uiRect.width * (imgSize.width / max(1, fitted.width)),
-                            height: uiRect.height * (imgSize.height / max(1, fitted.height))
-                        )
-
-                        // 4. Create image rect centered at the converted center
-                        let imageRect = CGRect(
-                            x: imageCenter.x - imageSize.width / 2,
-                            y: imageCenter.y - imageSize.height / 2,
-                            width: imageSize.width,
-                            height: imageSize.height
-                        )
-
-                        // 5. Apply rotation in image space around the image center
-                        // Note: Negate the rotation because image Y is flipped from UI Y
-                        let transform = NSAffineTransform()
-                        transform.translateX(by: imageCenter.x, yBy: imageCenter.y)
-                        transform.rotate(byRadians: -o.rotation)  // Negate rotation for flipped coordinate system
-                        transform.translateX(by: -imageCenter.x, yBy: -imageCenter.y)
-                        transform.concat()
-
-                        // 6. Draw the image
-                        o.image.draw(in: imageRect)
-
-                        NSGraphicsContext.current?.restoreGraphicsState()
-                    } else {
-                        // Non-rotated image - use existing logic
-                        let r = uiRectToImageRect(o.rect, fitted: fitted, image: imgSize)
-                        o.image.draw(in: r)
-                    }
-                case .blur:
-                    // Blur objects are handled in second pass - see line 4172
-                    break
-                }
-            }
-
-            // Second pass: Apply blur effects
-            // We do this after all other objects are drawn so the blur can affect them
-
-            // Flush graphics to ensure all drawing is committed to rep
-            NSGraphicsContext.current?.flushGraphics()
-
-            // Use the rep's CGImage directly - it has all the drawing we just did
-            if let currentCGImage = rep.cgImage {
-                print("Processing blur objects, count: \(blurObjects.count)")
-
-                // Create a new graphics context focused on rep for blur drawing
-                let repContext = NSGraphicsContext(bitmapImageRep: rep)
-                NSGraphicsContext.saveGraphicsState()
-                NSGraphicsContext.current = repContext
-
-                for (blurObj, _) in blurObjects {
-                    // Blur rects are in author space, use same conversion as crop
-                    let (pixelBL, _) = authorRectToPixelBL(
-                        authorRect: blurObj.rect,
-                        baseImage: base,
-                        selectedImageSize: selectedImageSize,
-                        imageDisplayMode: imageDisplayMode,
-                        currentGeometrySize: currentGeometrySize,
-                        objectSpaceSize: objectSpaceSize
-                    )
-
-                    // Convert BL to TL for CGImage cropping (CGImage uses top-left origin)
-                    let pixelTL = CGRect(
-                        x: pixelBL.origin.x,
-                        y: CGFloat(currentCGImage.height) - pixelBL.origin.y - pixelBL.height,
-                        width: pixelBL.width,
-                        height: pixelBL.height
-                    )
-
-                    // Clamp to image bounds
-                    let rPixels = CGRect(
-                        x: max(0, pixelTL.origin.x).rounded(.down),
-                        y: max(0, pixelTL.origin.y).rounded(.down),
-                        width: min(CGFloat(currentCGImage.width) - max(0, pixelTL.origin.x), pixelTL.width).rounded(.down),
-                        height: min(CGFloat(currentCGImage.height) - max(0, pixelTL.origin.y), pixelTL.height).rounded(.down)
-                    )
-
-                    // Convert back to BL points for drawing (NSImage uses bottom-left)
-                    let pxToPointsX = imgSize.width / CGFloat(currentCGImage.width)
-                    let pxToPointsY = imgSize.height / CGFloat(currentCGImage.height)
-                    let rTLPoints = CGRect(
-                        x: rPixels.origin.x * pxToPointsX,
-                        y: rPixels.origin.y * pxToPointsY,
-                        width: rPixels.width * pxToPointsX,
-                        height: rPixels.height * pxToPointsY
-                    )
-                    let r = CGRect(
-                        x: rTLPoints.origin.x,
-                        y: imgSize.height - rTLPoints.origin.y - rTLPoints.height,
-                        width: rTLPoints.width,
-                        height: rTLPoints.height
-                    )
-
-                    // Don't scale the blur radius - use it directly as pixel block size
-                    let pixelSize = max(1, blurObj.blurRadius)
-
-                    print("UI rect: \(blurObj.rect)")
-                    print("Fitted: \(fitted), ImgSize (points): \(imgSize)")
-                    print("Rect in points (bottom-left from uiRectToImageRect): \(r)")
-                    print("Rect in pixels (bottom-left for CGImage): \(rPixels)")
-                    print("CGImage size: \(currentCGImage.width)x\(currentCGImage.height)")
-
-                    // Manually create pixelation by downscaling and upscaling
-                    // Crop from CGImage using pixel coordinates, draw back using point coordinates
-
-                    // Use a simpler approach: downsample and upsample with proper dimensions
-                    if let croppedRegion = currentCGImage.cropping(to: rPixels) {
-                        print("Cropped region from \(rPixels), size: \(croppedRegion.width)x\(croppedRegion.height)")
-
-
-
-                        // Calculate downsampled dimensions
-                        let downsampledWidth = max(1, Int(CGFloat(croppedRegion.width) / pixelSize))
-                        let downsampledHeight = max(1, Int(CGFloat(croppedRegion.height) / pixelSize))
-
-                        print("Downsampling to: \(downsampledWidth)x\(downsampledHeight)")
-
-                        // Create a small context for downsampling
-                        let colorSpace = CGColorSpaceCreateDeviceRGB()
-                        if let downsampleContext = CGContext(
-                            data: nil,
-                            width: downsampledWidth,
-                            height: downsampledHeight,
-                            bitsPerComponent: 8,
-                            bytesPerRow: 0,
-                            space: colorSpace,
-                            bitmapInfo: CGImageAlphaInfo.premultipliedLast.rawValue
-                        ) {
-                            // Use high quality interpolation for downsampling to get average color
-                            downsampleContext.interpolationQuality = .high
-                            downsampleContext.draw(croppedRegion, in: CGRect(x: 0, y: 0, width: downsampledWidth, height: downsampledHeight))
-
-                            if let downsampledImage = downsampleContext.makeImage() {
-                                // Now create a full-size context to draw the pixelated result
-                                if let upsampleContext = CGContext(
-                                    data: nil,
-                                    width: croppedRegion.width,
-                                    height: croppedRegion.height,
-                                    bitsPerComponent: 8,
-                                    bytesPerRow: 0,
-                                    space: colorSpace,
-                                    bitmapInfo: CGImageAlphaInfo.premultipliedLast.rawValue
-                                ) {
-                                    // Use nearest neighbor (no interpolation) when upsampling for blocky effect
-                                    upsampleContext.interpolationQuality = .none
-                                    upsampleContext.draw(downsampledImage, in: CGRect(x: 0, y: 0, width: croppedRegion.width, height: croppedRegion.height))
-
-                                    if let pixelatedImage = upsampleContext.makeImage() {
-                                        NSGraphicsContext.current?.saveGraphicsState()
-
-                                        if NSGraphicsContext.current?.cgContext != nil {
-                                            // Use r (bottom-left coords) for drawing, same as rectangles/lines
-                                            let pixelatedNSImage = NSImage(cgImage: pixelatedImage, size: r.size)
-
-                                            if blurObj.rotation != 0 {
-                                                NSGraphicsContext.current?.saveGraphicsState()
-
-                                                let imageCenter = CGPoint(x: r.midX, y: r.midY)
-                                                let clipPath = NSBezierPath(rect: r)
-                                                let transform = NSAffineTransform()
-                                                transform.translateX(by: imageCenter.x, yBy: imageCenter.y)
-                                                transform.rotate(byRadians: -blurObj.rotation)
-                                                transform.translateX(by: -imageCenter.x, yBy: -imageCenter.y)
-                                                clipPath.transform(using: transform as AffineTransform)
-                                                clipPath.addClip()
-
-                                                pixelatedNSImage.draw(in: r)
-                                                NSGraphicsContext.current?.restoreGraphicsState()
-                                            } else {
-                                                pixelatedNSImage.draw(in: r)
-                                            }
-                                        }
-
-                                        NSGraphicsContext.current?.restoreGraphicsState()
-                                        print("Drew pixelated region at \(r)")
-                                    } else {
-                                        print("Failed to create upsampled image")
-                                    }
-                                } else {
-                                    print("Failed to create upsample context")
-                                }
-                            } else {
-                                print("Failed to create downsampled image")
-                            }
-                        } else {
-                            print("Failed to create downsample context")
-                        }
-                    } else {
-                        print("Failed to crop region for pixelation")
-                    }
-                }
-
-                NSGraphicsContext.restoreGraphicsState()
-            }
-        }
-        NSGraphicsContext.restoreGraphicsState()
-        return composed
-    }
-    
-    private func deleteSelectedObject() {
-        // If the inline TextEditor has keyboard focus, do NOT delete the text object.
-        // This lets the Delete/Backspace key edit text content instead of removing the box.
-        if isTextEditorFocused {
-            return
-        }
-        guard let sel = selectedObjectID, let idx = objects.firstIndex(where: { $0.id == sel }) else { return }
-        pushUndoSnipshot()
-
-        // Clear blur snapshot if deleting a blur object
-        if case .blur = objects[idx] {
-            blurSnapshots[sel] = nil
-        }
-
-        objects.remove(at: idx)
-        selectedObjectID = nil
-        activeHandle = .none
-    }
-
-    private func deleteMultipleSelectedObjects() {
-        if isTextEditorFocused {
-            return
-        }
-        guard !selectedObjectIDs.isEmpty else { return }
-        pushUndoSnipshot()
-
-        // Clear blur snapshots for any blur objects being deleted
-        for objID in selectedObjectIDs {
-            if let idx = objects.firstIndex(where: { $0.id == objID }) {
-                if case .blur = objects[idx] {
-                    blurSnapshots[objID] = nil
-                }
-            }
-        }
-
-        // Remove all selected objects
-        objects.removeAll { obj in
-            selectedObjectIDs.contains(obj.id)
-        }
-
-        // Clear selection
-        selectedObjectIDs.removeAll()
-        selectedObjectID = nil
-        activeHandle = .none
-    }
-
-    private func performUndo() {
+    @State var rectRotateStartAngle: CGFloat? = nil
+    @State var rectRotateStartValue: CGFloat? = nil
+    @State var imageRotateStartAngle: CGFloat? = nil
+    @State var imageRotateStartValue: CGFloat? = nil
+    @State var blurRotateStartAngle: CGFloat? = nil
+    @State var blurRotateStartValue: CGFloat? = nil
+
+    func performUndo() {
         guard let prev = undoStack.popLast() else { return }
         let current = Snipshot(imageURL: selectedSnipURL, objects: objects)
         redoStack.append(current)
@@ -4791,7 +3242,7 @@ struct ContentView: View {
         
     }
     
-    private func performRedo() {
+    func performRedo() {
         guard let next = redoStack.popLast() else { return }
         let current = Snipshot(imageURL: selectedSnipURL, objects: objects)
         undoStack.append(current)
@@ -4802,627 +3253,5 @@ struct ContentView: View {
         
     }
     
-    private func clampPoint(_ p: CGPoint, in fitted: CGSize) -> CGPoint {
-        CGPoint(x: min(max(0, p.x), fitted.width),
-                y: min(max(0, p.y), fitted.height))
-    }
-    
-    /// Clamps a non-rotated rect to stay within canvas bounds
-    private func clampRect(_ r: CGRect, in fitted: CGSize) -> CGRect {
-        var rect = r
 
-        // Clamp the rect to stay within canvas bounds
-        // For moving/positioning: keep the object's size and just adjust position
-        // For resizing: the size might exceed bounds, so trim it
-
-        // If origin is negative (object moved past top/left edge)
-        if rect.origin.x < 0 {
-            // If the size extends beyond the opposite edge, we're resizing - trim the size
-            if rect.maxX > fitted.width {
-                rect.size.width = fitted.width
-            }
-            rect.origin.x = 0
-        }
-        if rect.origin.y < 0 {
-            // If the size extends beyond the opposite edge, we're resizing - trim the size
-            if rect.maxY > fitted.height {
-                rect.size.height = fitted.height
-            }
-            rect.origin.y = 0
-        }
-
-        // Clamp position to keep object within bounds (for moving)
-        if rect.maxX > fitted.width {
-            rect.origin.x = max(0, fitted.width - rect.size.width)
-        }
-        if rect.maxY > fitted.height {
-            rect.origin.y = max(0, fitted.height - rect.size.height)
-        }
-
-        // If object is larger than canvas, shrink it
-        if rect.size.width > fitted.width {
-            rect.size.width = fitted.width
-            rect.origin.x = 0
-        }
-        if rect.size.height > fitted.height {
-            rect.size.height = fitted.height
-            rect.origin.y = 0
-        }
-
-        // Ensure minimum size
-        rect.size.width = max(2, rect.size.width)
-        rect.size.height = max(2, rect.size.height)
-
-        return rect
-    }
-
-    /// Checks if a rotated rect's axis-aligned bounding box fits within canvas bounds
-    /// Returns true if the entire AABB is within bounds
-    private func rotatedRectFitsInBounds(_ rect: CGRect, rotation: CGFloat, in fitted: CGSize) -> Bool {
-        let center = CGPoint(x: rect.midX, y: rect.midY)
-        let corners = [
-            CGPoint(x: rect.minX, y: rect.minY),
-            CGPoint(x: rect.maxX, y: rect.minY),
-            CGPoint(x: rect.minX, y: rect.maxY),
-            CGPoint(x: rect.maxX, y: rect.maxY)
-        ]
-
-        let s = sin(rotation), co = cos(rotation)
-        let rotatedCorners = corners.map { corner -> CGPoint in
-            let dx = corner.x - center.x
-            let dy = corner.y - center.y
-            return CGPoint(
-                x: center.x + dx * co - dy * s,
-                y: center.y + dx * s + dy * co
-            )
-        }
-
-        let minX = rotatedCorners.map { $0.x }.min() ?? center.x
-        let maxX = rotatedCorners.map { $0.x }.max() ?? center.x
-        let minY = rotatedCorners.map { $0.y }.min() ?? center.y
-        let maxY = rotatedCorners.map { $0.y }.max() ?? center.y
-
-        return minX >= 0 && maxX <= fitted.width && minY >= 0 && maxY <= fitted.height
-    }
-
-    private func adjustedDeltaComponent(desired: CGFloat, current: CGFloat, allowed: CGFloat) -> CGFloat {
-        guard desired != 0 else { return 0 }
-        if desired > 0 {
-            return min(current, allowed)
-        } else {
-            return max(current, allowed)
-        }
-    }
-
-    /// Calculates the maximum allowed delta for moving a non-rotated rect without going off-canvas
-    /// Returns a clamped delta that keeps the rect within bounds
-    private func clampedDeltaForRect(_ rect: CGRect, delta: CGSize, in fitted: CGSize) -> CGSize {
-        var clampedDelta = delta
-
-        // Calculate proposed position after applying delta
-        let newMinX = rect.minX + delta.width
-        let newMaxX = rect.maxX + delta.width
-        let newMinY = rect.minY + delta.height
-        let newMaxY = rect.maxY + delta.height
-
-        // Clamp X
-        if newMinX < 0 {
-            clampedDelta.width = delta.width - newMinX
-        } else if newMaxX > fitted.width {
-            clampedDelta.width = delta.width - (newMaxX - fitted.width)
-        }
-
-        // Clamp Y
-        if newMinY < 0 {
-            clampedDelta.height = delta.height - newMinY
-        } else if newMaxY > fitted.height {
-            clampedDelta.height = delta.height - (newMaxY - fitted.height)
-        }
-
-        return clampedDelta
-    }
-
-    private func clampedDeltaForLine(_ line: LineObject, delta: CGSize, in fitted: CGSize) -> CGSize {
-        var clampedDelta = delta
-
-        let minX = min(line.start.x, line.end.x)
-        let maxX = max(line.start.x, line.end.x)
-        if delta.width < 0 {
-            clampedDelta.width = max(delta.width, -minX)
-        } else if delta.width > 0 {
-            clampedDelta.width = min(delta.width, fitted.width - maxX)
-        }
-
-        let minY = min(line.start.y, line.end.y)
-        let maxY = max(line.start.y, line.end.y)
-        if delta.height < 0 {
-            clampedDelta.height = max(delta.height, -minY)
-        } else if delta.height > 0 {
-            clampedDelta.height = min(delta.height, fitted.height - maxY)
-        }
-
-        return clampedDelta
-    }
-
-    /// Calculates the maximum allowed delta for moving a rotated rect without going off-canvas
-    /// Returns a clamped delta that keeps the rotated rect within bounds
-    private func clampedDeltaForRotatedRect(_ rect: CGRect, rotation: CGFloat, delta: CGSize, in fitted: CGSize) -> CGSize {
-        print("DEBUG clampedDeltaForRotatedRect: Called with rect=\(rect), rotation=\(rotation), delta=\(delta), fitted=\(fitted)")
-        // Calculate the AABB of the rotated rect at its current position
-        let center = CGPoint(x: rect.midX, y: rect.midY)
-        let corners = [
-            CGPoint(x: rect.minX, y: rect.minY),
-            CGPoint(x: rect.maxX, y: rect.minY),
-            CGPoint(x: rect.minX, y: rect.maxY),
-            CGPoint(x: rect.maxX, y: rect.maxY)
-        ]
-
-        let s = sin(rotation), co = cos(rotation)
-        let rotatedCorners = corners.map { corner -> CGPoint in
-            let dx = corner.x - center.x
-            let dy = corner.y - center.y
-            return CGPoint(
-                x: center.x + dx * co - dy * s,
-                y: center.y + dx * s + dy * co
-            )
-        }
-
-        let minX = rotatedCorners.map { $0.x }.min() ?? center.x
-        let maxX = rotatedCorners.map { $0.x }.max() ?? center.x
-        let minY = rotatedCorners.map { $0.y }.min() ?? center.y
-        let maxY = rotatedCorners.map { $0.y }.max() ?? center.y
-
-        // Calculate the proposed new AABB after applying delta
-        let newMinX = minX + delta.width
-        let newMaxX = maxX + delta.width
-        let newMinY = minY + delta.height
-        let newMaxY = maxY + delta.height
-
-        // Clamp the delta to keep AABB within bounds
-        var clampedDelta = delta
-
-        if newMinX < 0 {
-            clampedDelta.width = delta.width - newMinX  // Reduce delta to stay in bounds
-        } else if newMaxX > fitted.width {
-            clampedDelta.width = delta.width - (newMaxX - fitted.width)
-        }
-
-        if newMinY < 0 {
-            clampedDelta.height = delta.height - newMinY
-        } else if newMaxY > fitted.height {
-            clampedDelta.height = delta.height - (newMaxY - fitted.height)
-        }
-
-        print("DEBUG clampedDeltaForRotatedRect: Returning clampedDelta=\(clampedDelta)")
-        return clampedDelta
-    }
-
-    /// Clamps a rotated rect to stay within canvas bounds by adjusting its position
-    /// Returns the new rect with clamped center position
-    private func clampRotatedRect(_ r: CGRect, rotation: CGFloat, in fitted: CGSize) -> CGRect {
-        // Calculate the axis-aligned bounding box of the rotated rect
-        let center = CGPoint(x: r.midX, y: r.midY)
-        let corners = [
-            CGPoint(x: r.minX, y: r.minY),
-            CGPoint(x: r.maxX, y: r.minY),
-            CGPoint(x: r.minX, y: r.maxY),
-            CGPoint(x: r.maxX, y: r.maxY)
-        ]
-
-        // Rotate corners around the center
-        let s = sin(rotation), co = cos(rotation)
-        let rotatedCorners = corners.map { corner -> CGPoint in
-            let dx = corner.x - center.x
-            let dy = corner.y - center.y
-            return CGPoint(
-                x: center.x + dx * co - dy * s,
-                y: center.y + dx * s + dy * co
-            )
-        }
-
-        // Find the AABB of rotated corners
-        let minX = rotatedCorners.map { $0.x }.min() ?? center.x
-        let maxX = rotatedCorners.map { $0.x }.max() ?? center.x
-        let minY = rotatedCorners.map { $0.y }.min() ?? center.y
-        let maxY = rotatedCorners.map { $0.y }.max() ?? center.y
-
-        // Calculate how much the AABB extends beyond canvas bounds
-        var offsetX: CGFloat = 0
-        var offsetY: CGFloat = 0
-
-        if minX < 0 {
-            offsetX = -minX
-        } else if maxX > fitted.width {
-            offsetX = fitted.width - maxX
-        }
-
-        if minY < 0 {
-            offsetY = -minY
-        } else if maxY > fitted.height {
-            offsetY = fitted.height - maxY
-        }
-
-        // Apply the offset to the rect's center
-        var result = r
-        result.origin.x += offsetX
-        result.origin.y += offsetY
-
-        return result
-    }
-
-    private func objectIntersects(_ obj: Drawable, with selectionRect: CGRect) -> Bool {
-        switch obj {
-        case .line(let o):
-            // Check if line's bounding box intersects with selection rect
-            let minX = min(o.start.x, o.end.x)
-            let maxX = max(o.start.x, o.end.x)
-            let minY = min(o.start.y, o.end.y)
-            let maxY = max(o.start.y, o.end.y)
-            let lineBounds = CGRect(x: minX, y: minY, width: maxX - minX, height: maxY - minY)
-            return selectionRect.intersects(lineBounds)
-        case .rect(let o):
-            return selectionRect.intersects(o.rect)
-        case .oval(let o):
-            return selectionRect.intersects(o.rect)
-        case .text(let o):
-            return selectionRect.intersects(o.rect)
-        case .badge(let o):
-            return selectionRect.intersects(o.rect)
-        case .highlight(let o):
-            return selectionRect.intersects(o.rect)
-        case .image(let o):
-            return selectionRect.intersects(o.rect)
-        case .blur(let o):
-            return selectionRect.intersects(o.rect)
-        }
-    }
-
-    private func boundingBoxOfSelectedObjects() -> CGRect? {
-        guard !selectedObjectIDs.isEmpty else { return nil }
-
-        var minX = CGFloat.infinity
-        var minY = CGFloat.infinity
-        var maxX = -CGFloat.infinity
-        var maxY = -CGFloat.infinity
-
-        for obj in objects {
-            guard selectedObjectIDs.contains(obj.id) else { continue }
-
-            switch obj {
-            case .line(let o):
-                minX = min(minX, min(o.start.x, o.end.x))
-                maxX = max(maxX, max(o.start.x, o.end.x))
-                minY = min(minY, min(o.start.y, o.end.y))
-                maxY = max(maxY, max(o.start.y, o.end.y))
-            case .rect(let o):
-                minX = min(minX, o.rect.minX)
-                maxX = max(maxX, o.rect.maxX)
-                minY = min(minY, o.rect.minY)
-                maxY = max(maxY, o.rect.maxY)
-            case .oval(let o):
-                minX = min(minX, o.rect.minX)
-                maxX = max(maxX, o.rect.maxX)
-                minY = min(minY, o.rect.minY)
-                maxY = max(maxY, o.rect.maxY)
-            case .text(let o):
-                minX = min(minX, o.rect.minX)
-                maxX = max(maxX, o.rect.maxX)
-                minY = min(minY, o.rect.minY)
-                maxY = max(maxY, o.rect.maxY)
-            case .badge(let o):
-                minX = min(minX, o.rect.minX)
-                maxX = max(maxX, o.rect.maxX)
-                minY = min(minY, o.rect.minY)
-                maxY = max(maxY, o.rect.maxY)
-            case .highlight(let o):
-                minX = min(minX, o.rect.minX)
-                maxX = max(maxX, o.rect.maxX)
-                minY = min(minY, o.rect.minY)
-                maxY = max(maxY, o.rect.maxY)
-            case .image(let o):
-                minX = min(minX, o.rect.minX)
-                maxX = max(maxX, o.rect.maxX)
-                minY = min(minY, o.rect.minY)
-                maxY = max(maxY, o.rect.maxY)
-            case .blur(let o):
-                minX = min(minX, o.rect.minX)
-                maxX = max(maxX, o.rect.maxX)
-                minY = min(minY, o.rect.minY)
-                maxY = max(maxY, o.rect.maxY)
-            }
-        }
-
-        guard minX != .infinity else { return nil }
-        return CGRect(x: minX, y: minY, width: maxX - minX, height: maxY - minY)
-    }
-
-    private func fittedImageSize(original: CGSize, in container: CGSize) -> CGSize {
-        let scale = min(container.width / max(1, original.width), container.height / max(1, original.height))
-        return CGSize(width: original.width * scale, height: original.height * scale)
-    }
-    
-    private func uiToImagePoint(_ p: CGPoint, fitted: CGSize, image: CGSize) -> CGPoint {
-        let p = clampPoint(p, in: fitted)
-        let scaleX = image.width / max(1, fitted.width)
-        let scaleY = image.height / max(1, fitted.height)
-        // UI: (0,0) top-left (Y down) -> Image: (0,0) bottom-left (Y up)
-        return CGPoint(x: p.x * scaleX, y: (fitted.height - p.y) * scaleY)
-    }
-    
-    private func uiRectToImageRect(_ r: CGRect, fitted: CGSize, image: CGSize) -> CGRect {
-        let r = clampRect(r, in: fitted)
-        let scaleX = image.width / max(1, fitted.width)
-        let scaleY = image.height / max(1, fitted.height)
-        let x = r.origin.x * scaleX
-        let width = r.width * scaleX
-        let height = r.height * scaleY
-        // Convert Y coordinate: UI top-left origin to image bottom-left origin
-        let y = (fitted.height - (r.origin.y + r.height)) * scaleY
-        return CGRect(x: x, y: y, width: width, height: height)
-    }
-    
-    // Shift Snipping for straight lines at 0°/45°/90°
-    private func SnippedPoint(start: CGPoint, raw: CGPoint) -> CGPoint {
-        let dx = raw.x - start.x
-        let dy = raw.y - start.y
-        let adx = abs(dx)
-        let ady = abs(dy)
-        if adx == 0 && ady == 0 { return raw }
-        // Thresholds for 22.5° and 67.5° to decide Snipping band
-        let tan22: CGFloat = 0.41421356  // tan(22.5°)
-        let tan67: CGFloat = 2.41421356  // tan(67.5°)
-        
-        if ady <= adx * tan22 { // Horizontal
-            return CGPoint(x: start.x + dx, y: start.y)
-        } else if ady >= adx * tan67 { // Vertical
-            return CGPoint(x: start.x, y: start.y + dy)
-        } else { // Diagonal 45°
-            let m = max(adx, ady)
-            let sx: CGFloat = dx >= 0 ? 1 : -1
-            let sy: CGFloat = dy >= 0 ? 1 : -1
-            return CGPoint(x: start.x + sx * m, y: start.y + sy * m)
-        }
-    }
-    
-    private func pasteFromClipboard() {
-        // If a TextEditor is focused, let it handle paste itself.
-        if isTextEditorFocused { return }
-        
-        let pb = NSPasteboard.general
-        if let imgs = pb.readObjects(forClasses: [NSImage.self]) as? [NSImage],
-           let img = imgs.first {
-            // Choose author space (object coord system)
-            let author = objectSpaceSize ?? lastFittedSize ?? currentImage?.size ?? CGSize(width: 1200, height: 800)
-            
-            let natural = img.size
-            let aspect = (natural.height == 0) ? 1 : (natural.width / natural.height)
-            
-            // Sensible default size
-            var w = min(480, author.width * 0.6)
-            var h = w / aspect
-            if h > author.height * 0.6 { h = author.height * 0.6; w = h * aspect }
-            
-            // Center in author space
-            let rect = CGRect(
-                x: max(0, (author.width - w)/2),
-                y: max(0, (author.height - h)/2),
-                width: w, height: h
-            )
-            
-            let obj = PastedImageObject(rect: rect, image: img)
-            pushUndoSnipshot()
-            objects.append(.image(obj))
-            if objectSpaceSize == nil { objectSpaceSize = author }
-            selectedObjectID = obj.id
-            activeHandle = .none
-            // no focus change for text
-        }
-    }
-    
-    // MARK: - Snips Persistence
-    
-    private func SnipsDirectory() -> URL? {
-        // If the user has chosen a custom destination, resolve from bookmark
-        if !saveDirectoryPath.isEmpty {
-            if let bookmarkData = UserDefaults.standard.data(forKey: "saveDirectoryBookmark") {
-                do {
-                    var isStale = false
-                    let url = try URL(
-                        resolvingBookmarkData: bookmarkData,
-                        options: .withSecurityScope,
-                        relativeTo: nil,
-                        bookmarkDataIsStale: &isStale
-                    )
-                    
-                    guard url.startAccessingSecurityScopedResource() else {
-                        print("Failed to access security-scoped resource")
-                        return defaultSnipsDirectory()
-                    }
-                    
-                    // Store a reference to stop accessing later if needed
-                    // You might want to manage this lifecycle better
-                    return url
-                    
-                } catch {
-                    print("Failed to resolve bookmark: \(error)")
-                    // Fall back to default directory
-                    return defaultSnipsDirectory()
-                }
-            }
-        }
-        
-        return defaultSnipsDirectory()
-    }
-
-    private func defaultSnipsDirectory() -> URL? {
-        let fm = FileManager.default
-        if let pictures = fm.urls(for: .picturesDirectory, in: .userDomainMask).first {
-            let dir = pictures.appendingPathComponent("Screen Snip", isDirectory: true)
-            if !fm.fileExists(atPath: dir.path) {
-                try? fm.createDirectory(at: dir, withIntermediateDirectories: true)
-            }
-            return dir
-        }
-        return nil
-    }
-    
-    private var currentImage: NSImage? {
-        guard let url = selectedSnipURL else { return nil }
-        return NSImage(contentsOf: url)  // Load on-demand
-    }
-    
-    /// Loads existing Snips on disk (all supported formats), newest first.
-    private func loadExistingSnips() {
-        guard let dir = SnipsDirectory() else { return }
-        let fm = FileManager.default
-        do {
-            let supportedExtensions = Set(["png", "jpg", "jpeg", "heic"])
-            let urls = try fm.contentsOfDirectory(at: dir, includingPropertiesForKeys: [.creationDateKey], options: [.skipsHiddenFiles])
-                .filter { supportedExtensions.contains($0.pathExtension.lowercased()) }
-            let dated: [(URL, Date)] = urls.compactMap {
-                let vals = try? $0.resourceValues(forKeys: [.creationDateKey])
-                return ($0, vals?.creationDate ?? .distantPast)
-            }
-            let sorted = dated.sorted { $0.1 > $1.1 }.map { $0.0 }
-            SnipURLs = Array(sorted.prefix(10))
-            
-            // Clean up missing URLs from our tracking set
-            missingSnipURLs = missingSnipURLs.filter { !sorted.contains($0) }
-            
-            // If currently selected Snip no longer exists, clear selection
-            if let sel = selectedSnipURL {
-                if !fm.fileExists(atPath: sel.path) {
-                    selectedSnipURL = nil
-                }
-            }
-        } catch {
-            SnipURLs = []
-        }
-    }
-    
-    /// Opens the Snips directory in Finder as a simple "gallery" view.
-    private func openSnipsInFinder() {
-        guard let dir = SnipsDirectory() else { return }
-        NSWorkspace.shared.open(dir)
-    }
-    
-    private func openSnipsInGallery() {
-        // First, refresh the main view's data
-        loadExistingSnips()
-        
-        // Create a function that builds on the refreshed main data
-        func loadAllGalleryURLs() -> [URL] {
-            guard let dir = SnipsDirectory() else { return [] }
-            let fm = FileManager.default
-            do {
-                let supportedExtensions = Set(["png", "jpg", "jpeg", "heic"])
-                let urls = try fm.contentsOfDirectory(at: dir, includingPropertiesForKeys: [.creationDateKey], options: [.skipsHiddenFiles])
-                    .filter { supportedExtensions.contains($0.pathExtension.lowercased()) }
-                let dated: [(URL, Date)] = urls.compactMap {
-                    let vals = try? $0.resourceValues(forKeys: [.creationDateKey])
-                    return ($0, vals?.creationDate ?? .distantPast)
-                }
-                // Return ALL files (not limited to 10 like SnipURLs)
-                return dated.sorted { $0.1 > $1.1 }.map { $0.0 }
-            } catch {
-                return []
-            }
-        }
-        
-        // Use the already-refreshed SnipURLs as the immediate data source, then load all files
-        let initialUrls = loadAllGalleryURLs()
-        guard !initialUrls.isEmpty else { return }
-        
-        GalleryWindow.shared.present(
-            urls: initialUrls,
-            onSelect: { url in
-                // Your existing onSelect code...
-                let fm = FileManager.default
-                if !fm.fileExists(atPath: url.path) {
-                    missingSnipURLs.insert(url)
-                    if let index = SnipURLs.firstIndex(of: url) {
-                        SnipURLs.remove(at: index)
-                    }
-                    return
-                }
-                
-                selectedSnipURL = url
-                selectedImageSize = probeImageSize(url)
-                objects.removeAll()
-                objectSpaceSize = nil
-                selectedObjectID = nil
-                activeHandle = .none
-                cropRect = nil
-                cropDraftRect = nil
-                cropHandle = .none
-                focusedTextID = nil
-                undoStack.removeAll()
-                redoStack.removeAll()
-                zoomLevel = 1.0
-                imageReloadTrigger = UUID()
-                GalleryWindow.shared.close()
-            },
-            onReload: loadAllGalleryURLs  // Use the same function for reload
-        )
-    }
-    
-    /// Inserts a newly saved URL at the start of the list (leftmost), de-duplicating if necessary.
-    private func insertSnipURL(_ url: URL) {
-        if let idx = SnipURLs.firstIndex(of: url) {
-            SnipURLs.remove(at: idx)
-        }
-        SnipURLs.insert(url, at: 0)
-    }
-    
-    /// Delete a Snip from disk and update gallery/selection.
-    private func deleteSnip(_ url: URL) {
-        let fm = FileManager.default
-        // Prefer moving to Trash; fall back to remove.
-        do {
-            var trashedURL: NSURL?
-            try fm.trashItem(at: url, resultingItemURL: &trashedURL)
-        } catch {
-            try? fm.removeItem(at: url)
-        }
-        // Update gallery list
-        if let idx = SnipURLs.firstIndex(of: url) {
-            SnipURLs.remove(at: idx)
-        }
-        // Update current selection / preview
-        if selectedSnipURL == url {
-            selectedSnipURL = SnipURLs.first
-            if let sel = selectedSnipURL {
-                selectedImageSize = probeImageSize(sel)
-                lastFittedSize = nil
-            } else {
-                selectedImageSize = nil
-                lastFittedSize = nil
-            }
-        }
-    }
-    
-    func cropImage(_ image: NSImage, toBottomLeftRect rBL: CGRect) -> NSImage? {
-        guard let cg = image.cgImage(forProposedRect: nil, context: nil, hints: nil) else { return nil }
-        let imgW = CGFloat(cg.width)
-        let imgH = CGFloat(cg.height)
-        // Convert to CoreGraphics top-left origin
-        var rectTL = CGRect(x: rBL.origin.x,
-                            y: imgH - (rBL.origin.y + rBL.height),
-                            width: rBL.width,
-                            height: rBL.height)
-        // Normalize negative or tiny sizes
-        if rectTL.width < 0 { rectTL.origin.x += rectTL.width; rectTL.size.width = -rectTL.width }
-        if rectTL.height < 0 { rectTL.origin.y += rectTL.height; rectTL.size.height = -rectTL.height }
-        // Clamp to image bounds
-        rectTL.origin.x = max(0, min(rectTL.origin.x, imgW))
-        rectTL.origin.y = max(0, min(rectTL.origin.y, imgH))
-        rectTL.size.width  = max(1, min(rectTL.size.width,  imgW - rectTL.origin.x))
-        rectTL.size.height = max(1, min(rectTL.size.height, imgH - rectTL.origin.y))
-        // Integral pixel edges
-        rectTL = rectTL.integral
-        guard rectTL.width >= 1, rectTL.height >= 1 else { return nil }
-        guard let sub = cg.cropping(to: rectTL) else { return nil }
-        return NSImage(cgImage: sub, size: NSSize(width: rectTL.width, height: rectTL.height))
-    }
-    
 }
