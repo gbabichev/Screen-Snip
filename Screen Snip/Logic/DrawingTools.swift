@@ -265,28 +265,33 @@ struct RectObject: @MainActor DrawableObject {
 
                 switch handle {
                 case .rectTopLeft:
-                    x0 = lp.x; y0 = lp.y
+                    // Don't allow dragging past the opposite edge
+                    x0 = min(lp.x, rect.maxX - 10)
+                    y0 = min(lp.y, rect.maxY - 10)
                 case .rectTopRight:
-                    x1 = lp.x; y0 = lp.y
+                    // Don't allow dragging past the opposite edge
+                    x1 = max(lp.x, rect.minX + 10)
+                    y0 = min(lp.y, rect.maxY - 10)
                 case .rectBottomLeft:
-                    x0 = lp.x; y1 = lp.y
+                    // Don't allow dragging past the opposite edge
+                    x0 = min(lp.x, rect.maxX - 10)
+                    y1 = max(lp.y, rect.minY + 10)
                 case .rectBottomRight:
-                    x1 = lp.x; y1 = lp.y
+                    // Don't allow dragging past the opposite edge
+                    x1 = max(lp.x, rect.minX + 10)
+                    y1 = max(lp.y, rect.minY + 10)
                 default: break
                 }
 
-                // Normalize in case the drag crosses the opposite corner
-                let nx0 = min(x0, x1), nx1 = max(x0, x1)
-                let ny0 = min(y0, y1), ny1 = max(y0, y1)
-                let newWidth = nx1 - nx0
-                let newHeight = ny1 - ny0
-                
-                // Enforce minimum size
+                let newWidth = x1 - x0
+                let newHeight = y1 - y0
+
+                // Enforce minimum size (should be redundant now but kept as safeguard)
                 if newWidth < 10 || newHeight < 10 {
                     return self
                 }
-                
-                cpy.rect = CGRect(x: nx0, y: ny0, width: newWidth, height: newHeight)
+
+                cpy.rect = CGRect(x: x0, y: y0, width: newWidth, height: newHeight)
                 return cpy
             }
 
@@ -349,33 +354,50 @@ struct OvalObject: @MainActor DrawableObject {
 
     func resizing(_ handle: Handle, to p: CGPoint) -> OvalObject {
         var c = self
+        var newRect = rect
+
         switch handle {
         case .rectTopLeft:
-            c.rect = CGRect(x: p.x,
-                            y: p.y,
-                            width: rect.maxX - p.x,
-                            height: rect.maxY - p.y)
+            // Don't allow dragging past the opposite edge
+            let newX = min(p.x, rect.maxX - 2)
+            let newY = min(p.y, rect.maxY - 2)
+            newRect = CGRect(x: newX,
+                            y: newY,
+                            width: rect.maxX - newX,
+                            height: rect.maxY - newY)
         case .rectTopRight:
-            c.rect = CGRect(x: rect.minX,
-                            y: p.y,
-                            width: p.x - rect.minX,
-                            height: rect.maxY - p.y)
+            // Don't allow dragging past the opposite edge
+            let newX = max(p.x, rect.minX + 2)
+            let newY = min(p.y, rect.maxY - 2)
+            newRect = CGRect(x: rect.minX,
+                            y: newY,
+                            width: newX - rect.minX,
+                            height: rect.maxY - newY)
         case .rectBottomLeft:
-            c.rect = CGRect(x: p.x,
+            // Don't allow dragging past the opposite edge
+            let newX = min(p.x, rect.maxX - 2)
+            let newY = max(p.y, rect.minY + 2)
+            newRect = CGRect(x: newX,
                             y: rect.minY,
-                            width: rect.maxX - p.x,
-                            height: p.y - rect.minY)
+                            width: rect.maxX - newX,
+                            height: newY - rect.minY)
         case .rectBottomRight:
-            c.rect = CGRect(x: rect.minX,
+            // Don't allow dragging past the opposite edge
+            let newX = max(p.x, rect.minX + 2)
+            let newY = max(p.y, rect.minY + 2)
+            newRect = CGRect(x: rect.minX,
                             y: rect.minY,
-                            width: p.x - rect.minX,
-                            height: p.y - rect.minY)
+                            width: newX - rect.minX,
+                            height: newY - rect.minY)
         default:
             break
         }
-        // Prevent negative or tiny sizes
-        c.rect.size.width = max(2, c.rect.size.width)
-        c.rect.size.height = max(2, c.rect.size.height)
+
+        // Ensure minimum size (this should now be redundant but kept as safeguard)
+        newRect.size.width = max(2, newRect.size.width)
+        newRect.size.height = max(2, newRect.size.height)
+
+        c.rect = newRect
         return c
     }
 }
@@ -540,28 +562,33 @@ struct BlurRectObject: @MainActor DrawableObject {
 
                 switch handle {
                 case .rectTopLeft:
-                    x0 = lp.x; y0 = lp.y
+                    // Don't allow dragging past the opposite edge
+                    x0 = min(lp.x, rect.maxX - 10)
+                    y0 = min(lp.y, rect.maxY - 10)
                 case .rectTopRight:
-                    x1 = lp.x; y0 = lp.y
+                    // Don't allow dragging past the opposite edge
+                    x1 = max(lp.x, rect.minX + 10)
+                    y0 = min(lp.y, rect.maxY - 10)
                 case .rectBottomLeft:
-                    x0 = lp.x; y1 = lp.y
+                    // Don't allow dragging past the opposite edge
+                    x0 = min(lp.x, rect.maxX - 10)
+                    y1 = max(lp.y, rect.minY + 10)
                 case .rectBottomRight:
-                    x1 = lp.x; y1 = lp.y
+                    // Don't allow dragging past the opposite edge
+                    x1 = max(lp.x, rect.minX + 10)
+                    y1 = max(lp.y, rect.minY + 10)
                 default: break
                 }
 
-                // Normalize in case the drag crosses the opposite corner
-                let nx0 = min(x0, x1), nx1 = max(x0, x1)
-                let ny0 = min(y0, y1), ny1 = max(y0, y1)
-                let newWidth = nx1 - nx0
-                let newHeight = ny1 - ny0
+                let newWidth = x1 - x0
+                let newHeight = y1 - y0
 
-                // Enforce minimum size
+                // Enforce minimum size (should be redundant now but kept as safeguard)
                 if newWidth < 10 || newHeight < 10 {
                     return self
                 }
 
-                cpy.rect = CGRect(x: nx0, y: ny0, width: newWidth, height: newHeight)
+                cpy.rect = CGRect(x: x0, y: y0, width: newWidth, height: newHeight)
                 return cpy
             }
 
@@ -612,17 +639,37 @@ struct HighlightObject: @MainActor DrawableObject {
     
     func resizing(_ handle: Handle, to p: CGPoint) -> HighlightObject {
         var c = self
+        var newRect = rect
+
         switch handle {
         case .rectTopLeft:
-            c.rect = CGRect(x: p.x, y: p.y, width: rect.maxX - p.x, height: rect.maxY - p.y)
+            // Don't allow dragging past the opposite edge
+            let newX = min(p.x, rect.maxX - 2)
+            let newY = min(p.y, rect.maxY - 2)
+            newRect = CGRect(x: newX, y: newY, width: rect.maxX - newX, height: rect.maxY - newY)
         case .rectTopRight:
-            c.rect = CGRect(x: rect.minX, y: p.y, width: p.x - rect.minX, height: rect.maxY - p.y)
+            // Don't allow dragging past the opposite edge
+            let newX = max(p.x, rect.minX + 2)
+            let newY = min(p.y, rect.maxY - 2)
+            newRect = CGRect(x: rect.minX, y: newY, width: newX - rect.minX, height: rect.maxY - newY)
         case .rectBottomLeft:
-            c.rect = CGRect(x: p.x, y: rect.minY, width: rect.maxX - p.x, height: p.y - rect.minY)
+            // Don't allow dragging past the opposite edge
+            let newX = min(p.x, rect.maxX - 2)
+            let newY = max(p.y, rect.minY + 2)
+            newRect = CGRect(x: newX, y: rect.minY, width: rect.maxX - newX, height: newY - rect.minY)
         case .rectBottomRight:
-            c.rect = CGRect(x: rect.minX, y: rect.minY, width: p.x - rect.minX, height: p.y - rect.minY)
+            // Don't allow dragging past the opposite edge
+            let newX = max(p.x, rect.minX + 2)
+            let newY = max(p.y, rect.minY + 2)
+            newRect = CGRect(x: rect.minX, y: rect.minY, width: newX - rect.minX, height: newY - rect.minY)
         default: break
         }
+
+        // Ensure minimum size
+        newRect.size.width = max(2, newRect.size.width)
+        newRect.size.height = max(2, newRect.size.height)
+
+        c.rect = newRect
         return c
     }
 }
@@ -775,19 +822,36 @@ struct BadgeObject: @MainActor DrawableObject {
     
     func resizing(_ handle: Handle, to p: CGPoint) -> BadgeObject {
         var c = self
+        var newRect = rect
+
         switch handle {
         case .rectTopLeft:
-            c.rect = CGRect(x: p.x, y: p.y, width: rect.maxX - p.x, height: rect.maxY - p.y)
+            // Don't allow dragging past the opposite edge
+            let newX = min(p.x, rect.maxX - 8)
+            let newY = min(p.y, rect.maxY - 8)
+            newRect = CGRect(x: newX, y: newY, width: rect.maxX - newX, height: rect.maxY - newY)
         case .rectTopRight:
-            c.rect = CGRect(x: rect.minX, y: p.y, width: p.x - rect.minX, height: rect.maxY - p.y)
+            // Don't allow dragging past the opposite edge
+            let newX = max(p.x, rect.minX + 8)
+            let newY = min(p.y, rect.maxY - 8)
+            newRect = CGRect(x: rect.minX, y: newY, width: newX - rect.minX, height: rect.maxY - newY)
         case .rectBottomLeft:
-            c.rect = CGRect(x: p.x, y: rect.minY, width: rect.maxX - p.x, height: p.y - rect.minY)
+            // Don't allow dragging past the opposite edge
+            let newX = min(p.x, rect.maxX - 8)
+            let newY = max(p.y, rect.minY + 8)
+            newRect = CGRect(x: newX, y: rect.minY, width: rect.maxX - newX, height: newY - rect.minY)
         case .rectBottomRight:
-            c.rect = CGRect(x: rect.minX, y: rect.minY, width: p.x - rect.minX, height: p.y - rect.minY)
+            // Don't allow dragging past the opposite edge
+            let newX = max(p.x, rect.minX + 8)
+            let newY = max(p.y, rect.minY + 8)
+            newRect = CGRect(x: rect.minX, y: rect.minY, width: newX - rect.minX, height: newY - rect.minY)
         default: break
         }
-        let side = max(8, (c.rect.width + c.rect.height) / 2)
-        c.rect.size = CGSize(width: side, height: side)
+
+        let side = max(8, (newRect.width + newRect.height) / 2)
+        newRect.size = CGSize(width: side, height: side)
+
+        c.rect = newRect
         return c
     }
 }
@@ -960,28 +1024,33 @@ struct PastedImageObject: @MainActor DrawableObject {
 
                 switch handle {
                 case .rectTopLeft:
-                    x0 = lp.x; y0 = lp.y
+                    // Don't allow dragging past the opposite edge
+                    x0 = min(lp.x, rect.maxX - 8)
+                    y0 = min(lp.y, rect.maxY - 8)
                 case .rectTopRight:
-                    x1 = lp.x; y0 = lp.y
+                    // Don't allow dragging past the opposite edge
+                    x1 = max(lp.x, rect.minX + 8)
+                    y0 = min(lp.y, rect.maxY - 8)
                 case .rectBottomLeft:
-                    x0 = lp.x; y1 = lp.y
+                    // Don't allow dragging past the opposite edge
+                    x0 = min(lp.x, rect.maxX - 8)
+                    y1 = max(lp.y, rect.minY + 8)
                 case .rectBottomRight:
-                    x1 = lp.x; y1 = lp.y
+                    // Don't allow dragging past the opposite edge
+                    x1 = max(lp.x, rect.minX + 8)
+                    y1 = max(lp.y, rect.minY + 8)
                 default: break
                 }
 
-                // Normalize in case the drag crosses the opposite corner
-                let nx0 = min(x0, x1), nx1 = max(x0, x1)
-                let ny0 = min(y0, y1), ny1 = max(y0, y1)
-                let newWidth = nx1 - nx0
-                let newHeight = ny1 - ny0
-                
-                // Enforce minimum size
+                let newWidth = x1 - x0
+                let newHeight = y1 - y0
+
+                // Enforce minimum size (should be redundant now but kept as safeguard)
                 if newWidth < 8 || newHeight < 8 {
                     return self
                 }
-                
-                c.rect = CGRect(x: nx0, y: ny0, width: newWidth, height: newHeight)
+
+                c.rect = CGRect(x: x0, y: y0, width: newWidth, height: newHeight)
                 
                 // Apply aspect ratio constraint for non-rotated images
                 if keepAspect {

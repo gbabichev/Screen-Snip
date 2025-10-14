@@ -2551,7 +2551,8 @@ struct ContentView: View {
                                 // Important: keep anchors stable; do not mutate dragStartPoint here
                                 return
                             } else {
-                                updated = o.resizing(activeHandle, to: current)
+                                let clampedCurrent = clampPoint(current, in: author)
+                                updated = o.resizing(activeHandle, to: clampedCurrent)
                             }
                             if updated.rotation == 0 {
                                 let clamped = clampRect(updated.rect, in: author)
@@ -2706,7 +2707,8 @@ struct ContentView: View {
                                 // Important: keep anchors stable; do not mutate dragStartPoint here
                                 return
                             } else {
-                                updated = o.resizing(activeHandle, to: current)
+                                let clampedCurrent = clampPoint(current, in: author)
+                                updated = o.resizing(activeHandle, to: clampedCurrent)
                             }
                             if updated.rotation == 0 {
                                 let clamped = clampRect(updated.rect, in: author)
@@ -2816,7 +2818,8 @@ struct ContentView: View {
                         if !pushedDragUndo { pushUndoSnipshot(); pushedDragUndo = true }
                         switch objects[idx] {
                         case .oval(var o):
-                            let updated = (activeHandle == .none) ? o.moved(by: delta) : o.resizing(activeHandle, to: current)
+                            let clampedCurrent = clampPoint(current, in: author)
+                            let updated = (activeHandle == .none) ? o.moved(by: delta) : o.resizing(activeHandle, to: clampedCurrent)
                             let clamped = clampRect(updated.rect, in: author)
                             o.rect = clamped
                             objects[idx] = .oval(o)
@@ -2899,7 +2902,8 @@ struct ContentView: View {
                         if !pushedDragUndo { pushUndoSnipshot(); pushedDragUndo = true }
                         switch objects[idx] {
                         case .highlight(let o):
-                            let updated = (activeHandle == .none) ? o.moved(by: delta) : o.resizing(activeHandle, to: current)
+                            let clampedCurrent = clampPoint(current, in: author)
+                            let updated = (activeHandle == .none) ? o.moved(by: delta) : o.resizing(activeHandle, to: clampedCurrent)
                             let clamped = clampRect(updated.rect, in: author)
                             var u = updated; u.rect = clamped
                             objects[idx] = .highlight(u)
@@ -3054,7 +3058,8 @@ struct ContentView: View {
                                 // Important: keep anchors stable; do not mutate dragStartPoint here
                                 return
                             } else {
-                                updated = o.resizing(activeHandle, to: p)
+                                let clampedP = clampPoint(p, in: author)
+                                updated = o.resizing(activeHandle, to: clampedP)
                             }
                             let clamped = clampRect(updated.rect, in: author)
                             updated.rect = clamped
@@ -3346,7 +3351,8 @@ struct ContentView: View {
                             // Important: keep anchors stable; do not mutate dragStartPoint here
                             return
                         } else {
-                            updated = o.resizing(activeHandle, to: p)
+                            let clampedP = clampPoint(p, in: author)
+                            updated = o.resizing(activeHandle, to: clampedP)
                         }
                         // Clamp based on rotation
                         if updated.rotation == 0 {
@@ -3358,7 +3364,8 @@ struct ContentView: View {
                         }
                         objects[idx] = .rect(updated)
                     case .oval(let o):
-                        let updated = (activeHandle == .none) ? o.moved(by: delta) : o.resizing(activeHandle, to: p)
+                        let clampedP = clampPoint(p, in: author)
+                        let updated = (activeHandle == .none) ? o.moved(by: delta) : o.resizing(activeHandle, to: clampedP)
                         let clamped = clampRect(updated.rect, in: author)
                         var u = updated; u.rect = clamped
                         objects[idx] = .oval(u)
@@ -3410,7 +3417,8 @@ struct ContentView: View {
                             // Important: keep anchors stable; do not mutate dragStartPoint here
                             return
                         } else {
-                            updated = o.resizing(activeHandle, to: p)
+                            let clampedP = clampPoint(p, in: author)
+                            updated = o.resizing(activeHandle, to: clampedP)
                         }
                         // Clamp based on rotation
                         if updated.rotation == 0 {
@@ -3422,12 +3430,14 @@ struct ContentView: View {
                         }
                         objects[idx] = .text(updated)
                     case .badge(let o):
-                        let updated = (activeHandle == .none) ? o.moved(by: delta) : o.resizing(activeHandle, to: p)
+                        let clampedP = clampPoint(p, in: author)
+                        let updated = (activeHandle == .none) ? o.moved(by: delta) : o.resizing(activeHandle, to: clampedP)
                         let clamped = clampRect(updated.rect, in: author)
                         var u = updated; u.rect = clamped
                         objects[idx] = .badge(u)
                     case .highlight(let o):
-                        let updated = (activeHandle == .none) ? o.moved(by: delta) : o.resizing(activeHandle, to: p)
+                        let clampedP = clampPoint(p, in: author)
+                        let updated = (activeHandle == .none) ? o.moved(by: delta) : o.resizing(activeHandle, to: clampedP)
                         let clamped = clampRect(updated.rect, in: author)
                         var u = updated; u.rect = clamped
                         objects[idx] = .highlight(u)
@@ -3477,7 +3487,8 @@ struct ContentView: View {
                             // Important: keep anchors stable; do not mutate dragStartPoint here
                             return
                         } else {
-                            updated = o.resizing(activeHandle, to: p)
+                            let clampedP = clampPoint(p, in: author)
+                            updated = o.resizing(activeHandle, to: clampedP)
                         }
                         // Clamp based on rotation
                         if updated.rotation == 0 {
@@ -3534,7 +3545,8 @@ struct ContentView: View {
                             // Important: keep anchors stable; do not mutate dragStartPoint here
                             return
                         } else {
-                            updated = o.resizing(activeHandle, to: p)
+                            let clampedP = clampPoint(p, in: author)
+                            updated = o.resizing(activeHandle, to: clampedP)
                         }
                         // Clamp based on rotation
                         if updated.rotation == 0 {
@@ -3629,7 +3641,8 @@ struct ContentView: View {
                         if !pushedDragUndo { pushUndoSnipshot(); pushedDragUndo = true }
                         switch objects[idx] {
                         case .badge(let o):
-                            let updated = (activeHandle == .none) ? o.moved(by: delta) : o.resizing(activeHandle, to: p)
+                            let clampedP = clampPoint(p, in: author)
+                            let updated = (activeHandle == .none) ? o.moved(by: delta) : o.resizing(activeHandle, to: clampedP)
                             let clamped = clampRect(updated.rect, in: author)
                             var u = updated; u.rect = clamped
                             objects[idx] = .badge(u)
