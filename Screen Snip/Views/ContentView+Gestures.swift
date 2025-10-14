@@ -184,12 +184,10 @@ extension ContentView {
                     case .rect(let o):
                         var updated = o
                         if activeHandle == .none {
-                            print("DEBUG pointerGesture rect move: rotation=\(o.rotation), delta=\(delta)")
                             // Clamp delta before moving to prevent going off-canvas (works for both rotated and non-rotated)
                             let moveDelta = o.rotation != 0
                                 ? clampedDeltaForRotatedRect(o.rect, rotation: o.rotation, delta: delta, in: author)
                                 : clampedDeltaForRect(o.rect, delta: delta, in: author)
-                            print("DEBUG pointerGesture rect move: moveDelta=\(moveDelta)")
                             updated = o.moved(by: moveDelta)
                         } else if activeHandle == .rotate {
                             // Absolute-angle rotation anchored at gesture begin; no per-tick anchor drift
@@ -1050,7 +1048,6 @@ extension ContentView {
             let fitted = objectSpaceSize ?? lastFittedSize ?? imgSize
 
             // Draw the base image to fill the logical canvas
-            print("DEBUG: base.size = \(base.size), drawing into imgSize = \(imgSize), fitted = \(fitted)")
             base.draw(in: CGRect(origin: .zero, size: imgSize))
             let scaleX = imgSize.width / max(1, fitted.width)
             let scaleY = imgSize.height / max(1, fitted.height)

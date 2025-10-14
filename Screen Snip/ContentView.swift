@@ -1741,12 +1741,10 @@ struct ContentView: View {
                         case .rect(let o):
                             var updated = o
                             if activeHandle == .none {
-                                print("DEBUG rectGesture move: rotation=\(o.rotation), delta=\(delta)")
                                 // Clamp delta before moving to prevent going off-canvas (works for both rotated and non-rotated)
                                 let moveDelta = o.rotation != 0
                                     ? clampedDeltaForRotatedRect(o.rect, rotation: o.rotation, delta: delta, in: author)
                                     : clampedDeltaForRect(o.rect, delta: delta, in: author)
-                                print("DEBUG rectGesture move: moveDelta=\(moveDelta)")
                                 updated = o.moved(by: moveDelta)
                             } else if activeHandle == .rotate {
                                 // Absolute-angle rotation anchored at gesture begin; no per-tick anchor drift
@@ -1913,12 +1911,10 @@ struct ContentView: View {
                         case .blur(let o):
                             var updated = o
                             if activeHandle == .none {
-                                print("DEBUG blurGesture move: rotation=\(o.rotation), delta=\(delta)")
                                 // Clamp delta before moving to prevent going off-canvas (works for both rotated and non-rotated)
                                 let moveDelta = o.rotation != 0
                                     ? clampedDeltaForRotatedRect(o.rect, rotation: o.rotation, delta: delta, in: author)
                                     : clampedDeltaForRect(o.rect, delta: delta, in: author)
-                                print("DEBUG blurGesture move: moveDelta=\(moveDelta)")
                                 updated = o.moved(by: moveDelta)
                             } else if activeHandle == .rotate {
                                 // Absolute-angle rotation anchored at gesture begin; no per-tick anchor drift
@@ -2280,12 +2276,10 @@ struct ContentView: View {
                         case .text(let o):
                             var updated = o
                             if activeHandle == .none {
-                                print("DEBUG textGesture move: rotation=\(o.rotation), delta=\(delta)")
                                 // Clamp delta before moving to prevent going off-canvas (works for both rotated and non-rotated)
                                 let moveDelta = o.rotation != 0
                                     ? clampedDeltaForRotatedRect(o.rect, rotation: o.rotation, delta: delta, in: author)
                                     : clampedDeltaForRect(o.rect, delta: delta, in: author)
-                                print("DEBUG textGesture move: moveDelta=\(moveDelta)")
                                 updated = o.moved(by: moveDelta)
                             } else if activeHandle == .rotate {
                                 // Absolute-angle rotation anchored at gesture begin; no per-tick anchor drift

@@ -63,12 +63,10 @@ extension ContentView {
     
     
     func onBeginSnipFromIntent(_ note: Notification) {
-        print("🔥 [DEBUG] ContentView received beginSnipFromIntent notification")
         
         // Extract URL and activation flag from userInfo
         guard let userInfo = note.userInfo,
               let url = userInfo["url"] as? URL else {
-            print("🔥 [DEBUG] ERROR: beginSnipFromIntent notification has no URL")
             return
         }
         

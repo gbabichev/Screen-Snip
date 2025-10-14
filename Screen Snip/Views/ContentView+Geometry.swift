@@ -146,7 +146,6 @@ extension ContentView {
     /// Calculates the maximum allowed delta for moving a rotated rect without going off-canvas
     /// Returns a clamped delta that keeps the rotated rect within bounds
     func clampedDeltaForRotatedRect(_ rect: CGRect, rotation: CGFloat, delta: CGSize, in fitted: CGSize) -> CGSize {
-        print("DEBUG clampedDeltaForRotatedRect: Called with rect=\(rect), rotation=\(rotation), delta=\(delta), fitted=\(fitted)")
         // Calculate the AABB of the rotated rect at its current position
         let center = CGPoint(x: rect.midX, y: rect.midY)
         let corners = [
@@ -192,7 +191,6 @@ extension ContentView {
             clampedDelta.height = delta.height - (newMaxY - fitted.height)
         }
 
-        print("DEBUG clampedDeltaForRotatedRect: Returning clampedDelta=\(clampedDelta)")
         return clampedDelta
     }
 
