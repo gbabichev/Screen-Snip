@@ -2505,7 +2505,13 @@ struct ContentView: View {
                         case .rect(let o):
                             var updated = o
                             if activeHandle == .none {
-                                updated = o.moved(by: delta)
+                                print("DEBUG rectGesture move: rotation=\(o.rotation), delta=\(delta)")
+                                // Clamp delta before moving to prevent going off-canvas (works for both rotated and non-rotated)
+                                let moveDelta = o.rotation != 0
+                                    ? clampedDeltaForRotatedRect(o.rect, rotation: o.rotation, delta: delta, in: author)
+                                    : clampedDeltaForRect(o.rect, delta: delta, in: author)
+                                print("DEBUG rectGesture move: moveDelta=\(moveDelta)")
+                                updated = o.moved(by: moveDelta)
                             } else if activeHandle == .rotate {
                                 // Absolute-angle rotation anchored at gesture begin; no per-tick anchor drift
                                 let c = CGPoint(x: o.rect.midX, y: o.rect.midY)
@@ -2551,12 +2557,22 @@ struct ContentView: View {
                                 // Important: keep anchors stable; do not mutate dragStartPoint here
                                 return
                             } else {
-                                let clampedCurrent = clampPoint(current, in: author)
-                                updated = o.resizing(activeHandle, to: clampedCurrent)
-                            }
-                            if updated.rotation == 0 {
-                                let clamped = clampRect(updated.rect, in: author)
-                                updated.rect = clamped
+                                // For resizing, use unclamped point for rotated objects (clamping before resize breaks the math)
+                                let resizePoint = o.rotation != 0 ? current : clampPoint(current, in: author)
+                                let resized = o.resizing(activeHandle, to: resizePoint)
+
+                                // For rotated objects, check if resize would go off-canvas
+                                if o.rotation != 0 {
+                                    // Only apply resize if it stays within bounds
+                                    if rotatedRectFitsInBounds(resized.rect, rotation: resized.rotation, in: author) {
+                                        updated = resized
+                                    }
+                                    // If it doesn't fit, keep the old rect (updated = o, which was set earlier)
+                                } else {
+                                    // For non-rotated, apply normal clamping
+                                    updated = resized
+                                    updated.rect = clampRect(updated.rect, in: author)
+                                }
                             }
                             objects[idx] = .rect(updated)
                         default:
@@ -2661,7 +2677,13 @@ struct ContentView: View {
                         case .blur(let o):
                             var updated = o
                             if activeHandle == .none {
-                                updated = o.moved(by: delta)
+                                print("DEBUG blurGesture move: rotation=\(o.rotation), delta=\(delta)")
+                                // Clamp delta before moving to prevent going off-canvas (works for both rotated and non-rotated)
+                                let moveDelta = o.rotation != 0
+                                    ? clampedDeltaForRotatedRect(o.rect, rotation: o.rotation, delta: delta, in: author)
+                                    : clampedDeltaForRect(o.rect, delta: delta, in: author)
+                                print("DEBUG blurGesture move: moveDelta=\(moveDelta)")
+                                updated = o.moved(by: moveDelta)
                             } else if activeHandle == .rotate {
                                 // Absolute-angle rotation anchored at gesture begin; no per-tick anchor drift
                                 let c = CGPoint(x: o.rect.midX, y: o.rect.midY)
@@ -2707,12 +2729,22 @@ struct ContentView: View {
                                 // Important: keep anchors stable; do not mutate dragStartPoint here
                                 return
                             } else {
-                                let clampedCurrent = clampPoint(current, in: author)
-                                updated = o.resizing(activeHandle, to: clampedCurrent)
-                            }
-                            if updated.rotation == 0 {
-                                let clamped = clampRect(updated.rect, in: author)
-                                updated.rect = clamped
+                                // For resizing, use unclamped point for rotated objects (clamping before resize breaks the math)
+                                let resizePoint = o.rotation != 0 ? current : clampPoint(current, in: author)
+                                let resized = o.resizing(activeHandle, to: resizePoint)
+
+                                // For rotated objects, check if resize would go off-canvas
+                                if o.rotation != 0 {
+                                    // Only apply resize if it stays within bounds
+                                    if rotatedRectFitsInBounds(resized.rect, rotation: resized.rotation, in: author) {
+                                        updated = resized
+                                    }
+                                    // If it doesn't fit, keep the old rect (updated = o, which was set earlier)
+                                } else {
+                                    // For non-rotated, apply normal clamping
+                                    updated = resized
+                                    updated.rect = clampRect(updated.rect, in: author)
+                                }
                             }
                             objects[idx] = .blur(updated)
                         default:
@@ -3012,7 +3044,13 @@ struct ContentView: View {
                         case .text(let o):
                             var updated = o
                             if activeHandle == .none {
-                                updated = o.moved(by: delta)
+                                print("DEBUG textGesture move: rotation=\(o.rotation), delta=\(delta)")
+                                // Clamp delta before moving to prevent going off-canvas (works for both rotated and non-rotated)
+                                let moveDelta = o.rotation != 0
+                                    ? clampedDeltaForRotatedRect(o.rect, rotation: o.rotation, delta: delta, in: author)
+                                    : clampedDeltaForRect(o.rect, delta: delta, in: author)
+                                print("DEBUG textGesture move: moveDelta=\(moveDelta)")
+                                updated = o.moved(by: moveDelta)
                             } else if activeHandle == .rotate {
                                 // Absolute-angle rotation anchored at gesture begin; no per-tick anchor drift
                                 let c = CGPoint(x: o.rect.midX, y: o.rect.midY)
@@ -3058,11 +3096,23 @@ struct ContentView: View {
                                 // Important: keep anchors stable; do not mutate dragStartPoint here
                                 return
                             } else {
-                                let clampedP = clampPoint(p, in: author)
-                                updated = o.resizing(activeHandle, to: clampedP)
+                                // For resizing, use unclamped point for rotated objects (clamping before resize breaks the math)
+                                let resizePoint = o.rotation != 0 ? p : clampPoint(p, in: author)
+                                let resized = o.resizing(activeHandle, to: resizePoint)
+
+                                // For rotated objects, check if resize would go off-canvas
+                                if o.rotation != 0 {
+                                    // Only apply resize if it stays within bounds
+                                    if rotatedRectFitsInBounds(resized.rect, rotation: resized.rotation, in: author) {
+                                        updated = resized
+                                    }
+                                    // If it doesn't fit, keep the old rect (updated = o, which was set earlier)
+                                } else {
+                                    // For non-rotated, apply normal clamping
+                                    updated = resized
+                                    updated.rect = clampRect(updated.rect, in: author)
+                                }
                             }
-                            let clamped = clampRect(updated.rect, in: author)
-                            updated.rect = clamped
                             objects[idx] = .text(updated)
                         default:
                             break
@@ -3238,30 +3288,52 @@ struct ContentView: View {
                     for i in objects.indices {
                         if selectedObjectIDs.contains(objects[i].id) {
                             switch objects[i] {
-                            case .line(let o):
-                                let moved = o.moved(by: delta)
-                                objects[i] = .line(moved)
-                            case .rect(let o):
-                                let moved = o.moved(by: delta)
-                                objects[i] = .rect(moved)
-                            case .oval(let o):
-                                let moved = o.moved(by: delta)
-                                objects[i] = .oval(moved)
-                            case .text(let o):
-                                let moved = o.moved(by: delta)
-                                objects[i] = .text(moved)
-                            case .badge(let o):
-                                let moved = o.moved(by: delta)
-                                objects[i] = .badge(moved)
-                            case .highlight(let o):
-                                let moved = o.moved(by: delta)
-                                objects[i] = .highlight(moved)
-                            case .image(let o):
-                                let moved = o.moved(by: delta)
-                                objects[i] = .image(moved)
-                            case .blur(let o):
-                                let moved = o.moved(by: delta)
-                                objects[i] = .blur(moved)
+                            case .line(var o):
+                                o = o.moved(by: delta)
+                                // Clamp line endpoints
+                                o.start = clampPoint(o.start, in: author)
+                                o.end = clampPoint(o.end, in: author)
+                                objects[i] = .line(o)
+                            case .rect(var o):
+                                // Clamp delta before moving
+                                let moveDelta = o.rotation != 0
+                                    ? clampedDeltaForRotatedRect(o.rect, rotation: o.rotation, delta: delta, in: author)
+                                    : clampedDeltaForRect(o.rect, delta: delta, in: author)
+                                o = o.moved(by: moveDelta)
+                                objects[i] = .rect(o)
+                            case .oval(var o):
+                                let moveDelta = clampedDeltaForRect(o.rect, delta: delta, in: author)
+                                o = o.moved(by: moveDelta)
+                                objects[i] = .oval(o)
+                            case .text(var o):
+                                // Clamp delta before moving
+                                let moveDelta = o.rotation != 0
+                                    ? clampedDeltaForRotatedRect(o.rect, rotation: o.rotation, delta: delta, in: author)
+                                    : clampedDeltaForRect(o.rect, delta: delta, in: author)
+                                o = o.moved(by: moveDelta)
+                                objects[i] = .text(o)
+                            case .badge(var o):
+                                let moveDelta = clampedDeltaForRect(o.rect, delta: delta, in: author)
+                                o = o.moved(by: moveDelta)
+                                objects[i] = .badge(o)
+                            case .highlight(var o):
+                                let moveDelta = clampedDeltaForRect(o.rect, delta: delta, in: author)
+                                o = o.moved(by: moveDelta)
+                                objects[i] = .highlight(o)
+                            case .image(var o):
+                                // Clamp delta before moving
+                                let moveDelta = o.rotation != 0
+                                    ? clampedDeltaForRotatedRect(o.rect, rotation: o.rotation, delta: delta, in: author)
+                                    : clampedDeltaForRect(o.rect, delta: delta, in: author)
+                                o = o.moved(by: moveDelta)
+                                objects[i] = .image(o)
+                            case .blur(var o):
+                                // Clamp delta before moving
+                                let moveDelta = o.rotation != 0
+                                    ? clampedDeltaForRotatedRect(o.rect, rotation: o.rotation, delta: delta, in: author)
+                                    : clampedDeltaForRect(o.rect, delta: delta, in: author)
+                                o = o.moved(by: moveDelta)
+                                objects[i] = .blur(o)
                             }
                         }
                     }
@@ -3305,7 +3377,13 @@ struct ContentView: View {
                     case .rect(let o):
                         var updated = o
                         if activeHandle == .none {
-                            updated = o.moved(by: delta)
+                            print("DEBUG pointerGesture rect move: rotation=\(o.rotation), delta=\(delta)")
+                            // Clamp delta before moving to prevent going off-canvas (works for both rotated and non-rotated)
+                            let moveDelta = o.rotation != 0
+                                ? clampedDeltaForRotatedRect(o.rect, rotation: o.rotation, delta: delta, in: author)
+                                : clampedDeltaForRect(o.rect, delta: delta, in: author)
+                            print("DEBUG pointerGesture rect move: moveDelta=\(moveDelta)")
+                            updated = o.moved(by: moveDelta)
                         } else if activeHandle == .rotate {
                             // Absolute-angle rotation anchored at gesture begin; no per-tick anchor drift
                             let c = CGPoint(x: o.rect.midX, y: o.rect.midY)
@@ -3351,16 +3429,22 @@ struct ContentView: View {
                             // Important: keep anchors stable; do not mutate dragStartPoint here
                             return
                         } else {
-                            let clampedP = clampPoint(p, in: author)
-                            updated = o.resizing(activeHandle, to: clampedP)
-                        }
-                        // Clamp based on rotation
-                        if updated.rotation == 0 {
-                            let clamped = clampRect(updated.rect, in: author)
-                            updated.rect = clamped
-                        } else {
-                            let clamped = clampRotatedRect(updated.rect, rotation: updated.rotation, in: author)
-                            updated.rect = clamped
+                            // For resizing, use unclamped point for rotated objects (clamping before resize breaks the math)
+                            let resizePoint = o.rotation != 0 ? p : clampPoint(p, in: author)
+                            let resized = o.resizing(activeHandle, to: resizePoint)
+
+                            // For rotated objects, check if resize would go off-canvas
+                            if o.rotation != 0 {
+                                // Only apply resize if it stays within bounds
+                                if rotatedRectFitsInBounds(resized.rect, rotation: resized.rotation, in: author) {
+                                    updated = resized
+                                }
+                                // If it doesn't fit, keep the old rect (updated = o, which was set earlier)
+                            } else {
+                                // For non-rotated, apply normal clamping
+                                updated = resized
+                                updated.rect = clampRect(updated.rect, in: author)
+                            }
                         }
                         objects[idx] = .rect(updated)
                     case .oval(let o):
@@ -3372,7 +3456,11 @@ struct ContentView: View {
                     case .text(let o):
                         var updated = o
                         if activeHandle == .none {
-                            updated = o.moved(by: delta)
+                            // Clamp delta before moving to prevent going off-canvas (works for both rotated and non-rotated)
+                            let moveDelta = o.rotation != 0
+                                ? clampedDeltaForRotatedRect(o.rect, rotation: o.rotation, delta: delta, in: author)
+                                : clampedDeltaForRect(o.rect, delta: delta, in: author)
+                            updated = o.moved(by: moveDelta)
                         } else if activeHandle == .rotate {
                             // Absolute-angle rotation anchored at gesture begin; no per-tick anchor drift
                             let c = CGPoint(x: o.rect.midX, y: o.rect.midY)
@@ -3417,16 +3505,22 @@ struct ContentView: View {
                             // Important: keep anchors stable; do not mutate dragStartPoint here
                             return
                         } else {
-                            let clampedP = clampPoint(p, in: author)
-                            updated = o.resizing(activeHandle, to: clampedP)
-                        }
-                        // Clamp based on rotation
-                        if updated.rotation == 0 {
-                            let clamped = clampRect(updated.rect, in: author)
-                            updated.rect = clamped
-                        } else {
-                            let clamped = clampRotatedRect(updated.rect, rotation: updated.rotation, in: author)
-                            updated.rect = clamped
+                            // For resizing, use unclamped point for rotated objects (clamping before resize breaks the math)
+                            let resizePoint = o.rotation != 0 ? p : clampPoint(p, in: author)
+                            let resized = o.resizing(activeHandle, to: resizePoint)
+
+                            // For rotated objects, check if resize would go off-canvas
+                            if o.rotation != 0 {
+                                // Only apply resize if it stays within bounds
+                                if rotatedRectFitsInBounds(resized.rect, rotation: resized.rotation, in: author) {
+                                    updated = resized
+                                }
+                                // If it doesn't fit, keep the old rect (updated = o, which was set earlier)
+                            } else {
+                                // For non-rotated, apply normal clamping
+                                updated = resized
+                                updated.rect = clampRect(updated.rect, in: author)
+                            }
                         }
                         objects[idx] = .text(updated)
                     case .badge(let o):
@@ -3444,7 +3538,11 @@ struct ContentView: View {
                     case .image(let o):
                         var updated = o
                         if activeHandle == .none {
-                            updated = o.moved(by: delta)
+                            // Clamp delta before moving to prevent going off-canvas (works for both rotated and non-rotated)
+                            let moveDelta = o.rotation != 0
+                                ? clampedDeltaForRotatedRect(o.rect, rotation: o.rotation, delta: delta, in: author)
+                                : clampedDeltaForRect(o.rect, delta: delta, in: author)
+                            updated = o.moved(by: moveDelta)
                         } else if activeHandle == .rotate {
                             // Absolute-angle rotation anchored at gesture begin; no per-tick anchor drift
                             let c = CGPoint(x: o.rect.midX, y: o.rect.midY)
@@ -3487,22 +3585,32 @@ struct ContentView: View {
                             // Important: keep anchors stable; do not mutate dragStartPoint here
                             return
                         } else {
-                            let clampedP = clampPoint(p, in: author)
-                            updated = o.resizing(activeHandle, to: clampedP)
-                        }
-                        // Clamp based on rotation
-                        if updated.rotation == 0 {
-                            let clamped = clampRect(updated.rect, in: author)
-                            updated.rect = clamped
-                        } else {
-                            let clamped = clampRotatedRect(updated.rect, rotation: updated.rotation, in: author)
-                            updated.rect = clamped
+                            // For resizing, use unclamped point for rotated objects (clamping before resize breaks the math)
+                            let resizePoint = o.rotation != 0 ? p : clampPoint(p, in: author)
+                            let resized = o.resizing(activeHandle, to: resizePoint)
+
+                            // For rotated objects, check if resize would go off-canvas
+                            if o.rotation != 0 {
+                                // Only apply resize if it stays within bounds
+                                if rotatedRectFitsInBounds(resized.rect, rotation: resized.rotation, in: author) {
+                                    updated = resized
+                                }
+                                // If it doesn't fit, keep the old rect (updated = o, which was set earlier)
+                            } else {
+                                // For non-rotated, apply normal clamping
+                                updated = resized
+                                updated.rect = clampRect(updated.rect, in: author)
+                            }
                         }
                         objects[idx] = .image(updated)
                     case .blur(let o):
                         var updated = o
                         if activeHandle == .none {
-                            updated = o.moved(by: delta)
+                            // Clamp delta before moving to prevent going off-canvas (works for both rotated and non-rotated)
+                            let moveDelta = o.rotation != 0
+                                ? clampedDeltaForRotatedRect(o.rect, rotation: o.rotation, delta: delta, in: author)
+                                : clampedDeltaForRect(o.rect, delta: delta, in: author)
+                            updated = o.moved(by: moveDelta)
                         } else if activeHandle == .rotate {
                             // Absolute-angle rotation anchored at gesture begin; no per-tick anchor drift
                             let c = CGPoint(x: o.rect.midX, y: o.rect.midY)
@@ -3545,16 +3653,22 @@ struct ContentView: View {
                             // Important: keep anchors stable; do not mutate dragStartPoint here
                             return
                         } else {
-                            let clampedP = clampPoint(p, in: author)
-                            updated = o.resizing(activeHandle, to: clampedP)
-                        }
-                        // Clamp based on rotation
-                        if updated.rotation == 0 {
-                            let clamped = clampRect(updated.rect, in: author)
-                            updated.rect = clamped
-                        } else {
-                            let clamped = clampRotatedRect(updated.rect, rotation: updated.rotation, in: author)
-                            updated.rect = clamped
+                            // For resizing, use unclamped point for rotated objects (clamping before resize breaks the math)
+                            let resizePoint = o.rotation != 0 ? p : clampPoint(p, in: author)
+                            let resized = o.resizing(activeHandle, to: resizePoint)
+
+                            // For rotated objects, check if resize would go off-canvas
+                            if o.rotation != 0 {
+                                // Only apply resize if it stays within bounds
+                                if rotatedRectFitsInBounds(resized.rect, rotation: resized.rotation, in: author) {
+                                    updated = resized
+                                }
+                                // If it doesn't fit, keep the old rect (updated = o, which was set earlier)
+                            } else {
+                                // For non-rotated, apply normal clamping
+                                updated = resized
+                                updated.rect = clampRect(updated.rect, in: author)
+                            }
                         }
                         objects[idx] = .blur(updated)
                     }
@@ -4703,6 +4817,116 @@ struct ContentView: View {
         rect.size.height = max(2, rect.size.height)
 
         return rect
+    }
+
+    /// Checks if a rotated rect's axis-aligned bounding box fits within canvas bounds
+    /// Returns true if the entire AABB is within bounds
+    private func rotatedRectFitsInBounds(_ rect: CGRect, rotation: CGFloat, in fitted: CGSize) -> Bool {
+        let center = CGPoint(x: rect.midX, y: rect.midY)
+        let corners = [
+            CGPoint(x: rect.minX, y: rect.minY),
+            CGPoint(x: rect.maxX, y: rect.minY),
+            CGPoint(x: rect.minX, y: rect.maxY),
+            CGPoint(x: rect.maxX, y: rect.maxY)
+        ]
+
+        let s = sin(rotation), co = cos(rotation)
+        let rotatedCorners = corners.map { corner -> CGPoint in
+            let dx = corner.x - center.x
+            let dy = corner.y - center.y
+            return CGPoint(
+                x: center.x + dx * co - dy * s,
+                y: center.y + dx * s + dy * co
+            )
+        }
+
+        let minX = rotatedCorners.map { $0.x }.min() ?? center.x
+        let maxX = rotatedCorners.map { $0.x }.max() ?? center.x
+        let minY = rotatedCorners.map { $0.y }.min() ?? center.y
+        let maxY = rotatedCorners.map { $0.y }.max() ?? center.y
+
+        return minX >= 0 && maxX <= fitted.width && minY >= 0 && maxY <= fitted.height
+    }
+
+    /// Calculates the maximum allowed delta for moving a non-rotated rect without going off-canvas
+    /// Returns a clamped delta that keeps the rect within bounds
+    private func clampedDeltaForRect(_ rect: CGRect, delta: CGSize, in fitted: CGSize) -> CGSize {
+        var clampedDelta = delta
+
+        // Calculate proposed position after applying delta
+        let newMinX = rect.minX + delta.width
+        let newMaxX = rect.maxX + delta.width
+        let newMinY = rect.minY + delta.height
+        let newMaxY = rect.maxY + delta.height
+
+        // Clamp X
+        if newMinX < 0 {
+            clampedDelta.width = delta.width - newMinX
+        } else if newMaxX > fitted.width {
+            clampedDelta.width = delta.width - (newMaxX - fitted.width)
+        }
+
+        // Clamp Y
+        if newMinY < 0 {
+            clampedDelta.height = delta.height - newMinY
+        } else if newMaxY > fitted.height {
+            clampedDelta.height = delta.height - (newMaxY - fitted.height)
+        }
+
+        return clampedDelta
+    }
+
+    /// Calculates the maximum allowed delta for moving a rotated rect without going off-canvas
+    /// Returns a clamped delta that keeps the rotated rect within bounds
+    private func clampedDeltaForRotatedRect(_ rect: CGRect, rotation: CGFloat, delta: CGSize, in fitted: CGSize) -> CGSize {
+        print("DEBUG clampedDeltaForRotatedRect: Called with rect=\(rect), rotation=\(rotation), delta=\(delta), fitted=\(fitted)")
+        // Calculate the AABB of the rotated rect at its current position
+        let center = CGPoint(x: rect.midX, y: rect.midY)
+        let corners = [
+            CGPoint(x: rect.minX, y: rect.minY),
+            CGPoint(x: rect.maxX, y: rect.minY),
+            CGPoint(x: rect.minX, y: rect.maxY),
+            CGPoint(x: rect.maxX, y: rect.maxY)
+        ]
+
+        let s = sin(rotation), co = cos(rotation)
+        let rotatedCorners = corners.map { corner -> CGPoint in
+            let dx = corner.x - center.x
+            let dy = corner.y - center.y
+            return CGPoint(
+                x: center.x + dx * co - dy * s,
+                y: center.y + dx * s + dy * co
+            )
+        }
+
+        let minX = rotatedCorners.map { $0.x }.min() ?? center.x
+        let maxX = rotatedCorners.map { $0.x }.max() ?? center.x
+        let minY = rotatedCorners.map { $0.y }.min() ?? center.y
+        let maxY = rotatedCorners.map { $0.y }.max() ?? center.y
+
+        // Calculate the proposed new AABB after applying delta
+        let newMinX = minX + delta.width
+        let newMaxX = maxX + delta.width
+        let newMinY = minY + delta.height
+        let newMaxY = maxY + delta.height
+
+        // Clamp the delta to keep AABB within bounds
+        var clampedDelta = delta
+
+        if newMinX < 0 {
+            clampedDelta.width = delta.width - newMinX  // Reduce delta to stay in bounds
+        } else if newMaxX > fitted.width {
+            clampedDelta.width = delta.width - (newMaxX - fitted.width)
+        }
+
+        if newMinY < 0 {
+            clampedDelta.height = delta.height - newMinY
+        } else if newMaxY > fitted.height {
+            clampedDelta.height = delta.height - (newMaxY - fitted.height)
+        }
+
+        print("DEBUG clampedDeltaForRotatedRect: Returning clampedDelta=\(clampedDelta)")
+        return clampedDelta
     }
 
     /// Clamps a rotated rect to stay within canvas bounds by adjusting its position
