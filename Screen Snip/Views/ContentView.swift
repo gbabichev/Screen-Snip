@@ -782,6 +782,15 @@ struct ContentView: View {
                     if isTextEditorFocused {
                         return event // do not consume; pass to TextEditor
                     }
+                    if selectedTool == .crop, cropRect != nil || cropDraftRect != nil {
+                        cropRect = nil
+                        cropDraftRect = nil
+                        cropHandle = .none
+                        cropDragStart = nil
+                        cropOriginalRect = nil
+                        activeHandle = .none
+                        return nil // consume delete to dismiss crop overlay
+                    }
                     if !selectedObjectIDs.isEmpty {
                         deleteMultipleSelectedObjects()
                         return nil // consume so we don't propagate/beep

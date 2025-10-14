@@ -115,6 +115,8 @@ open "Screen Snip.xcodeproj"
 - Fixed: Moving multiple objects resulted in glitchy behavior when hitting edges.
 - Fixed: Resizing the text box caused unwanted behavior
 - Fixed: Existing images save with the correct file format if format setting was changed. 
+- Fixed: Thumbnail not refreshing after a crop. 
+- Fixed: Delete key can now properly delete a crop box if it's not committed. 
 
 ### 1.2.0
 - Added Blur tool. 
