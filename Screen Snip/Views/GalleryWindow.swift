@@ -15,7 +15,8 @@ final class GalleryWindow {
         // If already visible, just bring to front and update content
         if let win = window {
             
-            let freshUrls = onReload()
+            // Prefer the provided URLs when available, otherwise pull a fresh list
+            let freshUrls = urls.isEmpty ? onReload() : urls
             
             // Always create a new hosting controller with fresh data to ensure SwiftUI updates
             let content = GalleryView(urls: freshUrls, onSelect: onSelect, onReload: onReload, onVisibleDateChange: { [weak win] date in
@@ -43,7 +44,9 @@ final class GalleryWindow {
             defer: false
         )
         
-        let content = GalleryView(urls: onReload(), onSelect: onSelect, onReload: onReload, onVisibleDateChange: { [weak win] date in
+        // Seed with the provided URLs if possible to avoid an extra reload
+        let initialUrls = urls.isEmpty ? onReload() : urls
+        let content = GalleryView(urls: initialUrls, onSelect: onSelect, onReload: onReload, onVisibleDateChange: { [weak win] date in
             win?.title = date.map { "Snip Gallery — \($0)" } ?? "Snip Gallery"
         })
         let hosting = NSHostingController(rootView: content)

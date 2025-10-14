@@ -194,59 +194,6 @@ extension ContentView {
         return clampedDelta
     }
 
-    /// Clamps a rotated rect to stay within canvas bounds by adjusting its position
-    /// Returns the new rect with clamped center position
-    func clampRotatedRect(_ r: CGRect, rotation: CGFloat, in fitted: CGSize) -> CGRect {
-        // Calculate the axis-aligned bounding box of the rotated rect
-        let center = CGPoint(x: r.midX, y: r.midY)
-        let corners = [
-            CGPoint(x: r.minX, y: r.minY),
-            CGPoint(x: r.maxX, y: r.minY),
-            CGPoint(x: r.minX, y: r.maxY),
-            CGPoint(x: r.maxX, y: r.maxY)
-        ]
-
-        // Rotate corners around the center
-        let s = sin(rotation), co = cos(rotation)
-        let rotatedCorners = corners.map { corner -> CGPoint in
-            let dx = corner.x - center.x
-            let dy = corner.y - center.y
-            return CGPoint(
-                x: center.x + dx * co - dy * s,
-                y: center.y + dx * s + dy * co
-            )
-        }
-
-        // Find the AABB of rotated corners
-        let minX = rotatedCorners.map { $0.x }.min() ?? center.x
-        let maxX = rotatedCorners.map { $0.x }.max() ?? center.x
-        let minY = rotatedCorners.map { $0.y }.min() ?? center.y
-        let maxY = rotatedCorners.map { $0.y }.max() ?? center.y
-
-        // Calculate how much the AABB extends beyond canvas bounds
-        var offsetX: CGFloat = 0
-        var offsetY: CGFloat = 0
-
-        if minX < 0 {
-            offsetX = -minX
-        } else if maxX > fitted.width {
-            offsetX = fitted.width - maxX
-        }
-
-        if minY < 0 {
-            offsetY = -minY
-        } else if maxY > fitted.height {
-            offsetY = fitted.height - maxY
-        }
-
-        // Apply the offset to the rect's center
-        var result = r
-        result.origin.x += offsetX
-        result.origin.y += offsetY
-
-        return result
-    }
-
     func objectIntersects(_ obj: Drawable, with selectionRect: CGRect) -> Bool {
         switch obj {
         case .line(let o):
