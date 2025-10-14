@@ -109,6 +109,11 @@ open "Screen Snip.xcodeproj"
 
 ## 📝 Changelog
 
+### 1.2.1
+- Fixed HEIC not saving correclty in certain cases. 
+- Fixed objects not resizing correctly on edges. 
+- Fixed rotated objects not resizing correctly on edges. 
+
 ### 1.2.0
 - Added Blur tool. 
 - Selection tool can now select multiple objects. 
