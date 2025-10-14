@@ -717,148 +717,20 @@ struct ContentView: View {
         }
         //.frame(minWidth: 1200, minHeight: 400)
         .safeAreaInset(edge: .bottom) {
-            if !SnipURLs.isEmpty {
-                VStack(alignment: .leading, spacing: 6) {
-                    
-                    HStack(spacing: 6) {
-                        Text("Snips")
-                            .font(.caption)
-                            .foregroundStyle(.secondary)
-                        
-                        Button(action: {
-                            loadExistingSnips()
-                            thumbnailRefreshTrigger = UUID()
-                        }) {
-                            Image(systemName: "arrow.clockwise")
-                                .imageScale(.small)
-                        }
-                        .buttonStyle(.plain)
-                        .help("Refresh Snips")
-                        
-                        Button(action: {
-                            openSnipsInFinder()
-                        }) {
-                            Image(systemName: "folder")
-                                .imageScale(.small)
-                        }
-                        .buttonStyle(.plain)
-                        .help("Open Snips in Finder")
-                        
-                        Button(action: {
-                            openSnipsInGallery()
-                        }) {
-                            Image(systemName: "square.grid.2x2")
-                                .imageScale(.small)
-                        }
-                        .buttonStyle(.plain)
-                        .help("Open Snips Gallery")
-                        
-                        
-                    }
-                    .padding(.leading, 8)
-                    
-
-
-                    ScrollView(.horizontal, showsIndicators: true) {
-                        HStack(spacing: 8) {
-                            ForEach(SnipURLs, id: \.self) { url in
-                                VStack(spacing: 4) {
-                                    ThumbnailView(
-                                        url: url,
-                                        selected: selectedSnipURL == url,
-                                        onDelete: { deleteSnip(url) },
-                                        width: 140,
-                                        height: 90,
-                                        refreshTrigger: thumbnailRefreshTrigger
-                                    )
-                                }
-                                .contentShape(Rectangle())
-                                .onTapGesture {
-                                    // Set focus when clicking on thumbnails
-                                    thumbnailsFocused = true
-                                    
-                                    // Check if file exists before trying to load
-                                    let fm = FileManager.default
-                                    if !fm.fileExists(atPath: url.path) {
-                                        // File is missing - add to missing set and remove from SnipURLs
-                                        missingSnipURLs.insert(url)
-                                        if let index = SnipURLs.firstIndex(of: url) {
-                                            SnipURLs.remove(at: index)
-                                        }
-                                        // If this was the selected Snip, clear selection and show error
-                                        if selectedSnipURL == url {
-                                            selectedSnipURL = nil
-                                        }
-                                        return
-                                    }
-                                    
-                                    // File exists - load it into the editor
-                                    selectedSnipURL = url
-                                    selectedImageSize = probeImageSize(url)
-                                    updateMenuState()
-                                    // Clear all editing state when switching images
-                                    objects.removeAll()
-                                    objectSpaceSize = nil
-                                    selectedObjectID = nil
-                                    activeHandle = .none
-                                    cropRect = nil
-                                    cropDraftRect = nil
-                                    cropHandle = .none
-                                    focusedTextID = nil
-                                    
-                                    // Clear undo/redo stacks for the new image
-                                    undoStack.removeAll()
-                                    redoStack.removeAll()
-                                }
-                                .contextMenu {
-                                    Button("Reveal in Finder") { NSWorkspace.shared.activateFileViewerSelecting([url]) }
-                                }
-                            }
-                        }
-                        .padding(.horizontal, 8)
-                        .padding(.vertical, 6)
-                    }
-                    .focusable()  // Make the ScrollView focusable
-                    .focused($thumbnailsFocused)  // Bind to focus state
-                    .focusEffectDisabled()
-                    .background(
-                        // Invisible background that extends beyond thumbnails to maintain focus
-                        Rectangle()
-                            .fill(Color.clear)
-                            .contentShape(Rectangle())
-                            .onTapGesture {
-                                thumbnailsFocused = true
-                            }
-                    )
-                    .onKeyPress(keys: [.leftArrow, .rightArrow]) { keyPress in
-                        // Only handle navigation if thumbnails are focused and we have thumbnails
-                        guard thumbnailsFocused && !SnipURLs.isEmpty else { return .ignored }
-                        
-                        if keyPress.key == .leftArrow {
-                            // Defer state changes to avoid "Publishing changes from within view updates" error
-                            DispatchQueue.main.async {
-                                navigateToAdjacentThumbnail(direction: .previous)
-                            }
-                            return .handled
-                        } else if keyPress.key == .rightArrow {
-                            DispatchQueue.main.async {
-                                navigateToAdjacentThumbnail(direction: .next)
-                            }
-                            return .handled
-                        }
-                        
-                        return .ignored
-                    }
-                    
-                    
-                    
-                    
-                    
-                    
-                }
-                .padding(.top, 4)
-                .background(.thinMaterial) // keep it distinct and readable
-            }
+            SnipGalleryView(
+                snipURLs: $SnipURLs,
+                selectedSnipURL: $selectedSnipURL,
+                missingSnipURLs: $missingSnipURLs,
+                thumbnailsFocus: $thumbnailsFocused,
+                thumbnailRefreshTrigger: $thumbnailRefreshTrigger,
+                navigateToAdjacentThumbnail: navigateToAdjacentThumbnail,
+                loadExistingSnips: loadExistingSnips,
+                openSnipsInFinder: openSnipsInFinder,
+                openSnipsInGallery: openSnipsInGallery,
+                deleteSnip: deleteSnip,
+                onSelectSnip: selectSnip,
+                onMissingSnip: handleMissingSnip
+            )
         }
         .onAppear {
             loadExistingSnips()
@@ -1149,24 +1021,36 @@ struct ContentView: View {
         }
         
         // File exists - load it into the editor
-        selectedSnipURL = targetURL
-        selectedImageSize = probeImageSize(targetURL)
+        selectSnip(targetURL)
+    }
+
+    func selectSnip(_ url: URL) {
+        selectedSnipURL = url
+        selectedImageSize = probeImageSize(url)
         updateMenuState()
-        
-        // Clear all editing state when switching images
         objects.removeAll()
         objectSpaceSize = nil
         selectedObjectID = nil
+        selectedObjectIDs.removeAll()
         activeHandle = .none
         cropRect = nil
         cropDraftRect = nil
         cropHandle = .none
         focusedTextID = nil
-        
-        // Clear undo/redo stacks for the new image
         undoStack.removeAll()
         redoStack.removeAll()
     }
+    
+    func handleMissingSnip(_ url: URL) {
+        if let idx = SnipURLs.firstIndex(of: url) {
+            SnipURLs.remove(at: idx)
+        }
+        if selectedSnipURL == url {
+            selectedSnipURL = nil
+            updateMenuState()
+        }
+    }
+    
 
     // MARK: - Launch On Logon Helpers
     // Handles enabling or disabling the login helper at login
