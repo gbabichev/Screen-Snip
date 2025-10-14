@@ -984,7 +984,11 @@ extension ContentView {
             objects.removeAll()
             if let url = selectedSnipURL {
                 // Write the flattened image back to the same file, preserving creation date
-                if ImageSaver.writeImage(flattened, to: url, format: preferredSaveFormat.rawValue, quality: saveQuality, preserveAttributes: true) {
+                if let savedURL = ImageSaver.writeImageReplacing(flattened, at: url, format: preferredSaveFormat.rawValue, quality: saveQuality, preserveAttributes: true) {
+                    selectedSnipURL = savedURL
+                    if savedURL != url {
+                        refreshGalleryAfterSaving(to: savedURL)
+                    }
                     reloadCurrentImage()
                     thumbnailRefreshTrigger = UUID()
                 }

@@ -8,6 +8,73 @@ import Combine
 
 // MARK: - Centralized Image Saving
 struct ImageSaver {
+
+    private nonisolated static func fileExtension(for format: String) -> String {
+        switch format.lowercased() {
+        case "jpeg": return "jpg"
+        case "heic": return "heic"
+        default: return "png"
+        }
+    }
+
+    nonisolated static func urlByEnsuringExtension(for url: URL, format: String) -> URL {
+        let desiredExtension = fileExtension(for: format)
+        let currentExtension = url.pathExtension.lowercased()
+        if currentExtension == desiredExtension {
+            return url
+        }
+        let baseURL = currentExtension.isEmpty ? url : url.deletingPathExtension()
+        return baseURL.appendingPathExtension(desiredExtension)
+    }
+
+    /// Write an image, adjusting the filename extension when needed. Returns the final URL on success.
+    nonisolated static func writeImageReplacing(_ image: NSImage,
+                                                at originalURL: URL,
+                                                format: String,
+                                                quality: Double,
+                                                preserveAttributes: Bool = false) -> URL? {
+        let targetURL = urlByEnsuringExtension(for: originalURL, format: format)
+        let fm = FileManager.default
+
+        var originalCreationDate: Date?
+        if preserveAttributes,
+           let attrs = try? fm.attributesOfItem(atPath: originalURL.path),
+           let creation = attrs[.creationDate] as? Date {
+            originalCreationDate = creation
+        }
+
+        let shouldPreserveAttributesInWrite = preserveAttributes && targetURL == originalURL
+
+        let success = writeImage(
+            image,
+            to: targetURL,
+            format: format,
+            quality: quality,
+            preserveAttributes: shouldPreserveAttributesInWrite
+        )
+
+        guard success else { return nil }
+
+        if preserveAttributes, targetURL != originalURL, let creationDate = originalCreationDate {
+            do {
+                try fm.setAttributes([.creationDate: creationDate], ofItemAtPath: targetURL.path)
+            } catch {
+                print("Could not transfer original creation date: \(error)")
+            }
+        }
+
+        if targetURL != originalURL {
+            do {
+                if fm.fileExists(atPath: originalURL.path) {
+                    try fm.removeItem(at: originalURL)
+                }
+            } catch {
+                print("Could not remove original file after format change: \(error)")
+            }
+        }
+
+        return targetURL
+    }
     
     private static func generateFilename(fileExtension: String) -> String {
         let formatter = DateFormatter()
@@ -23,12 +90,9 @@ struct ImageSaver {
         let quality = saveQuality > 0 ? saveQuality : 0.9 // Default to 0.9 if not set
         
         // Determine save format and extension
-        let (format, fileExtension): (String, String) = {
-            switch preferredSaveFormatRaw {
-            case "jpeg": return ("jpeg", "jpg")
-            case "heic": return ("heic", "heic")
-            default: return ("png", "png")
-            }
+        let (format, fileExt): (String, String) = {
+            let ext = fileExtension(for: preferredSaveFormatRaw)
+            return (preferredSaveFormatRaw, ext)
         }()
         
         // Determine save directory
@@ -45,7 +109,7 @@ struct ImageSaver {
             }
         }
         
-        let filename = generateFilename(fileExtension: fileExtension)
+        let filename = generateFilename(fileExtension: fileExt)
         let url = saveDir.appendingPathComponent(filename)
         
         // Save the image
@@ -53,29 +117,14 @@ struct ImageSaver {
     }
     
     static func generateFilename(for format: String) -> String {
-        let fileExtension: String = {
-            switch format {
-            case "jpeg": return "jpg"
-            case "heic": return "heic"
-            default: return "png"
-            }
-        }()
-        return generateFilename(fileExtension: fileExtension)
+        return generateFilename(fileExtension: fileExtension(for: format))
     }
 
     /// Replaces the file extension of a given filename with the extension for the specified format
     static func replaceExtension(of filename: String, with format: String) -> String {
-        let fileExtension: String = {
-            switch format {
-            case "jpeg": return "jpg"
-            case "heic": return "heic"
-            default: return "png"
-            }
-        }()
-
         let url = URL(fileURLWithPath: filename)
         let nameWithoutExtension = url.deletingPathExtension().lastPathComponent
-        return "\(nameWithoutExtension).\(fileExtension)"
+        return "\(nameWithoutExtension).\(fileExtension(for: format))"
     }
     
     nonisolated static func writeImage(_ image: NSImage, to url: URL, format: String, quality: Double, preserveAttributes: Bool = false) -> Bool {

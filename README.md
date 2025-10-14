@@ -114,6 +114,7 @@ open "Screen Snip.xcodeproj"
 - Fixed: Objects not resizing correctly on edges. 
 - Fixed: Moving multiple objects resulted in glitchy behavior when hitting edges.
 - Fixed: Resizing the text box caused unwanted behavior
+- Fixed: Existing images save with the correct file format if format setting was changed. 
 
 ### 1.2.0
 - Added Blur tool. 

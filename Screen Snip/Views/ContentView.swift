@@ -840,7 +840,7 @@ struct ContentView: View {
                                 
                                 if let cropped = cropImage(flattened, toBottomLeftRect: imgRectBL) {
                                     // Write the cropped image back to the file
-                                    if ImageSaver.writeImage(cropped, to: url, format: preferredSaveFormat.rawValue, quality: saveQuality) {
+                                    if let savedURL = ImageSaver.writeImageReplacing(cropped, at: url, format: preferredSaveFormat.rawValue, quality: saveQuality) {
                                         // Clear all state and reload the cropped image
                                         objects.removeAll()
                                         lastFittedSize = nil
@@ -850,10 +850,14 @@ struct ContentView: View {
                                         cropRect = nil
                                         cropDraftRect = nil
                                         cropHandle = .none
-                                        selectedImageSize = probeImageSize(url)
+                                        selectedSnipURL = savedURL
+                                        selectedImageSize = probeImageSize(savedURL)
                                         lastFittedSize = nil
                                         imageReloadTrigger = UUID()
                                         zoomLevel = 1.0
+                                        if savedURL != url {
+                                            refreshGalleryAfterSaving(to: savedURL)
+                                        }
                                     }
                                 }
                             }
@@ -1451,7 +1455,7 @@ struct ContentView: View {
             // 5) Optional: Save the rasterized image to disk when enabled in settings
             if saveOnCopy {
                 if let url = selectedURL {
-                    if ImageSaver.writeImage(source, to: url, format: format, quality: quality, preserveAttributes: true) {
+                    if let savedURL = ImageSaver.writeImageReplacing(source, at: url, format: format, quality: quality, preserveAttributes: true) {
                         DispatchQueue.main.async {
                             // Clear all drawn objects after successful save
                             self.objects.removeAll()
@@ -1461,8 +1465,8 @@ struct ContentView: View {
                             self.cropRect = nil
                             self.cropDraftRect = nil
                             self.cropHandle = .none
-
-                            self.refreshGalleryAfterSaving(to: url)
+                            self.selectedSnipURL = savedURL
+                            self.refreshGalleryAfterSaving(to: savedURL)
                             self.reloadCurrentImage()
                         }
                     }
