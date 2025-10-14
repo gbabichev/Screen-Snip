@@ -61,14 +61,14 @@ enum CaptureMode: String, CaseIterable {
 
 struct ContentView: View {
     
-    @ObservedObject private var appDelegate = AppDelegate.shared
+    @ObservedObject var appDelegate = AppDelegate.shared
     
     @FocusState private var thumbnailsFocused: Bool
 
     // Zoom
     
-    private let ZOOM_MIN: Double = 0.5
-    private let ZOOM_MAX: Double = 3.0
+    let ZOOM_MIN: Double = 0.5
+    let ZOOM_MAX: Double = 3.0
     
     
     
@@ -708,16 +708,11 @@ struct ContentView: View {
             }
             
             if showCopiedHUD {
-                CopiedHUD()
-                    .transition(.scale)
-                    .padding(20)
-                    .zIndex(1)
+                copiedHUDOverlay()
             }
             
             if appDelegate.showAboutOverlay {
-                AboutOverlayView(isPresented: aboutOverlayBinding)
-                    .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .center)
-                    .zIndex(10)
+                aboutOverlayLayer()
             }
         }
         //.frame(minWidth: 1200, minHeight: 400)
@@ -1506,13 +1501,7 @@ struct ContentView: View {
             }
         }
         .sheet(isPresented: $appDelegate.showPermissionsView) {
-            PermissionsView(
-                needsAccessibility: appDelegate.needsAccessibilityPermission,
-                needsScreenRecording: appDelegate.needsScreenRecordingPermission,
-                onContinue: {
-                    appDelegate.showPermissionsView = false
-                }
-            )
+            permissionsSheetContent()
         }
         .fileImporter(
             isPresented: Binding(
