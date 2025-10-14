@@ -77,6 +77,18 @@ struct ContentView: View {
         appDelegate.needsAccessibilityPermission || appDelegate.needsScreenRecordingPermission
     }
     
+    private var aboutOverlayBinding: Binding<Bool> {
+        Binding(
+            get: { appDelegate.showAboutOverlay },
+            set: { newValue in
+                guard appDelegate.showAboutOverlay != newValue else { return }
+                withAnimation(.easeInOut(duration: 0.2)) {
+                    appDelegate.showAboutOverlay = newValue
+                }
+            }
+        )
+    }
+    
     
     // MARK: - Launch On Logon
     private static let loginHelperIdentifier = "com.georgebabichev.Screen-Snip-Helper"
@@ -699,6 +711,13 @@ struct ContentView: View {
                 CopiedHUD()
                     .transition(.scale)
                     .padding(20)
+                    .zIndex(1)
+            }
+            
+            if appDelegate.showAboutOverlay {
+                AboutOverlayView(isPresented: aboutOverlayBinding)
+                    .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .center)
+                    .zIndex(10)
             }
         }
         //.frame(minWidth: 1200, minHeight: 400)
@@ -5358,7 +5377,5 @@ struct ContentView: View {
     }
     
 }
-
-
 
 

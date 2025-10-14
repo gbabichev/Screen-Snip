@@ -95,6 +95,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, ObservableObject {
     @Published var needsAccessibilityPermission = false
     @Published var needsScreenRecordingPermission = false
     @Published var showPermissionsView = false
+    @Published var showAboutOverlay = false
     
     override init() {
         super.init()
@@ -357,16 +358,11 @@ final class AppDelegate: NSObject, NSApplicationDelegate, ObservableObject {
     
     // MARK: - About View
     @objc func showAboutWindow() {
-        let aboutView = AboutView() // Your SwiftUI view
-        let hostingController = NSHostingController(rootView: aboutView)
-        let window = NSWindow(contentViewController: hostingController)
-        window.title = "About"
-        window.setContentSize(NSSize(width: 400, height: 400))
-        window.styleMask = [.titled, .closable]
-        window.isReleasedWhenClosed = false
-        window.makeKeyAndOrderFront(nil)
-        window.titlebarAppearsTransparent = true
-        window.titleVisibility = .hidden
-        NSApp.activate(ignoringOtherApps: true)
+        DispatchQueue.main.async {
+            WindowManager.shared.ensureMainWindow()
+            withAnimation(.easeInOut(duration: 0.2)) {
+                self.showAboutOverlay = true
+            }
+        }
     }
 }
