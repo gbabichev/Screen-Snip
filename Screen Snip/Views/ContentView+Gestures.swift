@@ -330,10 +330,14 @@ extension ContentView {
                         objects[idx] = .text(updated)
                     case .badge(let o):
                         let clampedP = clampPoint(p, in: author)
-                        let updated = (activeHandle == .none) ? o.moved(by: delta) : o.resizing(activeHandle, to: clampedP)
-                        let clamped = clampRect(updated.rect, in: author)
-                        var u = updated; u.rect = clamped
-                        objects[idx] = .badge(u)
+                        var updated: BadgeObject
+                        if activeHandle == .none {
+                            updated = o.moved(by: delta)
+                            updated.rect = clampRect(updated.rect, in: author)
+                        } else {
+                            updated = o.resizing(activeHandle, to: clampedP, within: author)
+                        }
+                        objects[idx] = .badge(updated)
                     case .highlight(let o):
                         let clampedP = clampPoint(p, in: author)
                         let updated = (activeHandle == .none) ? o.moved(by: delta) : o.resizing(activeHandle, to: clampedP)
@@ -561,10 +565,14 @@ extension ContentView {
                         switch objects[idx] {
                         case .badge(let o):
                             let clampedP = clampPoint(p, in: author)
-                            let updated = (activeHandle == .none) ? o.moved(by: delta) : o.resizing(activeHandle, to: clampedP)
-                            let clamped = clampRect(updated.rect, in: author)
-                            var u = updated; u.rect = clamped
-                            objects[idx] = .badge(u)
+                            var updated: BadgeObject
+                            if activeHandle == .none {
+                                updated = o.moved(by: delta)
+                                updated.rect = clampRect(updated.rect, in: author)
+                            } else {
+                                updated = o.resizing(activeHandle, to: clampedP, within: author)
+                            }
+                            objects[idx] = .badge(updated)
                         default:
                             break
                         }

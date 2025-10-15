@@ -919,37 +919,71 @@ struct BadgeObject: @MainActor DrawableObject {
         return c
     }
     
-    func resizing(_ handle: Handle, to p: CGPoint) -> BadgeObject {
-        var c = self
+    func resizing(_ handle: Handle, to p: CGPoint, within bounds: CGSize) -> BadgeObject {
+        let minSide: CGFloat = 16
+        let clampedPoint = CGPoint(
+            x: max(0, min(p.x, bounds.width)),
+            y: max(0, min(p.y, bounds.height))
+        )
+
+        func sideLimited(by availableWidth: CGFloat, _ availableHeight: CGFloat, candidate: CGFloat) -> CGFloat {
+            let limit = max(0, min(availableWidth, availableHeight))
+            if limit <= 0 { return minSide }
+            return min(limit, max(candidate, minSide))
+        }
+
         var newRect = rect
 
         switch handle {
         case .rectTopLeft:
-            // Don't allow dragging past the opposite edge
-            let newX = min(p.x, rect.maxX - 8)
-            let newY = min(p.y, rect.maxY - 8)
-            newRect = CGRect(x: newX, y: newY, width: rect.maxX - newX, height: rect.maxY - newY)
+            let anchorX = min(rect.maxX, bounds.width)
+            let anchorY = min(rect.maxY, bounds.height)
+            let handleX = min(anchorX - minSide, clampedPoint.x)
+            let handleY = min(anchorY - minSide, clampedPoint.y)
+            let width = anchorX - max(0, handleX)
+            let height = anchorY - max(0, handleY)
+            let side = sideLimited(by: anchorX, anchorY, candidate: min(width, height))
+            let originX = max(0, anchorX - side)
+            let originY = max(0, anchorY - side)
+            newRect = CGRect(x: originX, y: originY, width: side, height: side)
+
         case .rectTopRight:
-            // Don't allow dragging past the opposite edge
-            let newX = max(p.x, rect.minX + 8)
-            let newY = min(p.y, rect.maxY - 8)
-            newRect = CGRect(x: rect.minX, y: newY, width: newX - rect.minX, height: rect.maxY - newY)
+            let anchorX = max(0, rect.minX)
+            let anchorY = min(rect.maxY, bounds.height)
+            let handleX = max(anchorX + minSide, clampedPoint.x)
+            let handleY = min(anchorY - minSide, clampedPoint.y)
+            let width = min(bounds.width, handleX) - anchorX
+            let height = anchorY - max(0, handleY)
+            let side = sideLimited(by: bounds.width - anchorX, anchorY, candidate: min(width, height))
+            let originY = max(0, anchorY - side)
+            newRect = CGRect(x: anchorX, y: originY, width: side, height: side)
+
         case .rectBottomLeft:
-            // Don't allow dragging past the opposite edge
-            let newX = min(p.x, rect.maxX - 8)
-            let newY = max(p.y, rect.minY + 8)
-            newRect = CGRect(x: newX, y: rect.minY, width: rect.maxX - newX, height: newY - rect.minY)
+            let anchorX = min(rect.maxX, bounds.width)
+            let anchorY = max(0, rect.minY)
+            let handleX = min(anchorX - minSide, clampedPoint.x)
+            let handleY = max(anchorY + minSide, clampedPoint.y)
+            let width = anchorX - max(0, handleX)
+            let height = min(bounds.height, handleY) - anchorY
+            let side = sideLimited(by: anchorX, bounds.height - anchorY, candidate: min(width, height))
+            let originX = max(0, anchorX - side)
+            newRect = CGRect(x: originX, y: anchorY, width: side, height: side)
+
         case .rectBottomRight:
-            // Don't allow dragging past the opposite edge
-            let newX = max(p.x, rect.minX + 8)
-            let newY = max(p.y, rect.minY + 8)
-            newRect = CGRect(x: rect.minX, y: rect.minY, width: newX - rect.minX, height: newY - rect.minY)
-        default: break
+            let anchorX = max(0, rect.minX)
+            let anchorY = max(0, rect.minY)
+            let handleX = max(anchorX + minSide, clampedPoint.x)
+            let handleY = max(anchorY + minSide, clampedPoint.y)
+            let width = min(bounds.width, handleX) - anchorX
+            let height = min(bounds.height, handleY) - anchorY
+            let side = sideLimited(by: bounds.width - anchorX, bounds.height - anchorY, candidate: min(width, height))
+            newRect = CGRect(x: anchorX, y: anchorY, width: side, height: side)
+
+        default:
+            return self
         }
 
-        let side = max(8, (newRect.width + newRect.height) / 2)
-        newRect.size = CGSize(width: side, height: side)
-
+        var c = self
         c.rect = newRect
         return c
     }
