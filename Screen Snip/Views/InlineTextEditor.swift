@@ -46,6 +46,7 @@ struct InlineTextEditor: NSViewRepresentable {
 
         scrollView.documentView = textView
         context.coordinator.textView = textView
+        context.coordinator.installEventMonitor()
         context.coordinator.parent = self
 
         return scrollView
@@ -55,6 +56,11 @@ struct InlineTextEditor: NSViewRepresentable {
         guard let textView = context.coordinator.textView else { return }
 
         context.coordinator.parent = self
+        if isFocused {
+            context.coordinator.installEventMonitor()
+        } else {
+            context.coordinator.removeEventMonitor()
+        }
 
         if textView.string != text {
             textView.string = text
@@ -92,9 +98,31 @@ struct InlineTextEditor: NSViewRepresentable {
     class Coordinator: NSObject, NSTextViewDelegate {
         var parent: InlineTextEditor
         weak var textView: NSTextView?
+        private var keyMonitor: Any?
 
         init(_ parent: InlineTextEditor) {
             self.parent = parent
+        }
+
+        func installEventMonitor() {
+            guard keyMonitor == nil else { return }
+            keyMonitor = NSEvent.addLocalMonitorForEvents(matching: [.keyDown]) { [weak self] event in
+                guard let self, let tv = self.textView else { return event }
+                if event.modifierFlags.contains(.command),
+                   let characters = event.charactersIgnoringModifiers?.lowercased(),
+                   characters == "a" {
+                    tv.selectAll(nil)
+                    return nil
+                }
+                return event
+            }
+        }
+
+        func removeEventMonitor() {
+            if let monitor = keyMonitor {
+                NSEvent.removeMonitor(monitor)
+                keyMonitor = nil
+            }
         }
 
         func textDidChange(_ notification: Notification) {
@@ -114,6 +142,7 @@ struct InlineTextEditor: NSViewRepresentable {
             if parent.isFocused {
                 parent.isFocused = false
             }
+            removeEventMonitor()
         }
     }
 }
