@@ -565,6 +565,11 @@ struct ContentView: View {
                                                 Ellipse().path(in: r)
                                                     .stroke(Color(nsColor: ovalColor).opacity(0.8),
                                                             style: StrokeStyle(lineWidth: strokeWidth, dash: [6,4]))
+                                            case .text:
+                                                Rectangle()
+                                                    .path(in: r)
+                                                    .stroke(Color(nsColor: textColor).opacity(0.85),
+                                                            style: StrokeStyle(lineWidth: 1.5, dash: [4,3]))
                                             case .blur:
                                                 Rectangle()
                                                     .path(in: r)
@@ -2266,6 +2271,7 @@ struct ContentView: View {
                         focusedTextID = nil
                         
                     }
+                    draftRect = nil
                 } else if
                     let sel = selectedObjectID,
                     let start = dragStartPoint,
@@ -2361,6 +2367,14 @@ struct ContentView: View {
                         }
                         dragStartPoint = p
                     }
+                } else if selectedObjectID == nil, let start = dragStartPoint {
+                    let rect = CGRect(
+                        x: min(start.x, p.x),
+                        y: min(start.y, p.y),
+                        width: abs(p.x - start.x),
+                        height: abs(p.y - start.y)
+                    )
+                    draftRect = rect
                 }
             }
             .onEnded { value in
@@ -2378,16 +2392,18 @@ struct ContentView: View {
                 textRotateStartAngle = nil
                 textRotateStartValue = nil
                 
-                if moved {
+                if moved && selectedObjectID != nil {
                     // We were dragging — finish and clean up
                     dragStartPoint = nil
                     pushedDragUndo = false
+                    draftRect = nil
                     return
                 }
                 
                 // CLICK (or DOUBLE-CLICK) PATH:
                 dragStartPoint = nil
                 pushedDragUndo = false
+                defer { draftRect = nil }
                 
                 // Check for double-click first, before other click handling
                 let isDoubleClick = if let event = NSApp.currentEvent {
@@ -2420,13 +2436,28 @@ struct ContentView: View {
                 // 2) Create new text box only on single click in empty space
                 if !isDoubleClick {
                     let defaultText = "Text"
-                    let defaultSize = TextObject.intrinsicSize(for: defaultText, fontSize: textFontSize)
-                    let rect = CGRect(x: max(0, pEnd.x - defaultSize.width/2),
-                                      y: max(0, pEnd.y - defaultSize.height/2),
-                                      width: defaultSize.width,
-                                      height: defaultSize.height)
-                    let rectClamped = clampRect(rect, in: author)
-                    let newObj = TextObject(rect: rectClamped,
+                    let minSize = TextObject.intrinsicSize(for: defaultText, fontSize: textFontSize)
+                    var baseRect: CGRect
+                    if let draft = draftRect, draft.width >= 2, draft.height >= 2 {
+                        baseRect = draft
+                    } else {
+                        baseRect = CGRect(
+                            x: max(0, pEnd.x - minSize.width / 2),
+                            y: max(0, pEnd.y - minSize.height / 2),
+                            width: minSize.width,
+                            height: minSize.height
+                        )
+                    }
+                    var rect = clampRect(baseRect, in: author)
+                    if rect.width < minSize.width {
+                        rect.size.width = minSize.width
+                        rect = clampRect(rect, in: author)
+                    }
+                    if rect.height < minSize.height {
+                        rect.size.height = minSize.height
+                        rect = clampRect(rect, in: author)
+                    }
+                    let newObj = TextObject(rect: rect,
                                             text: defaultText,
                                             fontSize: textFontSize,
                                             textColor: textColor,

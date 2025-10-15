@@ -920,7 +920,7 @@ struct BadgeObject: @MainActor DrawableObject {
     }
     
     func resizing(_ handle: Handle, to p: CGPoint, within bounds: CGSize) -> BadgeObject {
-        let minSide: CGFloat = 16
+        let minSide: CGFloat = 8
         let clampedPoint = CGPoint(
             x: max(0, min(p.x, bounds.width)),
             y: max(0, min(p.y, bounds.height))
