@@ -110,11 +110,12 @@ open "Screen Snip.xcodeproj"
 ## 📝 Changelog
 
 ### 1.2.1
-- Fixed: HEIC not saving correclty in certain cases. 
-- Fixed: Objects not resizing correctly on edges. 
-- Fixed: Moving multiple objects resulted in glitchy behavior when hitting edges.
-- Fixed: Resizing the text box caused unwanted behavior
+- Added: Text Tool Improvements!
+  - CMD+A to select all text.
+  - Drag to draw custom sized text boxes.
+  - Double click anywhere in the text box to edit, not just on letters.
 - Fixed: Existing images save with the correct file format if format setting was changed. 
+- Fixed: Moving & resizing objects resulted in glitchy behavior when hitting edges.
 - Fixed: Thumbnail not refreshing after a crop. 
 - Fixed: Delete key can now properly delete a crop box if it's not committed. 
 
