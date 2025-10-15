@@ -426,21 +426,26 @@ struct ContentView: View {
                                                     .stroke(Color(nsColor: o.color),
                                                             style: StrokeStyle(lineWidth: o.width))
                                             case .text(let o):
-                                                if focusedTextID != o.id {
-                                                    Text(o.text.isEmpty ? " " : o.text)
-                                                        .font(.system(size: o.fontSize))
-                                                        .foregroundStyle(Color(nsColor: o.textColor))
-                                                        .padding(.horizontal, TextObject.halfHorizontalPadding)
-                                                        .padding(.vertical, TextObject.halfVerticalPadding)
-                                                        .frame(width: o.rect.width, height: o.rect.height, alignment: .topLeading)
-                                                        .background(o.bgEnabled ? Color(nsColor: o.bgColor) : Color.clear)
-                                                        .rotationEffect(Angle(radians: o.rotation))
-                                                        .position(x: o.rect.midX, y: o.rect.midY)
-                                                        .onTapGesture(count: 2) {
-                                                            focusedTextID = o.id
-                                                            isTextEditorFocused = true
-                                                            lastTextEditDoubleClickAt = CACurrentMediaTime()
-                                                        }
+                                                Group {
+                                                    if focusedTextID != o.id {
+                                                        Text(o.text.isEmpty ? " " : o.text)
+                                                            .font(.system(size: o.fontSize))
+                                                            .foregroundStyle(Color(nsColor: o.textColor))
+                                                            .padding(.horizontal, TextObject.halfHorizontalPadding)
+                                                            .padding(.vertical, TextObject.halfVerticalPadding)
+                                                            .frame(width: o.rect.width, height: o.rect.height, alignment: .topLeading)
+                                                            .background(o.bgEnabled ? Color(nsColor: o.bgColor) : Color.clear)
+                                                            .rotationEffect(Angle(radians: o.rotation))
+                                                            .position(x: o.rect.midX, y: o.rect.midY)
+                                                    } else {
+                                                        EmptyView()
+                                                    }
+                                                }
+                                                .contentShape(Rectangle())
+                                                .onTapGesture(count: 2) {
+                                                    focusedTextID = o.id
+                                                    isTextEditorFocused = true
+                                                    lastTextEditDoubleClickAt = CACurrentMediaTime()
                                                 }
                                             case .badge(let o):
                                                 Circle()
