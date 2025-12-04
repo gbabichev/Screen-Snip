@@ -1192,6 +1192,10 @@ extension ContentView {
                     path.lineWidth = o.width * scaleW
                     path.stroke()
                 case .text(let o):
+                    let paddingX = TextObject.halfHorizontalPadding * scaleX
+                    let paddingY = TextObject.halfVerticalPadding * scaleY
+                    let textToDraw = o.text.isEmpty ? " " : o.text
+
                     // For rotated text, we need to work entirely in UI space first, then convert to image space
                     if o.rotation != 0 {
                         NSGraphicsContext.current?.saveGraphicsState()
@@ -1227,9 +1231,7 @@ extension ContentView {
                         
                         // 6. Draw background if enabled
                         if o.bgEnabled {
-                            let paddingScaled = 4 * scaleW
-                            let bgRect = imageRect.insetBy(dx: -paddingScaled, dy: -paddingScaled)
-                            let bg = NSBezierPath(rect: bgRect)
+                            let bg = NSBezierPath(rect: imageRect)
                             o.bgColor.setFill()
                             bg.fill()
                         }
@@ -1244,18 +1246,17 @@ extension ContentView {
                             .paragraphStyle: para
                         ]
                         
-                        NSString(string: o.text).draw(in: imageRect, withAttributes: attrs)
+                        let textRect = imageRect.insetBy(dx: paddingX, dy: paddingY)
+                        NSString(string: textToDraw).draw(in: textRect, withAttributes: attrs)
                         
                         NSGraphicsContext.current?.restoreGraphicsState()
                     } else {
                         // Non-rotated text - use existing logic
                         let r = uiRectToImageRect(o.rect, fitted: fitted, image: imgSize)
-                        let paddingScaled = 4 * scaleW
                         
                         // Draw background with proper padding to match SwiftUI rendering
                         if o.bgEnabled {
-                            let bgRect = r.insetBy(dx: -paddingScaled, dy: -paddingScaled)
-                            let bg = NSBezierPath(rect: bgRect)
+                            let bg = NSBezierPath(rect: r)
                             o.bgColor.setFill()
                             bg.fill()
                         }
@@ -1270,7 +1271,8 @@ extension ContentView {
                             .paragraphStyle: para
                         ]
                         
-                        NSString(string: o.text).draw(in: r, withAttributes: attrs)
+                        let textRect = r.insetBy(dx: paddingX, dy: paddingY)
+                        NSString(string: textToDraw).draw(in: textRect, withAttributes: attrs)
                     }
                 case .badge(let o):
                     let r = uiRectToImageRect(o.rect, fitted: fitted, image: imgSize)
