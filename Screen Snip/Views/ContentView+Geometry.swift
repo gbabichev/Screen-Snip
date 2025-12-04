@@ -521,6 +521,7 @@ extension ContentView {
     /// Delete a Snip from disk and update gallery/selection.
     func deleteSnip(_ url: URL) {
         let fm = FileManager.default
+        let wasSelected = (selectedSnipURL == url)
         // Prefer moving to Trash; fall back to remove.
         do {
             var trashedURL: NSURL?
@@ -528,20 +529,20 @@ extension ContentView {
         } catch {
             try? fm.removeItem(at: url)
         }
-        // Update gallery list
-        if let idx = SnipURLs.firstIndex(of: url) {
-            SnipURLs.remove(at: idx)
-        }
+        // Refresh from disk so we always show the latest 10 after deletion.
+        loadExistingSnips()
+
         // Update current selection / preview
-        if selectedSnipURL == url {
+        if wasSelected || (selectedSnipURL != nil && !SnipURLs.contains(selectedSnipURL!)) {
             selectedSnipURL = SnipURLs.first
-            if let sel = selectedSnipURL {
-                selectedImageSize = probeImageSize(sel)
-                lastFittedSize = nil
-            } else {
-                selectedImageSize = nil
-                lastFittedSize = nil
-            }
+        }
+
+        if let sel = selectedSnipURL {
+            selectedImageSize = probeImageSize(sel)
+            lastFittedSize = nil
+        } else {
+            selectedImageSize = nil
+            lastFittedSize = nil
         }
     }
     
