@@ -374,9 +374,13 @@ struct ImageDocument: FileDocument {
     nonisolated(unsafe) static var writableContentTypes: [UTType] = [.png, .jpeg, .heic]
     
     let image: NSImage
+    let scaleFactor: CGFloat
+    let quality: Double
     
-    init(image: NSImage) {
+    init(image: NSImage, scaleFactor: CGFloat = 1.0, quality: Double = 0.9) {
         self.image = image
+        self.scaleFactor = scaleFactor
+        self.quality = quality
     }
     
     init(configuration: ReadConfiguration) throws {
@@ -385,13 +389,77 @@ struct ImageDocument: FileDocument {
             throw CocoaError(.fileReadCorruptFile)
         }
         self.image = image
+        self.scaleFactor = 1.0
+        self.quality = 0.9
     }
     
+    private func scaledImage(_ image: NSImage, factor: CGFloat) -> NSImage {
+        let f = max(0.01, min(factor, 1.0))
+        guard f < 0.999 else { return image }
+
+        // Prefer CG-based scaling to preserve pixel density and avoid 72-DPI lockFocus fallback.
+        if let cg = image.cgImage(forProposedRect: nil, context: nil, hints: nil) {
+            let targetWidth = max(1, Int(round(CGFloat(cg.width) * f)))
+            let targetHeight = max(1, Int(round(CGFloat(cg.height) * f)))
+
+            guard let ctx = CGContext(
+                data: nil,
+                width: targetWidth,
+                height: targetHeight,
+                bitsPerComponent: 8,
+                bytesPerRow: 0,
+                space: CGColorSpaceCreateDeviceRGB(),
+                bitmapInfo: CGImageAlphaInfo.premultipliedLast.rawValue
+            ) else { return image }
+
+            ctx.interpolationQuality = .high
+            ctx.draw(cg, in: CGRect(x: 0, y: 0, width: targetWidth, height: targetHeight))
+
+            if let scaledCG = ctx.makeImage() {
+                let nsImage = NSImage(cgImage: scaledCG, size: NSSize(width: CGFloat(targetWidth), height: CGFloat(targetHeight)))
+                return nsImage
+            }
+        }
+
+        // Fallback: lockFocus-based scaling.
+        let newSize = NSSize(width: image.size.width * f, height: image.size.height * f)
+        let newImage = NSImage(size: newSize)
+        newImage.lockFocus()
+        NSGraphicsContext.current?.imageInterpolation = .high
+        image.draw(in: NSRect(origin: .zero, size: newSize),
+                   from: NSRect(origin: .zero, size: image.size),
+                   operation: .sourceOver,
+                   fraction: 1.0)
+        newImage.unlockFocus()
+        return newImage
+    }
+
     func fileWrapper(configuration: WriteConfiguration) throws -> FileWrapper {
-        let format = UserDefaults.standard.string(forKey: "preferredSaveFormat") ?? "png"
-        let quality = UserDefaults.standard.double(forKey: "saveQuality")
+        // Honor the user's chosen type in the save panel; fall back to preference if unavailable.
+        let format: String = {
+            let type = configuration.contentType
+            switch type {
+            case .png:  return "png"
+            case .jpeg: return "jpeg"
+            case .heic: return "heic"
+            default:
+                return UserDefaults.standard.string(forKey: "preferredSaveFormat") ?? "png"
+            }
+        }()
+        // Fetch the latest scale/quality selections from defaults so changes made in the sheet are respected at save time.
+        let liveScale: CGFloat = {
+            let v = UserDefaults.standard.double(forKey: "exportScaleFactor")
+            return v > 0 ? CGFloat(v) : scaleFactor
+        }()
+        let liveQuality: Double = {
+            let v = UserDefaults.standard.double(forKey: "exportQuality")
+            if v > 0 { return v }
+            let q = UserDefaults.standard.double(forKey: "saveQuality")
+            return q > 0 ? q : quality
+        }()
+        let source = (liveScale < 0.999) ? scaledImage(image, factor: max(0.01, liveScale)) : image
         
-        guard let data = ImageSaver.imageData(from: image, format: format, quality: quality) else {
+        guard let data = ImageSaver.imageData(from: source, format: format, quality: liveQuality) else {
             throw CocoaError(.fileWriteUnknown)
         }
         

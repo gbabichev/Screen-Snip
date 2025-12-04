@@ -9,6 +9,7 @@ import UniformTypeIdentifiers
 import ImageIO
 import Combine
 import ServiceManagement
+import ObjectiveC
 
 // MARK: - NSColor Hex Conversion Helper (no RawRepresentable conformance)
 extension NSColor {
@@ -52,6 +53,27 @@ enum SaveFormat: String, CaseIterable, Identifiable {
         }
     }
 
+}
+
+enum ExportScaleOption: CaseIterable, Identifiable {
+    case full, seventyFive, half, quarter
+    var id: Self { self }
+    var label: String {
+        switch self {
+        case .full: return "100% (Original)"
+        case .seventyFive: return "75%"
+        case .half: return "50%"
+        case .quarter: return "25%"
+        }
+    }
+    var factor: CGFloat {
+        switch self {
+        case .full: return 1.0
+        case .seventyFive: return 0.75
+        case .half: return 0.5
+        case .quarter: return 0.25
+        }
+    }
 }
 
 enum CaptureMode: String, CaseIterable {
@@ -130,6 +152,179 @@ struct ContentView: View {
     @AppStorage("downsampleToNonRetinaForSave") var downsampleToNonRetinaForSave: Bool = false
     @AppStorage("imageDisplayMode") var imageDisplayMode: String = "fit" // "actual" or "fit"
     @AppStorage("saveOnCopy") var saveOnCopy: Bool = false
+    @State var exportScaleOption: ExportScaleOption = .full
+    private let exportScaleDefaultsKey = "exportScaleFactor"
+    private let exportQualityDefaultsKey = "exportQuality"
+    private var storedExportScaleFactor: CGFloat {
+        let v = UserDefaults.standard.double(forKey: exportScaleDefaultsKey)
+        return v > 0 ? CGFloat(v) : 1.0
+    }
+    private var storedExportQuality: Double {
+        let v = UserDefaults.standard.double(forKey: exportQualityDefaultsKey)
+        return v > 0 ? v : saveQuality
+    }
+    @State var exportQuality: Double = 0.9
+    
+    // Preferred-first ordering for fileExporter so the initial selection matches the global default.
+    var exporterContentTypes: [UTType] {
+        var ordered: [SaveFormat] = [preferredSaveFormat]
+        ordered.append(contentsOf: SaveFormat.allCases.filter { $0 != preferredSaveFormat })
+        return ordered.map { $0.utType }
+    }
+    
+    /// When using .fileExporter with multiple types, AppKit adds an "Other format" entry. Disable that so users only see our formats.
+    private func configureExporterPanel() {
+        func findPopup(in view: NSView?) -> NSPopUpButton? {
+            guard let view else { return nil }
+            if let popup = view as? NSPopUpButton { return popup }
+            for sub in view.subviews {
+                if let found = findPopup(in: sub) { return found }
+            }
+            return nil
+        }
+        
+        func retitleAndPruneFormats(in panel: NSSavePanel) {
+            guard let popup = findPopup(in: panel.contentView) else { return }
+            
+            // Remove the "Other format" entry if present
+            for (idx, item) in popup.itemArray.enumerated().reversed() {
+                if item.title.lowercased().contains("other format") {
+                    popup.removeItem(at: idx)
+                }
+            }
+            
+            // Retitle to our preferred display names
+            for item in popup.itemArray {
+                let t = item.title.lowercased()
+                if t.contains("png") {
+                    item.title = "PNG"
+                } else if t.contains("jpeg") || t.contains("jpg") {
+                    item.title = "JPG"
+                } else if t.contains("heic") || t.contains("heif") {
+                    item.title = "HEIC"
+                }
+            }
+        }
+
+        final class ExporterAccessoryController: NSObject {
+            let options: [ExportScaleOption]
+            var onScaleChange: (ExportScaleOption) -> Void
+            var onQualityChange: (Double) -> Void
+            init(options: [ExportScaleOption],
+                 onScaleChange: @escaping (ExportScaleOption) -> Void,
+                 onQualityChange: @escaping (Double) -> Void) {
+                self.options = options
+                self.onScaleChange = onScaleChange
+                self.onQualityChange = onQualityChange
+            }
+            @objc func selectionChanged(_ sender: NSPopUpButton) {
+                let idx = sender.indexOfSelectedItem
+                guard idx >= 0, idx < options.count else { return }
+                onScaleChange(options[idx])
+            }
+            @objc func qualityChanged(_ sender: NSSlider) {
+                onQualityChange(sender.doubleValue)
+            }
+        }
+        
+        func attachAccessory(to panel: NSSavePanel) {
+            let options = ExportScaleOption.allCases
+            let label = NSTextField(labelWithString: "Size:")
+            label.alignment = .right
+            label.font = .systemFont(ofSize: NSFont.systemFontSize)
+            let popup = NSPopUpButton(frame: NSRect(x: 0, y: 0, width: 170, height: 26), pullsDown: false)
+            options.forEach { popup.addItem(withTitle: $0.label) }
+            // Choose initial option based on stored factor (closest match), defaulting to state.
+            let initialFactor = storedExportScaleFactor
+            let initialOption = options.min(by: { abs($0.factor - initialFactor) < abs($1.factor - initialFactor) }) ?? exportScaleOption
+            exportScaleOption = initialOption
+            popup.selectItem(at: options.firstIndex(of: initialOption) ?? 0)
+
+            // Quality slider (per-export, not AppStorage)
+            let qualityLabel = NSTextField(labelWithString: "Quality:")
+            qualityLabel.alignment = .right
+            qualityLabel.font = .systemFont(ofSize: NSFont.systemFontSize)
+            let qualitySlider = NSSlider(value: storedExportQuality,
+                                         minValue: 0.1,
+                                         maxValue: 1.0,
+                                         target: nil,
+                                         action: nil)
+            qualitySlider.numberOfTickMarks = 10
+            qualitySlider.allowsTickMarkValuesOnly = false
+            let qualityValueLabel = NSTextField(labelWithString: "\(Int(storedExportQuality * 100))%")
+            qualityValueLabel.alignment = .left
+            qualityValueLabel.font = .monospacedDigitSystemFont(ofSize: NSFont.systemFontSize, weight: .regular)
+            
+            let controller = ExporterAccessoryController(
+                options: options,
+                onScaleChange: { selected in
+                    exportScaleOption = selected
+                    UserDefaults.standard.set(Double(selected.factor), forKey: exportScaleDefaultsKey)
+                },
+                onQualityChange: { newVal in
+                    let clamped = min(1.0, max(0.1, newVal))
+                    exportQuality = clamped
+                    UserDefaults.standard.set(clamped, forKey: exportQualityDefaultsKey)
+                    qualityValueLabel.stringValue = "\(Int(clamped * 100))%"
+                }
+            )
+            popup.target = controller
+            popup.action = #selector(ExporterAccessoryController.selectionChanged(_:))
+            qualitySlider.target = controller
+            qualitySlider.action = #selector(ExporterAccessoryController.qualityChanged(_:))
+            exportQuality = storedExportQuality
+            qualitySlider.doubleValue = storedExportQuality
+            qualityValueLabel.stringValue = "\(Int(storedExportQuality * 100))%"
+            
+            let scaleRow = NSStackView(views: [label, popup])
+            scaleRow.orientation = .horizontal
+            scaleRow.spacing = 8
+            
+            let qualityRow = NSStackView(views: [qualityLabel, qualitySlider, qualityValueLabel])
+            qualityRow.orientation = .horizontal
+            qualityRow.spacing = 8
+            
+            let column = NSStackView(views: [scaleRow, qualityRow])
+            column.orientation = .vertical
+            column.spacing = 12
+            let container = NSView(frame: NSRect(x: 0, y: 0, width: 320, height: 60))
+            column.translatesAutoresizingMaskIntoConstraints = false
+            container.addSubview(column)
+            NSLayoutConstraint.activate([
+                column.leadingAnchor.constraint(equalTo: container.leadingAnchor, constant: 12),
+                column.trailingAnchor.constraint(equalTo: container.trailingAnchor, constant: -12),
+                column.topAnchor.constraint(equalTo: container.topAnchor, constant: 12),
+                column.bottomAnchor.constraint(equalTo: container.bottomAnchor, constant: -12),
+            ])
+            panel.accessoryView = container
+            
+            // Keep controller alive for the lifetime of the panel
+            struct Holder { static var key: UInt8 = 0 }
+            objc_setAssociatedObject(panel, &Holder.key, controller, .OBJC_ASSOCIATION_RETAIN_NONATOMIC)
+        }
+        
+        func applyIfPresent() {
+            if let panel = NSApplication.shared.keyWindow?.attachedSheet as? NSSavePanel {
+                panel.allowsOtherFileTypes = false
+                retitleAndPruneFormats(in: panel)
+                attachAccessory(to: panel)
+                return
+            }
+            if let panel = NSApplication.shared.windows.compactMap({ $0 as? NSSavePanel }).first {
+                panel.allowsOtherFileTypes = false
+                retitleAndPruneFormats(in: panel)
+                attachAccessory(to: panel)
+            }
+        }
+        
+        DispatchQueue.main.async {
+            applyIfPresent()
+            // Sometimes the popup materializes a moment later; re-apply shortly after.
+            DispatchQueue.main.asyncAfter(deadline: .now() + 0.05) {
+                applyIfPresent()
+            }
+        }
+    }
     
     
     enum ImporterKind { case image, folder }
@@ -979,8 +1174,10 @@ struct ContentView: View {
         }
         .fileExporter(
             isPresented: $showingFileExporter,
-            document: exportImage.map { ImageDocument(image: $0) },
-            contentType: preferredSaveFormat.utType,
+            document: exportImage.map { ImageDocument(image: $0,
+                                                     scaleFactor: storedExportScaleFactor,
+                                                     quality: storedExportQuality) },
+            contentTypes: exporterContentTypes,
             defaultFilename: {
                 if let sel = selectedSnipURL {
                     return ImageSaver.replaceExtension(of: sel.lastPathComponent, with: preferredSaveFormat.rawValue)
@@ -989,17 +1186,21 @@ struct ContentView: View {
                 }
             }(),
             onCompletion: { result in
+                let previousSelection = selectedSnipURL
                 switch result {
                 case .success(let url):
-                    selectedSnipURL = url
+                    // Keep the current editor state; just refresh gallery thumbnails if the file is under our Snips directory.
                     refreshGalleryAfterSaving(to: url)
-                    reloadCurrentImage()
+                    selectedSnipURL = previousSelection
                 case .failure(let error):
                     print("Export failed: \(error)")
                 }
                 exportImage = nil
             }
         )
+        .onChange(of: showingFileExporter) { _, presented in
+            if presented { configureExporterPanel() }
+        }
     }
     
 
@@ -1565,29 +1766,8 @@ struct ContentView: View {
     /// Save As… — prompts for a destination, updates gallery if under Snips folder.
     func saveAsCurrent() {
         guard let img = currentImage else { return }
-        let panel = NSSavePanel()
-        panel.allowedContentTypes = [preferredSaveFormat.utType]
-        panel.canCreateDirectories = true
-        panel.isExtensionHidden = false
-        if !saveDirectoryPath.isEmpty {
-            panel.directoryURL = URL(fileURLWithPath: saveDirectoryPath, isDirectory: true)
-        }
-        if let sel = selectedSnipURL {
-            panel.directoryURL = sel.deletingLastPathComponent()
-            panel.nameFieldStringValue = ImageSaver.replaceExtension(of: sel.lastPathComponent, with: preferredSaveFormat.rawValue)
-        } else if let dir = SnipsDirectory() {
-            panel.directoryURL = dir
-            panel.nameFieldStringValue = ImageSaver.generateFilename(for: preferredSaveFormat.rawValue)
-        } else {
-            panel.nameFieldStringValue = ImageSaver.generateFilename(for: preferredSaveFormat.rawValue)
-        }
-        if panel.runModal() == .OK, let url = panel.url {
-            if ImageSaver.writeImage(img, to: url, format: preferredSaveFormat.rawValue, quality: saveQuality) {
-                selectedSnipURL = url
-                refreshGalleryAfterSaving(to: url)
-                reloadCurrentImage()
-            }
-        }
+        exportImage = img
+        showingFileExporter = true
     }
     
     /// If saved file is within our Snips directory, update the gallery list.
