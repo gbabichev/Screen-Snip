@@ -120,9 +120,7 @@ struct ContentView: View {
     
     // MARK: - Vars
     @Environment(\.openWindow) var openWindow  // Add this line
-    @State var showingFileExporter = false
-    @State var exportImage: NSImage? = nil
-    
+
     @AppStorage("captureMode") var captureModeRaw: String = CaptureMode.captureWithWindows.rawValue
 
     
@@ -163,7 +161,7 @@ struct ContentView: View {
         return v > 0 ? v : saveQuality
     }
     @State var exportQuality: Double = 0.9
-    
+
     // Preferred-first ordering for fileExporter so the initial selection matches the global default.
     var exporterContentTypes: [UTType] {
         var ordered: [SaveFormat] = [preferredSaveFormat]
@@ -171,166 +169,214 @@ struct ContentView: View {
         return ordered.map { $0.utType }
     }
     
-    /// When using .fileExporter with multiple types, AppKit adds an "Other format" entry. Disable that so users only see our formats.
-    private func configureExporterPanel() {
-        func findPopup(in view: NSView?) -> NSPopUpButton? {
-            guard let view else { return nil }
-            if let popup = view as? NSPopUpButton { return popup }
-            for sub in view.subviews {
-                if let found = findPopup(in: sub) { return found }
-            }
-            return nil
+    /// Shows NSSavePanel with custom accessory view (Format, Size, Quality)
+    func showSavePanel(image: NSImage, window: NSWindow?) {
+        let panel = NSSavePanel()
+
+        // Set initial filename
+        if let sel = selectedSnipURL {
+            panel.nameFieldStringValue = ImageSaver.replaceExtension(of: sel.lastPathComponent, with: preferredSaveFormat.rawValue)
+        } else {
+            panel.nameFieldStringValue = ImageSaver.generateFilename(for: preferredSaveFormat.rawValue)
         }
-        
-        func retitleAndPruneFormats(in panel: NSSavePanel) {
-            guard let popup = findPopup(in: panel.contentView) else { return }
-            
-            // Remove the "Other format" entry if present
-            for (idx, item) in popup.itemArray.enumerated().reversed() {
-                if item.title.lowercased().contains("other format") {
-                    popup.removeItem(at: idx)
-                }
+
+        panel.canCreateDirectories = true
+        panel.showsTagField = true
+        panel.allowsOtherFileTypes = false
+
+        // Create custom accessory view
+        let accessoryView = createSavePanelAccessory(for: panel, image: image)
+        panel.accessoryView = accessoryView
+
+        // Show as sheet if we have a window, otherwise modal
+        if let window = window {
+            panel.beginSheetModal(for: window) { response in
+                self.handleSavePanelResponse(response, panel: panel, image: image)
             }
-            
-            // Retitle to our preferred display names
-            for item in popup.itemArray {
-                let t = item.title.lowercased()
-                if t.contains("png") {
-                    item.title = "PNG"
-                } else if t.contains("jpeg") || t.contains("jpg") {
-                    item.title = "JPG"
-                } else if t.contains("heic") || t.contains("heif") {
-                    item.title = "HEIC"
-                }
+        } else {
+            let response = panel.runModal()
+            handleSavePanelResponse(response, panel: panel, image: image)
+        }
+    }
+
+    private func createSavePanelAccessory(for panel: NSSavePanel, image: NSImage) -> NSView {
+        // Format dropdown
+        let formats = SaveFormat.allCases
+        let formatLabel = NSTextField(labelWithString: "Format:")
+        formatLabel.alignment = .right
+        formatLabel.font = .systemFont(ofSize: NSFont.systemFontSize)
+        let formatPopup = NSPopUpButton(frame: NSRect(x: 0, y: 0, width: 170, height: 26), pullsDown: false)
+        formats.forEach { formatPopup.addItem(withTitle: $0.rawValue.uppercased()) }
+        formatPopup.selectItem(at: formats.firstIndex(of: preferredSaveFormat) ?? 0)
+
+        // Size dropdown
+        let options = ExportScaleOption.allCases
+        let sizeLabel = NSTextField(labelWithString: "Size:")
+        sizeLabel.alignment = .right
+        sizeLabel.font = .systemFont(ofSize: NSFont.systemFontSize)
+        let sizePopup = NSPopUpButton(frame: NSRect(x: 0, y: 0, width: 170, height: 26), pullsDown: false)
+        options.forEach { sizePopup.addItem(withTitle: $0.label) }
+        let initialFactor = storedExportScaleFactor
+        let initialOption = options.min(by: { abs($0.factor - initialFactor) < abs($1.factor - initialFactor) }) ?? exportScaleOption
+        exportScaleOption = initialOption
+        sizePopup.selectItem(at: options.firstIndex(of: initialOption) ?? 0)
+
+        // Quality slider
+        let qualityLabel = NSTextField(labelWithString: "Quality:")
+        qualityLabel.alignment = .right
+        qualityLabel.font = .systemFont(ofSize: NSFont.systemFontSize)
+        let qualitySlider = NSSlider(value: storedExportQuality,
+                                     minValue: 0.1,
+                                     maxValue: 1.0,
+                                     target: nil,
+                                     action: nil)
+        qualitySlider.numberOfTickMarks = 10
+        qualitySlider.allowsTickMarkValuesOnly = false
+        let qualityValueLabel = NSTextField(labelWithString: "\(Int(storedExportQuality * 100))%")
+        qualityValueLabel.alignment = .left
+        qualityValueLabel.font = .monospacedDigitSystemFont(ofSize: NSFont.systemFontSize, weight: .regular)
+
+        let qualityRow = NSStackView(views: [qualityLabel, qualitySlider, qualityValueLabel])
+        qualityRow.orientation = .horizontal
+        qualityRow.spacing = 8
+
+        // Initially hide quality if PNG
+        qualityRow.isHidden = (preferredSaveFormat == .png)
+
+        // Handle format changes
+        formatPopup.onAction {
+            let idx = formatPopup.indexOfSelectedItem
+            guard idx >= 0, idx < formats.count else { return }
+            let selected = formats[idx]
+
+            // Update filename extension
+            let currentName = panel.nameFieldStringValue
+            if !currentName.isEmpty {
+                let nameWithoutExt = (currentName as NSString).deletingPathExtension
+                panel.nameFieldStringValue = "\(nameWithoutExt).\(selected.rawValue)"
+            }
+
+            // Update allowed file type
+            panel.allowedContentTypes = [selected.utType]
+
+            // Show/hide quality based on format
+            qualityRow.isHidden = (selected == .png)
+        }
+
+        // Handle size changes
+        sizePopup.onAction {
+            let idx = sizePopup.indexOfSelectedItem
+            guard idx >= 0, idx < options.count else { return }
+            self.exportScaleOption = options[idx]
+            UserDefaults.standard.set(Double(options[idx].factor), forKey: self.exportScaleDefaultsKey)
+        }
+
+        // Handle quality changes
+        qualitySlider.onAction {
+            let clamped = min(1.0, max(0.1, qualitySlider.doubleValue))
+            self.exportQuality = clamped
+            UserDefaults.standard.set(clamped, forKey: self.exportQualityDefaultsKey)
+            qualityValueLabel.stringValue = "\(Int(clamped * 100))%"
+        }
+
+        // Set initial allowed content type
+        panel.allowedContentTypes = [preferredSaveFormat.utType]
+
+        // Layout
+        let formatRow = NSStackView(views: [formatLabel, formatPopup])
+        formatRow.orientation = .horizontal
+        formatRow.spacing = 8
+
+        let sizeRow = NSStackView(views: [sizeLabel, sizePopup])
+        sizeRow.orientation = .horizontal
+        sizeRow.spacing = 8
+
+        let column = NSStackView(views: [formatRow, sizeRow, qualityRow])
+        column.orientation = .vertical
+        column.spacing = 12
+
+        let container = NSView(frame: NSRect(x: 0, y: 0, width: 320, height: 90))
+        column.translatesAutoresizingMaskIntoConstraints = false
+        container.addSubview(column)
+        NSLayoutConstraint.activate([
+            column.leadingAnchor.constraint(equalTo: container.leadingAnchor, constant: 12),
+            column.trailingAnchor.constraint(equalTo: container.trailingAnchor, constant: -12),
+            column.topAnchor.constraint(equalTo: container.topAnchor, constant: 12),
+            column.bottomAnchor.constraint(equalTo: container.bottomAnchor, constant: -12),
+        ])
+
+        return container
+    }
+
+    private func handleSavePanelResponse(_ response: NSApplication.ModalResponse, panel: NSSavePanel, image: NSImage) {
+        guard response == .OK, let url = panel.url else { return }
+
+        // Get the selected format from the filename extension
+        let ext = url.pathExtension.lowercased()
+        let formatString: String
+        if ext == "png" {
+            formatString = "png"
+        } else if ext == "jpg" || ext == "jpeg" {
+            formatString = "jpeg"
+        } else if ext == "heic" {
+            formatString = "heic"
+        } else {
+            formatString = preferredSaveFormat.rawValue
+        }
+
+        // Scale image if needed
+        let scaleFactor = exportScaleOption.factor
+        let imageToSave = scaleImage(image, factor: scaleFactor)
+
+        // Save the image
+        let quality = exportQuality
+        let success = ImageSaver.writeImage(imageToSave, to: url, format: formatString, quality: quality)
+
+        if success {
+            refreshGalleryAfterSaving(to: url)
+        } else {
+            print("Save failed")
+        }
+    }
+
+    private func scaleImage(_ image: NSImage, factor: CGFloat) -> NSImage {
+        let f = max(0.01, min(factor, 1.0))
+        guard f < 0.999 else { return image }
+
+        // Prefer CG-based scaling to preserve pixel density
+        if let cg = image.cgImage(forProposedRect: nil, context: nil, hints: nil) {
+            let targetWidth = max(1, Int(round(CGFloat(cg.width) * f)))
+            let targetHeight = max(1, Int(round(CGFloat(cg.height) * f)))
+
+            guard let ctx = CGContext(
+                data: nil,
+                width: targetWidth,
+                height: targetHeight,
+                bitsPerComponent: 8,
+                bytesPerRow: 0,
+                space: CGColorSpaceCreateDeviceRGB(),
+                bitmapInfo: CGImageAlphaInfo.premultipliedLast.rawValue
+            ) else { return image }
+
+            ctx.interpolationQuality = .high
+            ctx.draw(cg, in: CGRect(x: 0, y: 0, width: targetWidth, height: targetHeight))
+
+            if let scaledCG = ctx.makeImage() {
+                return NSImage(cgImage: scaledCG, size: NSSize(width: CGFloat(targetWidth), height: CGFloat(targetHeight)))
             }
         }
 
-        final class ExporterAccessoryController: NSObject {
-            let options: [ExportScaleOption]
-            var onScaleChange: (ExportScaleOption) -> Void
-            var onQualityChange: (Double) -> Void
-            init(options: [ExportScaleOption],
-                 onScaleChange: @escaping (ExportScaleOption) -> Void,
-                 onQualityChange: @escaping (Double) -> Void) {
-                self.options = options
-                self.onScaleChange = onScaleChange
-                self.onQualityChange = onQualityChange
-            }
-            @objc func selectionChanged(_ sender: NSPopUpButton) {
-                let idx = sender.indexOfSelectedItem
-                guard idx >= 0, idx < options.count else { return }
-                onScaleChange(options[idx])
-            }
-            @objc func qualityChanged(_ sender: NSSlider) {
-                onQualityChange(sender.doubleValue)
-            }
-        }
-        
-        final class AccessoryControllerStore {
-            // Keep accessory controllers alive for the lifetime of each panel.
-            static let table = NSMapTable<NSWindow, AnyObject>(keyOptions: .weakMemory,
-                                                               valueOptions: .strongMemory)
-            static func retain(_ controller: AnyObject, for panel: NSSavePanel) {
-                table.setObject(controller, forKey: panel)
-            }
-        }
-
-        func attachAccessory(to panel: NSSavePanel) {
-            let options = ExportScaleOption.allCases
-            let label = NSTextField(labelWithString: "Size:")
-            label.alignment = .right
-            label.font = .systemFont(ofSize: NSFont.systemFontSize)
-            let popup = NSPopUpButton(frame: NSRect(x: 0, y: 0, width: 170, height: 26), pullsDown: false)
-            options.forEach { popup.addItem(withTitle: $0.label) }
-            // Choose initial option based on stored factor (closest match), defaulting to state.
-            let initialFactor = storedExportScaleFactor
-            let initialOption = options.min(by: { abs($0.factor - initialFactor) < abs($1.factor - initialFactor) }) ?? exportScaleOption
-            exportScaleOption = initialOption
-            popup.selectItem(at: options.firstIndex(of: initialOption) ?? 0)
-
-            // Quality slider (per-export, not AppStorage)
-            let qualityLabel = NSTextField(labelWithString: "Quality:")
-            qualityLabel.alignment = .right
-            qualityLabel.font = .systemFont(ofSize: NSFont.systemFontSize)
-            let qualitySlider = NSSlider(value: storedExportQuality,
-                                         minValue: 0.1,
-                                         maxValue: 1.0,
-                                         target: nil,
-                                         action: nil)
-            qualitySlider.numberOfTickMarks = 10
-            qualitySlider.allowsTickMarkValuesOnly = false
-            let qualityValueLabel = NSTextField(labelWithString: "\(Int(storedExportQuality * 100))%")
-            qualityValueLabel.alignment = .left
-            qualityValueLabel.font = .monospacedDigitSystemFont(ofSize: NSFont.systemFontSize, weight: .regular)
-            
-            let controller = ExporterAccessoryController(
-                options: options,
-                onScaleChange: { selected in
-                    exportScaleOption = selected
-                    UserDefaults.standard.set(Double(selected.factor), forKey: exportScaleDefaultsKey)
-                },
-                onQualityChange: { newVal in
-                    let clamped = min(1.0, max(0.1, newVal))
-                    exportQuality = clamped
-                    UserDefaults.standard.set(clamped, forKey: exportQualityDefaultsKey)
-                    qualityValueLabel.stringValue = "\(Int(clamped * 100))%"
-                }
-            )
-            popup.target = controller
-            popup.action = #selector(ExporterAccessoryController.selectionChanged(_:))
-            qualitySlider.target = controller
-            qualitySlider.action = #selector(ExporterAccessoryController.qualityChanged(_:))
-            exportQuality = storedExportQuality
-            qualitySlider.doubleValue = storedExportQuality
-            qualityValueLabel.stringValue = "\(Int(storedExportQuality * 100))%"
-            
-            let scaleRow = NSStackView(views: [label, popup])
-            scaleRow.orientation = .horizontal
-            scaleRow.spacing = 8
-            
-            let qualityRow = NSStackView(views: [qualityLabel, qualitySlider, qualityValueLabel])
-            qualityRow.orientation = .horizontal
-            qualityRow.spacing = 8
-            
-            let column = NSStackView(views: [scaleRow, qualityRow])
-            column.orientation = .vertical
-            column.spacing = 12
-            let container = NSView(frame: NSRect(x: 0, y: 0, width: 320, height: 60))
-            column.translatesAutoresizingMaskIntoConstraints = false
-            container.addSubview(column)
-            NSLayoutConstraint.activate([
-                column.leadingAnchor.constraint(equalTo: container.leadingAnchor, constant: 12),
-                column.trailingAnchor.constraint(equalTo: container.trailingAnchor, constant: -12),
-                column.topAnchor.constraint(equalTo: container.topAnchor, constant: 12),
-                column.bottomAnchor.constraint(equalTo: container.bottomAnchor, constant: -12),
-            ])
-            panel.accessoryView = container
-            
-            // Keep controller alive for the lifetime of the panel
-            AccessoryControllerStore.retain(controller, for: panel)
-        }
-        
-        func applyIfPresent() {
-            if let panel = NSApplication.shared.keyWindow?.attachedSheet as? NSSavePanel {
-                panel.allowsOtherFileTypes = false
-                retitleAndPruneFormats(in: panel)
-                attachAccessory(to: panel)
-                return
-            }
-            if let panel = NSApplication.shared.windows.compactMap({ $0 as? NSSavePanel }).first {
-                panel.allowsOtherFileTypes = false
-                retitleAndPruneFormats(in: panel)
-                attachAccessory(to: panel)
-            }
-        }
-        
-        DispatchQueue.main.async {
-            applyIfPresent()
-            // Sometimes the popup materializes a moment later; re-apply shortly after.
-            DispatchQueue.main.asyncAfter(deadline: .now() + 0.05) {
-                applyIfPresent()
-            }
-        }
+        // Fallback: lockFocus-based scaling
+        let newSize = NSSize(width: image.size.width * f, height: image.size.height * f)
+        let newImage = NSImage(size: newSize)
+        newImage.lockFocus()
+        NSGraphicsContext.current?.imageInterpolation = .high
+        image.draw(in: NSRect(origin: .zero, size: newSize),
+                   from: NSRect(origin: .zero, size: image.size),
+                   operation: .sourceOver,
+                   fraction: 1.0)
+        newImage.unlockFocus()
+        return newImage
     }
     
     
@@ -1179,35 +1225,6 @@ struct ContentView: View {
                 print("Selection canceled/failed: \(error)")
             }
         }
-        .fileExporter(
-            isPresented: $showingFileExporter,
-            document: exportImage.map { ImageDocument(image: $0,
-                                                     scaleFactor: storedExportScaleFactor,
-                                                     quality: storedExportQuality) },
-            contentTypes: exporterContentTypes,
-            defaultFilename: {
-                if let sel = selectedSnipURL {
-                    return ImageSaver.replaceExtension(of: sel.lastPathComponent, with: preferredSaveFormat.rawValue)
-                } else {
-                    return ImageSaver.generateFilename(for: preferredSaveFormat.rawValue)
-                }
-            }(),
-            onCompletion: { result in
-                let previousSelection = selectedSnipURL
-                switch result {
-                case .success(let url):
-                    // Keep the current editor state; just refresh gallery thumbnails if the file is under our Snips directory.
-                    refreshGalleryAfterSaving(to: url)
-                    selectedSnipURL = previousSelection
-                case .failure(let error):
-                    print("Export failed: \(error)")
-                }
-                exportImage = nil
-            }
-        )
-        .onChange(of: showingFileExporter) { _, presented in
-            if presented { configureExporterPanel() }
-        }
     }
     
 
@@ -1773,8 +1790,7 @@ struct ContentView: View {
     /// Save As… — prompts for a destination, updates gallery if under Snips folder.
     func saveAsCurrent() {
         guard let img = currentImage else { return }
-        exportImage = img
-        showingFileExporter = true
+        showSavePanel(image: img, window: NSApplication.shared.keyWindow)
     }
     
     /// If saved file is within our Snips directory, update the gallery list.
@@ -2698,6 +2714,32 @@ struct ContentView: View {
         updateMenuState()
         
     }
-    
 
+
+}
+
+// MARK: - NSControl Extension for Action Handling
+extension NSControl {
+    /// Adds a closure-based action handler to the control (pure Swift, no @objc)
+    func onAction(_ handler: @escaping () -> Void) {
+        let helper = ActionHelper(handler: handler)
+        self.target = helper
+        self.action = #selector(ActionHelper.handleAction)
+
+        // Store the helper in associated objects to keep it alive
+        objc_setAssociatedObject(self, &ActionHelper.associatedKey, helper, .OBJC_ASSOCIATION_RETAIN)
+    }
+
+    private class ActionHelper: NSObject {
+        static var associatedKey: UInt8 = 0
+        let handler: () -> Void
+
+        init(handler: @escaping () -> Void) {
+            self.handler = handler
+        }
+
+        @objc func handleAction() {
+            handler()
+        }
+    }
 }

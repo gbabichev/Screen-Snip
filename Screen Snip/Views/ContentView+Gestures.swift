@@ -1015,8 +1015,7 @@ extension ContentView {
         pushUndoSnipshot()
         if let flattened = rasterize(base: img, objects: objects) {
             objects.removeAll()
-            exportImage = flattened
-            showingFileExporter = true
+            showSavePanel(image: flattened, window: NSApplication.shared.keyWindow)
         }
     }
     
