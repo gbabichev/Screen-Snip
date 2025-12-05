@@ -9,7 +9,6 @@ import UniformTypeIdentifiers
 import ImageIO
 import Combine
 import ServiceManagement
-import ObjectiveC
 
 // MARK: - NSColor Hex Conversion Helper (no RawRepresentable conformance)
 extension NSColor {
@@ -227,6 +226,15 @@ struct ContentView: View {
             }
         }
         
+        final class AccessoryControllerStore {
+            // Keep accessory controllers alive for the lifetime of each panel.
+            static let table = NSMapTable<NSWindow, AnyObject>(keyOptions: .weakMemory,
+                                                               valueOptions: .strongMemory)
+            static func retain(_ controller: AnyObject, for panel: NSSavePanel) {
+                table.setObject(controller, forKey: panel)
+            }
+        }
+
         func attachAccessory(to panel: NSSavePanel) {
             let options = ExportScaleOption.allCases
             let label = NSTextField(labelWithString: "Size:")
@@ -299,8 +307,7 @@ struct ContentView: View {
             panel.accessoryView = container
             
             // Keep controller alive for the lifetime of the panel
-            struct Holder { static var key: UInt8 = 0 }
-            objc_setAssociatedObject(panel, &Holder.key, controller, .OBJC_ASSOCIATION_RETAIN_NONATOMIC)
+            AccessoryControllerStore.retain(controller, for: panel)
         }
         
         func applyIfPresent() {
