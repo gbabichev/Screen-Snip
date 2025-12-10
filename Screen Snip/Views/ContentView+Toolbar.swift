@@ -72,7 +72,7 @@ extension ContentView {
                                         .disabled(downsampleToNonRetinaForSave && saveOnCopy)
                                 }
                                 
-                                SettingsRow("Capture clean desktop", subtitle: "Hides app windows first, then captures a clean desktop view.\nDisabled: Captures exactly what you see on screen.") {
+                                SettingsRow("Hide Screen Snip During Capture", subtitle: "Hides app windows first, then takes a screenshot.\nDisabled: Captures exactly what you see on screen.") {
                                     Toggle("", isOn: Binding(
                                         get: { captureModeRaw == CaptureMode.captureWithoutWindows.rawValue },
                                         set: { captureModeRaw = $0 ? CaptureMode.captureWithoutWindows.rawValue : CaptureMode.captureWithWindows.rawValue }
