@@ -810,7 +810,7 @@ struct ContentView: View {
                                             case .rect:
                                                 Rectangle()
                                                     .path(in: r)
-                                                    .stroke(Color(nsColor: lineColor).opacity(0.8),
+                                                    .stroke(Color(nsColor: rectColor).opacity(0.8),
                                                             style: StrokeStyle(lineWidth: strokeWidth, dash: [6,4]))
                                             case .highlighter:
                                                 Rectangle().path(in: r).fill(Color(nsColor: highlighterColor))
