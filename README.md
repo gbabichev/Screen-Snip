@@ -109,6 +109,12 @@ open "Screen Snip.xcodeproj"
 
 ## 📝 Changelog
 
+### 1.3.0
+- Added: "Save As" Dialog lets you select export type, quality, size. 
+- Fixed: 
+  - Text Tool box would slightly move during a save. 
+  - Rectangle Tool shows the correct color during a drag. 
+
 ### 1.2.1
 - Added: Text Tool Improvements!
   - CMD+A to select all text.
