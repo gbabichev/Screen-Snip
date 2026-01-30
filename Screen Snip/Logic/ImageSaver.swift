@@ -344,7 +344,10 @@ struct ImageSaver {
 
         // For JPEG and HEIC, use CGImageDestination which properly supports both formats
         guard let cgImage = image.cgImage(forProposedRect: nil, context: nil, hints: nil) else { return nil }
+        return imageData(from: cgImage, format: format, quality: quality)
+    }
 
+    nonisolated static func imageData(from cgImage: CGImage, format: String, quality: Double) -> Data? {
         let utType: CFString = {
             switch format.lowercased() {
             case "jpeg", "jpg": return UTType.jpeg.identifier as CFString
@@ -356,15 +359,40 @@ struct ImageSaver {
         let mutableData = NSMutableData()
         guard let destination = CGImageDestinationCreateWithData(mutableData, utType, 1, nil) else { return nil }
 
-        let properties: [CFString: Any] = [
-            kCGImageDestinationLossyCompressionQuality: quality
-        ]
+        let properties: [CFString: Any]
+        if format.lowercased() == "png" {
+            properties = [:]
+        } else {
+            properties = [kCGImageDestinationLossyCompressionQuality: quality]
+        }
 
         CGImageDestinationAddImage(destination, cgImage, properties as CFDictionary)
 
         guard CGImageDestinationFinalize(destination) else { return nil }
 
         return mutableData as Data
+    }
+
+    nonisolated static func scaledCGImage(_ cgImage: CGImage, factor: CGFloat) -> CGImage? {
+        let f = max(0.01, min(factor, 1.0))
+        guard f < 0.999 else { return cgImage }
+
+        let targetWidth = max(1, Int(round(CGFloat(cgImage.width) * f)))
+        let targetHeight = max(1, Int(round(CGFloat(cgImage.height) * f)))
+
+        guard let ctx = CGContext(
+            data: nil,
+            width: targetWidth,
+            height: targetHeight,
+            bitsPerComponent: 8,
+            bytesPerRow: 0,
+            space: CGColorSpaceCreateDeviceRGB(),
+            bitmapInfo: CGImageAlphaInfo.premultipliedLast.rawValue
+        ) else { return nil }
+
+        ctx.interpolationQuality = .high
+        ctx.draw(cgImage, in: CGRect(x: 0, y: 0, width: targetWidth, height: targetHeight))
+        return ctx.makeImage()
     }
     
 }

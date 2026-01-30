@@ -240,8 +240,43 @@ struct ContentView: View {
         qualityRow.orientation = .horizontal
         qualityRow.spacing = 8
 
+        // Estimated size label
+        let estimateLabel = NSTextField(labelWithString: "Estimated size: —")
+        estimateLabel.alignment = .left
+        estimateLabel.font = .monospacedDigitSystemFont(ofSize: NSFont.systemFontSize, weight: .regular)
+
         // Initially hide quality if PNG
         qualityRow.isHidden = (preferredSaveFormat == .png)
+
+        var estimateToken = UUID()
+        func updateEstimatedSize() {
+            let token = UUID()
+            estimateToken = token
+            estimateLabel.stringValue = "Estimated size: Calculating…"
+
+            let idx = formatPopup.indexOfSelectedItem
+            let selectedFormat = (idx >= 0 && idx < formats.count) ? formats[idx] : preferredSaveFormat
+            let scaleFactor = exportScaleOption.factor
+            let quality = exportQuality
+
+            guard let baseCG = image.cgImage(forProposedRect: nil, context: nil, hints: nil) else {
+                estimateLabel.stringValue = "Estimated size: —"
+                return
+            }
+
+            DispatchQueue.global(qos: .utility).async {
+                let scaledCG = ImageSaver.scaledCGImage(baseCG, factor: scaleFactor) ?? baseCG
+                let data = ImageSaver.imageData(from: scaledCG, format: selectedFormat.rawValue, quality: quality)
+                let text = data.map {
+                    "Estimated size: \(ByteCountFormatter.string(fromByteCount: Int64($0.count), countStyle: .file))"
+                } ?? "Estimated size: —"
+
+                DispatchQueue.main.async {
+                    guard estimateToken == token else { return }
+                    estimateLabel.stringValue = text
+                }
+            }
+        }
 
         // Handle format changes
         formatPopup.onAction {
@@ -261,6 +296,7 @@ struct ContentView: View {
 
             // Show/hide quality based on format
             qualityRow.isHidden = (selected == .png)
+            updateEstimatedSize()
         }
 
         // Handle size changes
@@ -269,6 +305,7 @@ struct ContentView: View {
             guard idx >= 0, idx < options.count else { return }
             self.exportScaleOption = options[idx]
             UserDefaults.standard.set(Double(options[idx].factor), forKey: self.exportScaleDefaultsKey)
+            updateEstimatedSize()
         }
 
         // Handle quality changes
@@ -277,6 +314,7 @@ struct ContentView: View {
             self.exportQuality = clamped
             UserDefaults.standard.set(clamped, forKey: self.exportQualityDefaultsKey)
             qualityValueLabel.stringValue = "\(Int(clamped * 100))%"
+            updateEstimatedSize()
         }
 
         // Set initial allowed content type
@@ -291,11 +329,11 @@ struct ContentView: View {
         sizeRow.orientation = .horizontal
         sizeRow.spacing = 8
 
-        let column = NSStackView(views: [formatRow, sizeRow, qualityRow])
+        let column = NSStackView(views: [formatRow, sizeRow, qualityRow, estimateLabel])
         column.orientation = .vertical
         column.spacing = 12
 
-        let container = NSView(frame: NSRect(x: 0, y: 0, width: 320, height: 90))
+        let container = NSView(frame: NSRect(x: 0, y: 0, width: 320, height: 114))
         column.translatesAutoresizingMaskIntoConstraints = false
         container.addSubview(column)
         NSLayoutConstraint.activate([
@@ -305,6 +343,7 @@ struct ContentView: View {
             column.bottomAnchor.constraint(equalTo: container.bottomAnchor, constant: -12),
         ])
 
+        updateEstimatedSize()
         return container
     }
 
@@ -378,6 +417,7 @@ struct ContentView: View {
         newImage.unlockFocus()
         return newImage
     }
+
     
     
     enum ImporterKind { case image, folder }
