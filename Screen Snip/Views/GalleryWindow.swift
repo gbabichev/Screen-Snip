@@ -129,100 +129,81 @@ struct GalleryView: View {
     
     @AppStorage("saveDirectoryPath") private var saveDirectoryPath: String = ""
     
-    // Group URLs by date
-    private var groupedUrls: [(String, [URL])] {
-        let grouped = Dictionary(grouping: urlsLocal) { url in
-            extractDateString(from: url)
+    // Group URLs by date (day), keeping a real Date for sorting across years.
+    private var groupedUrls: [(Date, String, [URL])] {
+        let dated = urlsLocal.map { url in
+            (url, extractCaptureDate(from: url))
+        }
+        let grouped = Dictionary(grouping: dated) { item in
+            Calendar.current.startOfDay(for: item.1)
         }
         
         // Sort by date descending (newest first)
         return grouped.sorted { first, second in
-            // Convert date strings back to comparable format
-            let firstDate = dateFromString(first.key)
-            let secondDate = dateFromString(second.key)
-            return firstDate > secondDate
-        }.map { (key, value) in
-            // Sort URLs within each group by time descending
-            let sortedUrls = value.sorted { url1, url2 in
-                let time1 = extractTimeString(from: url1)
-                let time2 = extractTimeString(from: url2)
-                return time1 > time2
-            }
-            return (key, sortedUrls)
+            first.key > second.key
+        }.map { (dayStart, items) in
+            let label = displayDateString(from: dayStart)
+            let sortedUrls = items.sorted { $0.1 > $1.1 }.map { $0.0 }
+            return (dayStart, label, sortedUrls)
         }
     }
     
-    private func extractDateString(from url: URL) -> String {
+    private func extractCaptureDate(from url: URL) -> Date {
         let filename = url.deletingPathExtension().lastPathComponent
         
-        // Try to extract date from Snip_YYYYMMDD_HHMMSS_xxx format
-        if filename.hasPrefix("Snip_"),
-           let dateRange = filename.range(of: "Snip_"),
-           filename.count >= "Snip_YYYYMMDD".count {
-            let afterPrefix = filename[dateRange.upperBound...]
-            let dateString = String(afterPrefix.prefix(8)) // YYYYMMDD
-            
-            if dateString.count == 8 {
-                return formatDateString(dateString)
-            }
-        }
-        
-        // Fallback: use file creation date (not modification date)
-        do {
-            let attrs = try url.resourceValues(forKeys: [.creationDateKey])  // Changed this
-            if let date = attrs.creationDate {  // And this
-                let formatter = DateFormatter()
-                formatter.dateFormat = "EEEE, MMMM d"
-                return formatter.string(from: date)
-            }
-        } catch {
-            // Ignore errors
-        }
-        
-        return "Unknown Date"
-    }
-    
-    private func extractTimeString(from url: URL) -> String {
-        let filename = url.deletingPathExtension().lastPathComponent
-        
-        // Try to extract time from Snip_YYYYMMDD_HHMMSS_xxx format
         if filename.hasPrefix("Snip_") {
-            let components = filename.components(separatedBy: "_")
+            let components = filename.split(separator: "_")
             if components.count >= 3 {
-                return components[2] // HHMMSS
+                let dateTimeString = "\(components[1])_\(components[2])"
+                if let date = Self.snipFilenameDateTimeFormatter.date(from: dateTimeString) {
+                    return date
+                }
             }
-        }
-        
-        return "000000" // Fallback for sorting
-    }
-    
-    private func formatDateString(_ dateString: String) -> String {
-        // Convert YYYYMMDD to readable format
-        if dateString.count == 8 {
-            let year = String(dateString.prefix(4))
-            let monthString = String(dateString.dropFirst(4).prefix(2))
-            let dayString = String(dateString.suffix(2))
-            
-            if let _ = Int(monthString), let _ = Int(dayString) {
-                let formatter = DateFormatter()
-                formatter.dateFormat = "yyyy-MM-dd"
-                
-                if let date = formatter.date(from: "\(year)-\(monthString)-\(dayString)") {
-                    let displayFormatter = DateFormatter()
-                    displayFormatter.dateFormat = "EEEE, MMMM d"
-                    return displayFormatter.string(from: date)
+            if components.count >= 2 {
+                let dateString = String(components[1])
+                if let date = Self.snipFilenameDateFormatter.date(from: dateString) {
+                    return date
                 }
             }
         }
-        return dateString // Fallback
+        
+        if let date = (try? url.resourceValues(forKeys: [.creationDateKey]))?.creationDate {
+            return date
+        }
+        
+        return .distantPast
     }
     
-    private func dateFromString(_ dateString: String) -> Date {
-        // Convert formatted date string back to Date for sorting
-        let formatter = DateFormatter()
-        formatter.dateFormat = "EEEE, MMMM d"
-        return formatter.date(from: dateString) ?? .distantPast
+    private func displayDateString(from date: Date) -> String {
+        Self.displayDateFormatter.string(from: date)
     }
+
+    private static let snipFilenameDateTimeFormatter: DateFormatter = {
+        let formatter = DateFormatter()
+        formatter.calendar = Calendar(identifier: .gregorian)
+        formatter.locale = Locale(identifier: "en_US_POSIX")
+        formatter.timeZone = TimeZone.current
+        formatter.dateFormat = "yyyyMMdd_HHmmss"
+        return formatter
+    }()
+    
+    private static let snipFilenameDateFormatter: DateFormatter = {
+        let formatter = DateFormatter()
+        formatter.calendar = Calendar(identifier: .gregorian)
+        formatter.locale = Locale(identifier: "en_US_POSIX")
+        formatter.timeZone = TimeZone.current
+        formatter.dateFormat = "yyyyMMdd"
+        return formatter
+    }()
+    
+    private static let displayDateFormatter: DateFormatter = {
+        let formatter = DateFormatter()
+        formatter.calendar = Calendar(identifier: .gregorian)
+        formatter.locale = Locale(identifier: "en_US_POSIX")
+        formatter.timeZone = TimeZone.current
+        formatter.dateFormat = "EEEE, MMMM d, yyyy"
+        return formatter
+    }()
     
     private func SnipsDirectoryFromSettings() -> URL? {
         if !saveDirectoryPath.isEmpty {
@@ -296,7 +277,7 @@ struct GalleryView: View {
     var body: some View {
         ScrollView {
             LazyVStack(alignment: .leading, spacing: 20) {
-                ForEach(groupedUrls, id: \.0) { dateString, urls in
+                ForEach(groupedUrls, id: \.0) { date, dateString, urls in
                     VStack(alignment: .leading, spacing: 12) {
                         // Track this section's top position within the scroll coordinate space
                         GeometryReader { geo in
@@ -339,7 +320,7 @@ struct GalleryView: View {
                         .padding(.horizontal, 16)
                         
                         // Divider between dates (except for last)
-                        if dateString != groupedUrls.last?.0 {
+                        if date != groupedUrls.last?.0 {
                             Divider()
                                 .padding(.horizontal, 16)
                         }

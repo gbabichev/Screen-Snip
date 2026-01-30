@@ -414,6 +414,49 @@ extension ContentView {
         guard let url = selectedSnipURL else { return nil }
         return NSImage(contentsOf: url)  // Load on-demand
     }
+
+    private func captureDate(for url: URL) -> Date {
+        let filename = url.deletingPathExtension().lastPathComponent
+        if filename.hasPrefix("Snip_") {
+            let components = filename.split(separator: "_")
+            if components.count >= 3 {
+                let dateTimeString = "\(components[1])_\(components[2])"
+                if let date = Self.snipFilenameDateTimeFormatter.date(from: dateTimeString) {
+                    return date
+                }
+            }
+            if components.count >= 2 {
+                let dateString = String(components[1])
+                if let date = Self.snipFilenameDateFormatter.date(from: dateString) {
+                    return date
+                }
+            }
+        }
+
+        if let date = (try? url.resourceValues(forKeys: [.creationDateKey]))?.creationDate {
+            return date
+        }
+
+        return .distantPast
+    }
+
+    private static let snipFilenameDateTimeFormatter: DateFormatter = {
+        let formatter = DateFormatter()
+        formatter.calendar = Calendar(identifier: .gregorian)
+        formatter.locale = Locale(identifier: "en_US_POSIX")
+        formatter.timeZone = TimeZone.current
+        formatter.dateFormat = "yyyyMMdd_HHmmss"
+        return formatter
+    }()
+
+    private static let snipFilenameDateFormatter: DateFormatter = {
+        let formatter = DateFormatter()
+        formatter.calendar = Calendar(identifier: .gregorian)
+        formatter.locale = Locale(identifier: "en_US_POSIX")
+        formatter.timeZone = TimeZone.current
+        formatter.dateFormat = "yyyyMMdd"
+        return formatter
+    }()
     
     /// Loads existing Snips on disk (all supported formats), newest first.
     func loadExistingSnips() {
@@ -424,8 +467,7 @@ extension ContentView {
             let urls = try fm.contentsOfDirectory(at: dir, includingPropertiesForKeys: [.creationDateKey], options: [.skipsHiddenFiles])
                 .filter { supportedExtensions.contains($0.pathExtension.lowercased()) }
             let dated: [(URL, Date)] = urls.compactMap {
-                let vals = try? $0.resourceValues(forKeys: [.creationDateKey])
-                return ($0, vals?.creationDate ?? .distantPast)
+                return ($0, captureDate(for: $0))
             }
             let sorted = dated.sorted { $0.1 > $1.1 }.map { $0.0 }
             SnipURLs = Array(sorted.prefix(10))
@@ -463,8 +505,7 @@ extension ContentView {
                 let urls = try fm.contentsOfDirectory(at: dir, includingPropertiesForKeys: [.creationDateKey], options: [.skipsHiddenFiles])
                     .filter { supportedExtensions.contains($0.pathExtension.lowercased()) }
                 let dated: [(URL, Date)] = urls.compactMap {
-                    let vals = try? $0.resourceValues(forKeys: [.creationDateKey])
-                    return ($0, vals?.creationDate ?? .distantPast)
+                    return ($0, captureDate(for: $0))
                 }
                 // Return ALL files (not limited to 10 like SnipURLs)
                 return dated.sorted { $0.1 > $1.1 }.map { $0.0 }
