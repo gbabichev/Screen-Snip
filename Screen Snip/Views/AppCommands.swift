@@ -89,6 +89,7 @@ struct AppCommands: Commands {
             .keyboardShortcut("c", modifiers: .command)
             .disabled(!menuState.hasSelectedImage)
         }
+
         
         CommandMenu("Tools") {
             Button {

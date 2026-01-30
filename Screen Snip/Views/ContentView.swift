@@ -169,9 +169,20 @@ struct ContentView: View {
         return ordered.map { $0.utType }
     }
     
+    private final class SavePanel: NSSavePanel {
+        override func performKeyEquivalent(with event: NSEvent) -> Bool {
+            if event.modifierFlags.contains(.command),
+               event.charactersIgnoringModifiers?.lowercased() == "a" {
+                NSApp.sendAction(#selector(NSText.selectAll(_:)), to: nil, from: self)
+                return true
+            }
+            return super.performKeyEquivalent(with: event)
+        }
+    }
+
     /// Shows NSSavePanel with custom accessory view (Format, Size, Quality)
     func showSavePanel(image: NSImage, window: NSWindow?) {
-        let panel = NSSavePanel()
+        let panel = SavePanel()
 
         // Set initial filename
         if let sel = selectedSnipURL {
@@ -495,7 +506,7 @@ struct ContentView: View {
     @State var redoStack: [Snipshot] = []
     @State var pushedDragUndo = false
     @State var keyMonitor: Any? = nil
-    
+            
     @AppStorage("textFontSize") var textFontSize: Double = 18
     
     @AppStorage("textColor") var textColorRaw: String = "#000000FF"
