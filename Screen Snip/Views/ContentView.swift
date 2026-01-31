@@ -1360,25 +1360,19 @@ struct ContentView: View {
                                 )
                                 
                                 if let cropped = cropImage(flattened, toBottomLeftRect: imgRectBL) {
-                                    // Write the cropped image back to the file
-                                    if let savedURL = ImageSaver.writeImageReplacing(cropped, at: url, format: preferredSaveFormat.rawValue, quality: saveQuality) {
-                                        // Clear all state and reload the cropped image
-                                        objects.removeAll()
-                                        lastFittedSize = nil
-                                        objectSpaceSize = nil
-                                        selectedObjectID = nil
-                                        activeHandle = .none
-                                        cropRect = nil
-                                        cropDraftRect = nil
-                                        cropHandle = .none
-                                        rotatedPreviewImage = nil
-                                        selectedSnipURL = savedURL
-                                        selectedImageSize = probeImageSize(savedURL)
-                                        lastFittedSize = nil
-                                        imageReloadTrigger = UUID()
-                                        zoomLevel = 1.0
-                                        refreshGalleryAfterSaving(to: savedURL)
-                                    }
+                                    // Non-destructive crop: update preview image only
+                                    rotatedPreviewImage = cropped
+                                    objects.removeAll()
+                                    lastFittedSize = nil
+                                    objectSpaceSize = nil
+                                    selectedObjectID = nil
+                                    activeHandle = .none
+                                    cropRect = nil
+                                    cropDraftRect = nil
+                                    cropHandle = .none
+                                    selectedImageSize = pixelSize(of: cropped)
+                                    imageReloadTrigger = UUID()
+                                    zoomLevel = 1.0
                                 }
                             }
                         }
