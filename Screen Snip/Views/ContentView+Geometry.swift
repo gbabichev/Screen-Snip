@@ -411,6 +411,7 @@ extension ContentView {
     }
     
     var currentImage: NSImage? {
+        if let preview = rotatedPreviewImage { return preview }
         guard let url = selectedSnipURL else { return nil }
         return NSImage(contentsOf: url)  // Load on-demand
     }

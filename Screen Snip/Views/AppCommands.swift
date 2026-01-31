@@ -211,6 +211,24 @@ struct AppCommands: Commands {
             }
             .keyboardShortcut("9", modifiers: .command)
             .disabled(!menuState.hasSelectedImage)
+
+            Divider()
+            
+            Button {
+                NotificationCenter.default.post(name: .rotateClockwise, object: nil)
+            } label: {
+                Label("Rotate Clockwise", systemImage: "rotate.right")
+            }
+            .keyboardShortcut("r", modifiers: .command)
+            .disabled(!menuState.hasSelectedImage)
+            
+            Button {
+                NotificationCenter.default.post(name: .rotateCounterclockwise, object: nil)
+            } label: {
+                Label("Rotate Counterclockwise", systemImage: "rotate.left")
+            }
+            .keyboardShortcut("r", modifiers: [.command, .shift])
+            .disabled(!menuState.hasSelectedImage)
         }
         
         CommandGroup(after: .sidebar) {

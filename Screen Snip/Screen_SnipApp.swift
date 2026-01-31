@@ -33,6 +33,8 @@ extension Notification.Name {
     static let zoomIn = Notification.Name("com.georgebabichev.screenSnip.zoomIn")
     static let zoomOut = Notification.Name("com.georgebabichev.screenSnip.zoomOut")
     static let resetZoom = Notification.Name("com.georgebabichev.screenSnip.resetZoom")
+    static let rotateClockwise = Notification.Name("com.georgebabichev.screenSnip.rotateClockwise")
+    static let rotateCounterclockwise = Notification.Name("com.georgebabichev.screenSnip.rotateCounterclockwise")
     static let openNewWindow = Notification.Name("com.georgebabichev.screenSnip.openNewWindow") // Add this line
 
 }

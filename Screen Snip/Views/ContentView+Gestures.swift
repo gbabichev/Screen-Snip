@@ -1000,6 +1000,7 @@ extension ContentView {
                 // Write the flattened image back to the same file, preserving creation date
                 if let savedURL = ImageSaver.writeImageReplacing(flattened, at: url, format: preferredSaveFormat.rawValue, quality: saveQuality, preserveAttributes: true) {
                     selectedSnipURL = savedURL
+                    rotatedPreviewImage = nil
                     refreshGalleryAfterSaving(to: savedURL)
                     reloadCurrentImage()
                 }
@@ -1363,8 +1364,6 @@ extension ContentView {
 
             // Use the rep's CGImage directly - it has all the drawing we just did
             if let currentCGImage = rep.cgImage {
-                print("Processing blur objects, count: \(blurObjects.count)")
-
                 // Create a new graphics context focused on rep for blur drawing
                 let repContext = NSGraphicsContext(bitmapImageRep: rep)
                 NSGraphicsContext.saveGraphicsState()
@@ -1416,26 +1415,14 @@ extension ContentView {
                     // Don't scale the blur radius - use it directly as pixel block size
                     let pixelSize = max(1, blurObj.blurRadius)
 
-                    print("UI rect: \(blurObj.rect)")
-                    print("Fitted: \(fitted), ImgSize (points): \(imgSize)")
-                    print("Rect in points (bottom-left from uiRectToImageRect): \(r)")
-                    print("Rect in pixels (bottom-left for CGImage): \(rPixels)")
-                    print("CGImage size: \(currentCGImage.width)x\(currentCGImage.height)")
-
                     // Manually create pixelation by downscaling and upscaling
                     // Crop from CGImage using pixel coordinates, draw back using point coordinates
 
                     // Use a simpler approach: downsample and upsample with proper dimensions
                     if let croppedRegion = currentCGImage.cropping(to: rPixels) {
-                        print("Cropped region from \(rPixels), size: \(croppedRegion.width)x\(croppedRegion.height)")
-
-
-
                         // Calculate downsampled dimensions
                         let downsampledWidth = max(1, Int(CGFloat(croppedRegion.width) / pixelSize))
                         let downsampledHeight = max(1, Int(CGFloat(croppedRegion.height) / pixelSize))
-
-                        print("Downsampling to: \(downsampledWidth)x\(downsampledHeight)")
 
                         // Create a small context for downsampling
                         let colorSpace = CGColorSpaceCreateDeviceRGB()
@@ -1494,21 +1481,11 @@ extension ContentView {
                                         }
 
                                         NSGraphicsContext.current?.restoreGraphicsState()
-                                        print("Drew pixelated region at \(r)")
-                                    } else {
-                                        print("Failed to create upsampled image")
+                                        // done
                                     }
-                                } else {
-                                    print("Failed to create upsample context")
                                 }
-                            } else {
-                                print("Failed to create downsampled image")
                             }
-                        } else {
-                            print("Failed to create downsample context")
                         }
-                    } else {
-                        print("Failed to crop region for pixelation")
                     }
                 }
 

@@ -19,6 +19,8 @@ extension ContentView {
             nc.publisher(for: .zoomIn),
             nc.publisher(for: .zoomOut),
             nc.publisher(for: .resetZoom),
+            nc.publisher(for: .rotateClockwise),
+            nc.publisher(for: .rotateCounterclockwise),
         ])
         .eraseToAnyPublisher()
     }
@@ -55,6 +57,9 @@ extension ContentView {
             
         case .zoomIn, .zoomOut, .resetZoom:
             onZoomNotification(note)
+            
+        case .rotateClockwise, .rotateCounterclockwise:
+            onRotateNotification(note)
             
         default:
             break
@@ -136,6 +141,18 @@ extension ContentView {
         case .zoomOut:   zoomLevel = max(zoomLevel / 1.25, 1.0)
         case .resetZoom: zoomLevel = 1.0
         default: break
+        }
+    }
+
+    func onRotateNotification(_ notification: Notification) {
+        guard selectedSnipURL != nil else { return }
+        switch notification.name {
+        case .rotateClockwise:
+            rotateCurrentImage90(clockwise: true)
+        case .rotateCounterclockwise:
+            rotateCurrentImage90(clockwise: false)
+        default:
+            break
         }
     }
     

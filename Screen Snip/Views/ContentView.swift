@@ -429,6 +429,194 @@ struct ContentView: View {
         return newImage
     }
 
+    func rotateCurrentImage90(clockwise: Bool) {
+        // UI direction is inverted vs image coordinate rotation; flip here to match labels.
+        let effectiveClockwise = !clockwise
+        guard let _ = selectedSnipURL else { return }
+        guard let base = rotatedPreviewImage ?? currentImage else { return }
+        guard let rotated = rotateImage90(base, clockwise: effectiveClockwise) else { return }
+
+        pushUndoSnipshot()
+        rotatedPreviewImage = rotated
+
+        let actualDisplaySize = getActualDisplaySize(selectedImageSize ?? base.size)
+        let fittedForUI: CGSize = (imageDisplayMode == "fit")
+            ? fittedImageSize(original: actualDisplaySize, in: currentGeometrySize)
+            : actualDisplaySize
+        let authorSize = objectSpaceSize ?? fittedForUI
+        // keep author space stable by swapping width/height for 90° rotation
+        let newAuthorSize = CGSize(width: authorSize.height, height: authorSize.width)
+
+        if !objects.isEmpty {
+            let angle: CGFloat = effectiveClockwise ? (-.pi / 2) : (.pi / 2)
+            let scaleX = newAuthorSize.width / max(1, authorSize.width)
+            let scaleY = newAuthorSize.height / max(1, authorSize.height)
+
+            func mapPoint(_ p: CGPoint) -> CGPoint {
+                let u = p.x / max(1, authorSize.width)
+                let v = p.y / max(1, authorSize.height)
+                let newU: CGFloat
+                let newV: CGFloat
+                if effectiveClockwise {
+                    newU = v
+                    newV = 1.0 - u
+                } else {
+                    newU = 1.0 - v
+                    newV = u
+                }
+                return CGPoint(x: newU * newAuthorSize.width, y: newV * newAuthorSize.height)
+            }
+
+            func mapRect(_ rect: CGRect) -> CGRect {
+                let points = [
+                    CGPoint(x: rect.minX, y: rect.minY),
+                    CGPoint(x: rect.maxX, y: rect.minY),
+                    CGPoint(x: rect.minX, y: rect.maxY),
+                    CGPoint(x: rect.maxX, y: rect.maxY)
+                ].map { mapPoint($0) }
+                let minX = points.map { $0.x }.min() ?? 0
+                let maxX = points.map { $0.x }.max() ?? 0
+                let minY = points.map { $0.y }.min() ?? 0
+                let maxY = points.map { $0.y }.max() ?? 0
+                return CGRect(x: minX, y: minY, width: maxX - minX, height: maxY - minY)
+            }
+
+            objects = objects.map { obj in
+                switch obj {
+                case .line(let o):
+                    var c = o
+                    c.start = mapPoint(c.start)
+                    c.end = mapPoint(c.end)
+                    return .line(c)
+                case .rect(let o):
+                    var c = o
+                    let center = CGPoint(x: c.rect.midX, y: c.rect.midY)
+                    let newCenter = mapPoint(center)
+                    let newSize = CGSize(width: c.rect.width * scaleX, height: c.rect.height * scaleY)
+                    c.rect.size = newSize
+                    c.rect.origin = CGPoint(x: newCenter.x - newSize.width / 2, y: newCenter.y - newSize.height / 2)
+                    c.rotation += angle
+                    return .rect(c)
+                case .oval(let o):
+                    var c = o
+                    c.rect = mapRect(c.rect)
+                    return .oval(c)
+                case .blur(let o):
+                    var c = o
+                    c.rect = mapRect(c.rect)
+                    c.rotation = 0
+                    return .blur(c)
+                case .text(let o):
+                    var c = o
+                    let center = CGPoint(x: c.rect.midX, y: c.rect.midY)
+                    let newCenter = mapPoint(center)
+                    let newSize = CGSize(
+                        width: c.rect.width * scaleY,
+                        height: c.rect.height * scaleX
+                    )
+                    c.rect.size = newSize
+                    c.rect.origin = CGPoint(x: newCenter.x - newSize.width / 2, y: newCenter.y - newSize.height / 2)
+                    c.rotation += angle
+                    return .text(c)
+                case .image(let o):
+                    var c = o
+                    let center = CGPoint(x: c.rect.midX, y: c.rect.midY)
+                    let newCenter = mapPoint(center)
+                    let newSize = CGSize(width: c.rect.width * scaleX, height: c.rect.height * scaleY)
+                    c.rect.size = newSize
+                    c.rect.origin = CGPoint(x: newCenter.x - newSize.width / 2, y: newCenter.y - newSize.height / 2)
+                    c.rotation += angle
+                    return .image(c)
+                case .highlight(let o):
+                    var c = o
+                    c.rect = mapRect(c.rect)
+                    return .highlight(c)
+                case .badge(let o):
+                    var c = o
+                    c.rect = mapRect(c.rect)
+                    return .badge(c)
+                }
+            }
+
+            objectSpaceSize = newAuthorSize
+        }
+
+        selectedImageSize = pixelSize(of: rotated)
+        imageReloadTrigger = UUID()
+        lastFittedSize = nil
+        selectedObjectID = nil
+        selectedObjectIDs.removeAll()
+        activeHandle = .none
+        cropRect = nil
+        cropDraftRect = nil
+        cropHandle = .none
+        selectionRect = nil
+        selectionDragStart = nil
+        focusedTextID = nil
+        blurSnapshots.removeAll()
+        for obj in objects {
+            if case .blur(let blurObj) = obj {
+                generateBlurSnapshot(for: blurObj)
+            }
+        }
+        updateMenuState()
+    }
+
+    private func rotateImage90(_ image: NSImage, clockwise: Bool) -> NSImage? {
+        guard let cg = image.cgImage(forProposedRect: nil, context: nil, hints: nil) else { return nil }
+        let width = cg.width
+        let height = cg.height
+        let newWidth = height
+        let newHeight = width
+
+        let colorSpace = cg.colorSpace ?? CGColorSpaceCreateDeviceRGB()
+        guard let ctx = CGContext(
+            data: nil,
+            width: newWidth,
+            height: newHeight,
+            bitsPerComponent: cg.bitsPerComponent,
+            bytesPerRow: 0,
+            space: colorSpace,
+            bitmapInfo: cg.bitmapInfo.rawValue
+        ) else { return nil }
+
+        if clockwise {
+            ctx.translateBy(x: CGFloat(newWidth), y: 0)
+            ctx.rotate(by: .pi / 2)
+        } else {
+            ctx.translateBy(x: 0, y: CGFloat(newHeight))
+            ctx.rotate(by: -.pi / 2)
+        }
+
+        ctx.draw(cg, in: CGRect(x: 0, y: 0, width: CGFloat(width), height: CGFloat(height)))
+        guard let rotated = ctx.makeImage() else { return nil }
+        return NSImage(cgImage: rotated, size: NSSize(width: newWidth, height: newHeight))
+    }
+
+    private func rotateImageWithinBounds(_ image: NSImage, radians: CGFloat) -> NSImage? {
+        guard let cg = image.cgImage(forProposedRect: nil, context: nil, hints: nil) else { return nil }
+        let size = image.size
+        guard let ctx = CGContext(
+            data: nil,
+            width: Int(max(1, size.width)),
+            height: Int(max(1, size.height)),
+            bitsPerComponent: cg.bitsPerComponent,
+            bytesPerRow: 0,
+            space: cg.colorSpace ?? CGColorSpaceCreateDeviceRGB(),
+            bitmapInfo: cg.bitmapInfo.rawValue
+        ) else { return nil }
+
+        ctx.translateBy(x: size.width / 2, y: size.height / 2)
+        ctx.rotate(by: radians)
+        ctx.translateBy(x: -size.width / 2, y: -size.height / 2)
+        ctx.draw(cg, in: CGRect(origin: .zero, size: size))
+
+        guard let rotated = ctx.makeImage() else { return nil }
+        return NSImage(cgImage: rotated, size: size)
+    }
+
+    // (rotation mapping helpers are now in rotateCurrentImage90)
+
     
     
     enum ImporterKind { case image, folder }
@@ -500,12 +688,15 @@ struct ContentView: View {
     struct Snipshot {
         let imageURL: URL?
         let objects: [Drawable]
+        let previewImage: NSImage?
+        let previewImageSize: CGSize?
     }
     
     @State var undoStack: [Snipshot] = []
     @State var redoStack: [Snipshot] = []
     @State var pushedDragUndo = false
     @State var keyMonitor: Any? = nil
+    @State var rotatedPreviewImage: NSImage? = nil
             
     @AppStorage("textFontSize") var textFontSize: Double = 18
     
@@ -569,6 +760,9 @@ struct ContentView: View {
     }
     
     func getActualDisplaySize(_ pixelSize: CGSize) -> CGSize {
+        if let preview = rotatedPreviewImage {
+            return preview.size
+        }
         guard let url = selectedSnipURL else { return pixelSize }
         
         // Load NSImage to get proper point size (retina-aware)
@@ -646,29 +840,38 @@ struct ContentView: View {
                                         y: max(0, (fitted.height - scaledSize.height) / 2)
                                     )
                                     
-                                    // Base image streamed without holding NSImage in @State
-                                    AsyncImage(url: url) { phase in
-                                        switch phase {
-                                        case .success(let img):
-                                            img.resizable()
+                                    Group {
+                                        if let preview = rotatedPreviewImage {
+                                            Image(nsImage: preview)
+                                                .resizable()
                                                 .interpolation(.high)
                                                 .frame(width: fitted.width, height: fitted.height)
-                                        case .empty:
-                                            ProgressView()
-                                                .frame(width: fitted.width, height: fitted.height)
-                                        case .failure(_):
-                                            Color.secondary.opacity(0.1)
-                                                .frame(width: fitted.width, height: fitted.height)
-                                                .overlay(
-                                                    VStack(spacing: 6) {
-                                                        Image(systemName: "exclamationmark.triangle")
-                                                        Text("Failed to load image")
-                                                            .font(.caption)
-                                                            .foregroundStyle(.secondary)
-                                                    }
-                                                )
-                                        @unknown default:
-                                            Color.clear.frame(width: fitted.width, height: fitted.height)
+                                        } else {
+                                            // Base image streamed without holding NSImage in @State
+                                            AsyncImage(url: url) { phase in
+                                                switch phase {
+                                                case .success(let img):
+                                                    img.resizable()
+                                                        .interpolation(.high)
+                                                        .frame(width: fitted.width, height: fitted.height)
+                                                case .empty:
+                                                    ProgressView()
+                                                        .frame(width: fitted.width, height: fitted.height)
+                                                case .failure(_):
+                                                    Color.secondary.opacity(0.1)
+                                                        .frame(width: fitted.width, height: fitted.height)
+                                                        .overlay(
+                                                            VStack(spacing: 6) {
+                                                                Image(systemName: "exclamationmark.triangle")
+                                                                Text("Failed to load image")
+                                                                    .font(.caption)
+                                                                    .foregroundStyle(.secondary)
+                                                            }
+                                                        )
+                                                @unknown default:
+                                                    Color.clear.frame(width: fitted.width, height: fitted.height)
+                                                }
+                                            }
                                         }
                                     }
                                     .id(imageReloadTrigger)
@@ -1116,7 +1319,7 @@ struct ContentView: View {
                         // Perform destructive crop with current overlay
                         if let url = selectedSnipURL {
                             pushUndoSnipshot()
-                            if let base = NSImage(contentsOf: url) {
+                            if let base = currentImage {
                                 let flattened = rasterize(base: base, objects: objects) ?? base
                                 
                                 // Use the SAME coordinate space calculations as the main view
@@ -1168,6 +1371,7 @@ struct ContentView: View {
                                         cropRect = nil
                                         cropDraftRect = nil
                                         cropHandle = .none
+                                        rotatedPreviewImage = nil
                                         selectedSnipURL = savedURL
                                         selectedImageSize = probeImageSize(savedURL)
                                         lastFittedSize = nil
@@ -1324,6 +1528,7 @@ struct ContentView: View {
 
     func selectSnip(_ url: URL) {
         selectedSnipURL = url
+        rotatedPreviewImage = nil
         selectedImageSize = probeImageSize(url)
         updateMenuState()
         objects.removeAll()
@@ -1345,6 +1550,7 @@ struct ContentView: View {
         }
         if selectedSnipURL == url {
             selectedSnipURL = nil
+            rotatedPreviewImage = nil
             updateMenuState()
         }
     }
@@ -1387,6 +1593,7 @@ struct ContentView: View {
     func reloadCurrentImage() {
         guard let url = selectedSnipURL else { return }
         imageReloadTrigger = UUID()
+        rotatedPreviewImage = nil
         selectedImageSize = probeImageSize(url)
         lastFittedSize = nil
     }
@@ -1577,8 +1784,7 @@ struct ContentView: View {
 
     /// Generate a pixelated snapshot for a blur object by rendering current state
     func generateBlurSnapshot(for blurObj: BlurRectObject) {
-        guard let url = selectedSnipURL else { return }
-        guard let base = NSImage(contentsOf: url) else { return }
+        guard let base = currentImage else { return }
 
         let pixelSize = max(1, blurObj.blurRadius)
 
@@ -1594,6 +1800,8 @@ struct ContentView: View {
 
         // Get the base image as CGImage to crop from
         guard let baseCG = base.cgImage(forProposedRect: nil, context: nil, hints: nil) else { return }
+
+
 
         // Convert BL to TL for CGImage cropping (CGImage uses top-left origin)
         let pixelTL = CGRect(
@@ -1653,8 +1861,13 @@ struct ContentView: View {
 
         let pixelatedNSImage = NSImage(cgImage: pixelatedCGImage, size: blurObj.rect.size)
 
-        // Update the cache
-        blurSnapshots[blurObj.id] = pixelatedNSImage
+        // Update the cache (counter-rotate so view rotationEffect doesn't double-rotate content)
+        if blurObj.rotation != 0 {
+            let rotated = rotateImageWithinBounds(pixelatedNSImage, radians: -blurObj.rotation)
+            blurSnapshots[blurObj.id] = rotated ?? pixelatedNSImage
+        } else {
+            blurSnapshots[blurObj.id] = pixelatedNSImage
+        }
     }
 
 
@@ -1817,7 +2030,12 @@ struct ContentView: View {
     }
     
     func pushUndoSnipshot() {
-        undoStack.append(Snipshot(imageURL: selectedSnipURL, objects: objects))
+        undoStack.append(Snipshot(
+            imageURL: selectedSnipURL,
+            objects: objects,
+            previewImage: rotatedPreviewImage,
+            previewImageSize: selectedImageSize
+        ))
         // Limit for 24/7 operation
         while undoStack.count > 3 { undoStack.removeFirst() }
         redoStack.removeAll()
@@ -2746,10 +2964,25 @@ struct ContentView: View {
 
     func performUndo() {
         guard let prev = undoStack.popLast() else { return }
-        let current = Snipshot(imageURL: selectedSnipURL, objects: objects)
+        let current = Snipshot(
+            imageURL: selectedSnipURL,
+            objects: objects,
+            previewImage: rotatedPreviewImage,
+            previewImageSize: selectedImageSize
+        )
         redoStack.append(current)
         selectedSnipURL = prev.imageURL  // Just change the URL
         objects = prev.objects
+        rotatedPreviewImage = prev.previewImage
+        if let size = prev.previewImageSize {
+            selectedImageSize = size
+        } else if let url = prev.imageURL {
+            selectedImageSize = probeImageSize(url)
+        } else {
+            selectedImageSize = nil
+        }
+        imageReloadTrigger = UUID()
+        lastFittedSize = nil
         
         updateMenuState()
         
@@ -2757,10 +2990,25 @@ struct ContentView: View {
     
     func performRedo() {
         guard let next = redoStack.popLast() else { return }
-        let current = Snipshot(imageURL: selectedSnipURL, objects: objects)
+        let current = Snipshot(
+            imageURL: selectedSnipURL,
+            objects: objects,
+            previewImage: rotatedPreviewImage,
+            previewImageSize: selectedImageSize
+        )
         undoStack.append(current)
         selectedSnipURL = next.imageURL  // Just change the URL
         objects = next.objects
+        rotatedPreviewImage = next.previewImage
+        if let size = next.previewImageSize {
+            selectedImageSize = size
+        } else if let url = next.imageURL {
+            selectedImageSize = probeImageSize(url)
+        } else {
+            selectedImageSize = nil
+        }
+        imageReloadTrigger = UUID()
+        lastFittedSize = nil
         
         updateMenuState()
         

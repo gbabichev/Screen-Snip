@@ -451,6 +451,26 @@ extension ContentView {
                             .glassEffect(selectedTool == .text ? .regular.tint(Color(nsColor: textColor).opacity(0.7)) : .regular)
                             .help("Click to place a text box.")
                             
+                            // Rotate Image
+                            Menu {
+                                Button {
+                                    rotateCurrentImage90(clockwise: true)
+                                } label: {
+                                    Label("Rotate Clockwise", systemImage: "rotate.right")
+                                }
+                                
+                                Button {
+                                    rotateCurrentImage90(clockwise: false)
+                                } label: {
+                                    Label("Rotate Counterclockwise", systemImage: "rotate.left")
+                                }
+                            } label: {
+                                Label("Rotate", systemImage: "rotate.right")
+                            } primaryAction: {
+                                rotateCurrentImage90(clockwise: true)
+                            }
+                            .help("Rotate image 90° clockwise")
+                            
                             // Crop
                             Button(action: {
                                 selectedTool = .crop
