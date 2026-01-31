@@ -21,6 +21,7 @@ extension ContentView {
             nc.publisher(for: .resetZoom),
             nc.publisher(for: .rotateClockwise),
             nc.publisher(for: .rotateCounterclockwise),
+            nc.publisher(for: .requestCloseWindow),
         ])
         .eraseToAnyPublisher()
     }
@@ -60,6 +61,9 @@ extension ContentView {
             
         case .rotateClockwise, .rotateCounterclockwise:
             onRotateNotification(note)
+
+        case .requestCloseWindow:
+            onRequestCloseWindow(note)
             
         default:
             break
@@ -68,52 +72,56 @@ extension ContentView {
     
     
     func onBeginSnipFromIntent(_ note: Notification) {
-        
         // Extract URL and activation flag from userInfo
         guard let userInfo = note.userInfo,
               let url = userInfo["url"] as? URL else {
             return
         }
-        
-        //let shouldActivate = userInfo["shouldActivate"] as? Bool ?? true
-        
-        
-        // CRITICAL: Clear ALL existing state first to prevent memory accumulation
-        objects.removeAll()
-        objectSpaceSize = nil
-        selectedObjectID = nil
-        activeHandle = .none
-        cropRect = nil
-        cropDraftRect = nil
-        cropHandle = .none
-        focusedTextID = nil
-        
-        // CRITICAL: Clear undo/redo stacks to prevent memory growth
-        undoStack.removeAll()
-        redoStack.removeAll()
-        
-        // CRITICAL: Reset all draft states
-        draft = nil
-        draftRect = nil
-        selectedTool = .pointer
-        
-        // CRITICAL: Clear any missing Snip tracking
-        missingSnipURLs.removeAll()
-        
-        // Refresh the gallery to ensure the new Snip is in our list
-        loadExistingSnips()
-        
-        // Set the selected Snip (this should now work since we refreshed)
-        selectedSnipURL = url
-        selectedImageSize = probeImageSize(url)
-        updateMenuState()
+
+        confirmDiscardIfNeeded {
+            //let shouldActivate = userInfo["shouldActivate"] as? Bool ?? true
+            
+            // CRITICAL: Clear ALL existing state first to prevent memory accumulation
+            objects.removeAll()
+            objectSpaceSize = nil
+            selectedObjectID = nil
+            activeHandle = .none
+            cropRect = nil
+            cropDraftRect = nil
+            cropHandle = .none
+            focusedTextID = nil
+            
+            // CRITICAL: Clear undo/redo stacks to prevent memory growth
+            undoStack.removeAll()
+            redoStack.removeAll()
+            
+            // CRITICAL: Reset all draft states
+            draft = nil
+            draftRect = nil
+            selectedTool = .pointer
+            
+            // CRITICAL: Clear any missing Snip tracking
+            missingSnipURLs.removeAll()
+            
+            // Refresh the gallery to ensure the new Snip is in our list
+            loadExistingSnips()
+            
+            // Set the selected Snip (this should now work since we refreshed)
+            selectedSnipURL = url
+            selectedImageSize = probeImageSize(url)
+            updateMenuState()
+        }
     }
     func onSelectToolNotification(_ note: Notification) {
         guard let raw = note.userInfo?["tool"] as? String else { return }
         print(raw)
         handleSelectTool(raw)
     }
-    func onOpenImageFile() { activeImporter = .image}
+    func onOpenImageFile() {
+        confirmDiscardIfNeeded {
+            activeImporter = .image
+        }
+    }
     func onCopyToClipboard() {
         guard selectedSnipURL != nil else { return }
         flattenRefreshAndCopy()
@@ -153,6 +161,14 @@ extension ContentView {
             rotateCurrentImage90(clockwise: false)
         default:
             break
+        }
+    }
+
+    func onRequestCloseWindow(_ notification: Notification) {
+        guard let window = notification.object as? NSWindow else { return }
+        confirmDiscardIfNeeded {
+            WindowCloseCoordinator.shared.allowClose = true
+            window.performClose(nil)
         }
     }
     

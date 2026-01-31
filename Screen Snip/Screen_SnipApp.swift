@@ -36,6 +36,7 @@ extension Notification.Name {
     static let rotateClockwise = Notification.Name("com.georgebabichev.screenSnip.rotateClockwise")
     static let rotateCounterclockwise = Notification.Name("com.georgebabichev.screenSnip.rotateCounterclockwise")
     static let openNewWindow = Notification.Name("com.georgebabichev.screenSnip.openNewWindow") // Add this line
+    static let requestCloseWindow = Notification.Name("com.georgebabichev.screenSnip.requestCloseWindow")
 
 }
 

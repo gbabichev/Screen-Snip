@@ -7,6 +7,12 @@
 
 import SwiftUI
 
+final class WindowCloseCoordinator {
+    static let shared = WindowCloseCoordinator()
+    var allowClose = false
+    private init() {}
+}
+
 // Window delegate to enforce minimum size constraints
 class WindowSizeDelegate: NSObject, NSWindowDelegate {
     static let shared = WindowSizeDelegate()
@@ -18,6 +24,15 @@ class WindowSizeDelegate: NSObject, NSWindowDelegate {
             width: max(frameSize.width, minWidth),
             height: max(frameSize.height, minHeight)
         )
+    }
+
+    func windowShouldClose(_ sender: NSWindow) -> Bool {
+        if WindowCloseCoordinator.shared.allowClose {
+            WindowCloseCoordinator.shared.allowClose = false
+            return true
+        }
+        NotificationCenter.default.post(name: .requestCloseWindow, object: sender)
+        return false
     }
 }
 

@@ -71,6 +71,10 @@ extension ContentView {
                                         .toggleStyle(.switch)
                                         .disabled(downsampleToNonRetinaForSave && saveOnCopy)
                                 }
+                                SettingsRow("Confirm Before Leaving Unsaved Changes", subtitle: "Show a confirmation dialog before switching or closing with unsaved edits.") {
+                                    Toggle("", isOn: $confirmSaveBeforeLeavingChanges)
+                                        .toggleStyle(.switch)
+                                }
                                 
                                 SettingsRow("Hide Screen Snip During Capture", subtitle: "Hides app windows first, then takes a screenshot.\nDisabled: Captures exactly what you see on screen.") {
                                     Toggle("", isOn: Binding(

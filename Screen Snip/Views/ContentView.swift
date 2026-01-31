@@ -149,6 +149,7 @@ struct ContentView: View {
     @AppStorage("downsampleToNonRetinaForSave") var downsampleToNonRetinaForSave: Bool = false
     @AppStorage("imageDisplayMode") var imageDisplayMode: String = "fit" // "actual" or "fit"
     @AppStorage("saveOnCopy") var saveOnCopy: Bool = false
+    @AppStorage("confirmSaveBeforeLeavingChanges") var confirmSaveBeforeLeavingChanges: Bool = true
     @State var exportScaleOption: ExportScaleOption = .full
     private let exportScaleDefaultsKey = "exportScaleFactor"
     private let exportQualityDefaultsKey = "exportQuality"
@@ -1521,6 +1522,13 @@ struct ContentView: View {
     }
 
     func selectSnip(_ url: URL) {
+        if selectedSnipURL == url { return }
+        confirmDiscardIfNeeded {
+            performSelectSnip(url)
+        }
+    }
+
+    private func performSelectSnip(_ url: URL) {
         selectedSnipURL = url
         rotatedPreviewImage = nil
         selectedImageSize = probeImageSize(url)
@@ -1578,6 +1586,59 @@ struct ContentView: View {
         alert.alertStyle = .warning
         alert.runModal()
     }
+
+    var hasUnsavedChanges: Bool {
+        guard selectedSnipURL != nil else { return false }
+        if rotatedPreviewImage != nil { return true }
+        if !objects.isEmpty { return true }
+        if cropRect != nil || cropDraftRect != nil { return true }
+        return false
+    }
+
+    func discardUnsavedChanges() {
+        objects.removeAll()
+        selectedObjectID = nil
+        selectedObjectIDs.removeAll()
+        activeHandle = .none
+        focusedTextID = nil
+        cropRect = nil
+        cropDraftRect = nil
+        cropHandle = .none
+        rotatedPreviewImage = nil
+        undoStack.removeAll()
+        redoStack.removeAll()
+        updateMenuState()
+        reloadCurrentImage()
+    }
+
+    func confirmDiscardIfNeeded(then: @escaping () -> Void) {
+        guard confirmSaveBeforeLeavingChanges, hasUnsavedChanges else {
+            then()
+            return
+        }
+
+        let alert = NSAlert()
+        let name = selectedSnipURL?.lastPathComponent ?? "this image"
+        alert.messageText = "Save changes to \(name)?"
+        alert.informativeText = "Your edits will be lost if you don’t save."
+        alert.alertStyle = .warning
+        alert.addButton(withTitle: "Save")
+        alert.addButton(withTitle: "Discard")
+        alert.addButton(withTitle: "Cancel")
+
+        let response = alert.runModal()
+        switch response {
+        case .alertFirstButtonReturn:
+            flattenAndSaveInPlace()
+            then()
+        case .alertSecondButtonReturn:
+            discardUnsavedChanges()
+            then()
+        default:
+            break
+        }
+    }
+
     func updateMenuState() {
         MenuState.shared.canUndo = !undoStack.isEmpty
         MenuState.shared.canRedo = !redoStack.isEmpty
