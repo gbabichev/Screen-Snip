@@ -58,6 +58,8 @@
 | Reset Zoom                   | ⌘ 0               | Reset zoom to 100%                             |
 | Zoom In                      | ⌘ +               | Increase zoom                                  |
 | Zoom Out                     | ⌘ -               | Decrease zoom                                  |
+| Rotate Right                 | ⌘ R               | Rotate Clockwise                               |
+| Rotate Left                  | ⌘ SHIFT R         | Rotate Counter-Clockwise                       |
 
 ### Settings
 
@@ -73,6 +75,8 @@ These settings are customizable by you.
   - When you copy to clipboard, the app can auto-save to disk. 
 - Downsample Retina Screenshots for Copy
   - If a High-DPI screenshot exists, we can automatically downsample it to 1x for easier & quicker sharing. 
+- Confirm Before Leaving Unsaved Changes
+  - Show a alert dialog if you try to exit with unsaved changes.
 - Fit Images to Window
   - You can view your snips in "actual" size, or enhance them to take the full window size. 
 - Hide Dock Icon
@@ -108,6 +112,15 @@ open "Screen Snip.xcodeproj"
 ```
 
 ## 📝 Changelog
+
+### 1.4.0
+- Added: Image Rotate Tool.
+  - "Estimated File Size" to Save As Dialog. 
+  - Crop tool is no longer destructive. You must save. 
+  - Crop tool can now be moved after being placed. 
+  - Optional (in the settings) Alert dialog if you try to leave an image with unsaved changes. 
+- Fixed: CMD+A to select the file name in Save As was not working. 
+  - Snip Gallery sorted images in the new year incorrectly. 
 
 ### 1.3.0
 - Added: "Save As" Dialog lets you select export type, quality, size. 

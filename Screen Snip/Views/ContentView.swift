@@ -636,6 +636,7 @@ struct ContentView: View {
     @State var cropHandle: Handle = .none
     @State var cropDragStart: CGPoint? = nil
     @State var cropOriginalRect: CGRect? = nil
+    @State var cropIsMoving: Bool = false
     @AppStorage("strokeWidth") var strokeWidth: Double = 3
     @AppStorage("blurAmount") var blurAmount: Double = 8
     @AppStorage("lineColor") var lineColorRaw: String = "#000000FF"
@@ -1098,6 +1099,15 @@ struct ContentView: View {
                                                 .stroke(Color.orange.opacity(0.95),
                                                         style: StrokeStyle(lineWidth: max(1, strokeWidth), dash: [8,4]))
                                                 .overlay(Rectangle().path(in: crp).fill(Color.orange.opacity(0.10)))
+                                                .overlay(
+                                                    Image(systemName: "scissors")
+                                                        .font(.system(size: 12, weight: .semibold))
+                                                        .foregroundStyle(Color.orange)
+                                                        .padding(4)
+                                                        .background(Circle().fill(Color.white.opacity(0.9)))
+                                                        .overlay(Circle().stroke(Color.orange.opacity(0.9), lineWidth: 1))
+                                                        .position(x: crp.minX + 10, y: crp.minY - 12)
+                                                )
                                             
                                             let pts = [
                                                 CGPoint(x: crp.minX, y: crp.minY),

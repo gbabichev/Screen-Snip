@@ -661,6 +661,12 @@ extension ContentView {
                         if handle != .none {
                             cropHandle = handle
                             cropOriginalRect = existing
+                            cropIsMoving = false
+                            return
+                        }
+                        if existing.contains(locAuthor) {
+                            cropOriginalRect = existing
+                            cropIsMoving = true
                             return
                         }
                     }
@@ -669,6 +675,12 @@ extension ContentView {
                 if cropHandle != .none, let original = cropOriginalRect {
                     // Resizing existing rect
                     cropRect = normalizeRect(resizeRect(original, handle: cropHandle, to: locAuthor))
+                    cropDraftRect = nil
+                } else if cropIsMoving, let original = cropOriginalRect, let start = cropDragStart {
+                    // Moving existing rect
+                    let delta = CGSize(width: locAuthor.x - start.x, height: locAuthor.y - start.y)
+                    let moved = original.offsetBy(dx: delta.width, dy: delta.height)
+                    cropRect = clampRect(moved, in: author)
                     cropDraftRect = nil
                 } else if let start = cropDragStart {
                     // Drafting a new rect during drag
@@ -685,11 +697,18 @@ extension ContentView {
                     cropDragStart = nil
                     cropOriginalRect = nil
                     cropHandle = .none
+                    cropIsMoving = false
                 }
                 
                 if cropHandle != .none, let updated = cropRect {
                     // Finished a resize — keep normalized
                     cropRect = normalizeRect(updated)
+                    cropDraftRect = nil
+                    return
+                }
+
+                if cropIsMoving, let updated = cropRect {
+                    cropRect = clampRect(updated, in: author)
                     cropDraftRect = nil
                     return
                 }
