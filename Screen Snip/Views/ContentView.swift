@@ -1328,7 +1328,7 @@ struct ContentView: View {
                 if selectedTool == .crop, let rect = cropRect, !event.modifierFlags.contains(.command) {
                     if event.keyCode == 36 || event.keyCode == 76 { // Return or Keypad Enter
                         // Perform destructive crop with current overlay
-                        if let url = selectedSnipURL {
+                        if selectedSnipURL != nil {
                             pushUndoSnipshot()
                             if let base = currentImage {
                                 let flattened = rasterize(base: base, objects: objects) ?? base
