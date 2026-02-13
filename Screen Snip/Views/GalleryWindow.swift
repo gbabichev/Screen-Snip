@@ -22,6 +22,12 @@ final class GalleryWindow {
             let content = GalleryView(urls: freshUrls, onSelect: onSelect, onReload: onReload, onVisibleDateChange: { [weak win] date in
                 win?.title = date.map { "Snip Gallery — \($0)" } ?? "Snip Gallery"
             })
+#if DEBUG
+            .overlay(alignment: .bottomTrailing) {
+                BetaTag()
+                    .padding(12)
+            }
+#endif
             win.contentViewController = NSHostingController(rootView: content)
             
             // Enforce a sane size if it somehow got too small
@@ -49,6 +55,12 @@ final class GalleryWindow {
         let content = GalleryView(urls: initialUrls, onSelect: onSelect, onReload: onReload, onVisibleDateChange: { [weak win] date in
             win?.title = date.map { "Snip Gallery — \($0)" } ?? "Snip Gallery"
         })
+#if DEBUG
+        .overlay(alignment: .bottomTrailing) {
+            BetaTag()
+                .padding(12)
+        }
+#endif
         let hosting = NSHostingController(rootView: content)
         
         //win.titleVisibility = .hidden

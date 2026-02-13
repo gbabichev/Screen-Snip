@@ -119,6 +119,12 @@ final class WindowManager {
         // Don't set maxSize - let it be unlimited for resizing
         
         let contentView = ContentView()
+#if DEBUG
+            .overlay(alignment: .bottomTrailing) {
+                BetaTag()
+                    .padding(12)
+            }
+#endif
         let hostingController = NSHostingController(rootView: contentView)
         
         // Don't set preferredContentSize - it interferes with resizing

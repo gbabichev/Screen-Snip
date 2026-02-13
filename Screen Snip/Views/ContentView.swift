@@ -449,10 +449,6 @@ struct ContentView: View {
         let newAuthorSize = CGSize(width: authorSize.height, height: authorSize.width)
 
         if !objects.isEmpty {
-            let angle: CGFloat = effectiveClockwise ? (-.pi / 2) : (.pi / 2)
-            let scaleX = newAuthorSize.width / max(1, authorSize.width)
-            let scaleY = newAuthorSize.height / max(1, authorSize.height)
-
             func mapPoint(_ p: CGPoint) -> CGPoint {
                 let u = p.x / max(1, authorSize.width)
                 let v = p.y / max(1, authorSize.height)
@@ -481,6 +477,51 @@ struct ContentView: View {
                 let maxY = points.map { $0.y }.max() ?? 0
                 return CGRect(x: minX, y: minY, width: maxX - minX, height: maxY - minY)
             }
+            
+            func mapOrientedRect(_ rect: CGRect, rotation: CGFloat) -> (rect: CGRect, rotation: CGFloat) {
+                let center = CGPoint(x: rect.midX, y: rect.midY)
+                let halfW = rect.width * 0.5
+                let halfH = rect.height * 0.5
+                let co = Foundation.cos(rotation)
+                let s = Foundation.sin(rotation)
+                
+                func rotatedCorner(dx: CGFloat, dy: CGFloat) -> CGPoint {
+                    CGPoint(
+                        x: center.x + dx * co - dy * s,
+                        y: center.y + dx * s + dy * co
+                    )
+                }
+                
+                let tl = rotatedCorner(dx: -halfW, dy: -halfH)
+                let tr = rotatedCorner(dx: halfW, dy: -halfH)
+                let br = rotatedCorner(dx: halfW, dy: halfH)
+                let bl = rotatedCorner(dx: -halfW, dy: halfH)
+                
+                let mappedTL = mapPoint(tl)
+                let mappedTR = mapPoint(tr)
+                let mappedBR = mapPoint(br)
+                let mappedBL = mapPoint(bl)
+                
+                let mappedCenter = CGPoint(
+                    x: (mappedTL.x + mappedTR.x + mappedBR.x + mappedBL.x) / 4,
+                    y: (mappedTL.y + mappedTR.y + mappedBR.y + mappedBL.y) / 4
+                )
+                
+                let rightEdge = CGPoint(x: mappedTR.x - mappedTL.x, y: mappedTR.y - mappedTL.y)
+                let downEdge = CGPoint(x: mappedBL.x - mappedTL.x, y: mappedBL.y - mappedTL.y)
+                let mappedWidth = max(1, Foundation.hypot(rightEdge.x, rightEdge.y))
+                let mappedHeight = max(1, Foundation.hypot(downEdge.x, downEdge.y))
+                let mappedRotation = Foundation.atan2(rightEdge.y, rightEdge.x)
+                
+                let mappedRect = CGRect(
+                    x: mappedCenter.x - mappedWidth / 2,
+                    y: mappedCenter.y - mappedHeight / 2,
+                    width: mappedWidth,
+                    height: mappedHeight
+                )
+                
+                return (mappedRect, mappedRotation)
+            }
 
             objects = objects.map { obj in
                 switch obj {
@@ -491,12 +532,9 @@ struct ContentView: View {
                     return .line(c)
                 case .rect(let o):
                     var c = o
-                    let center = CGPoint(x: c.rect.midX, y: c.rect.midY)
-                    let newCenter = mapPoint(center)
-                    let newSize = CGSize(width: c.rect.width * scaleX, height: c.rect.height * scaleY)
-                    c.rect.size = newSize
-                    c.rect.origin = CGPoint(x: newCenter.x - newSize.width / 2, y: newCenter.y - newSize.height / 2)
-                    c.rotation += angle
+                    let mapped = mapOrientedRect(c.rect, rotation: c.rotation)
+                    c.rect = mapped.rect
+                    c.rotation = mapped.rotation
                     return .rect(c)
                 case .oval(let o):
                     var c = o
@@ -509,24 +547,15 @@ struct ContentView: View {
                     return .blur(c)
                 case .text(let o):
                     var c = o
-                    let center = CGPoint(x: c.rect.midX, y: c.rect.midY)
-                    let newCenter = mapPoint(center)
-                    let newSize = CGSize(
-                        width: c.rect.width * scaleY,
-                        height: c.rect.height * scaleX
-                    )
-                    c.rect.size = newSize
-                    c.rect.origin = CGPoint(x: newCenter.x - newSize.width / 2, y: newCenter.y - newSize.height / 2)
-                    c.rotation += angle
+                    let mapped = mapOrientedRect(c.rect, rotation: c.rotation)
+                    c.rect = mapped.rect
+                    c.rotation = mapped.rotation
                     return .text(c)
                 case .image(let o):
                     var c = o
-                    let center = CGPoint(x: c.rect.midX, y: c.rect.midY)
-                    let newCenter = mapPoint(center)
-                    let newSize = CGSize(width: c.rect.width * scaleX, height: c.rect.height * scaleY)
-                    c.rect.size = newSize
-                    c.rect.origin = CGPoint(x: newCenter.x - newSize.width / 2, y: newCenter.y - newSize.height / 2)
-                    c.rotation += angle
+                    let mapped = mapOrientedRect(c.rect, rotation: c.rotation)
+                    c.rect = mapped.rect
+                    c.rotation = mapped.rotation
                     return .image(c)
                 case .highlight(let o):
                     var c = o
