@@ -113,6 +113,12 @@ open "Screen Snip.xcodeproj"
 
 ## 📝 Changelog
 
+### 1.4.1
+- Undo can now hold 20 snapshots, up from 3. 
+- Fixed: 
+  - Certain objects would morph when rotating image in certain conditions. 
+  - Doing 'undo' after placing objects could morph them in certain conditions. 
+
 ### 1.4.0
 - Added: Image Rotate Tool.
   - "Estimated File Size" to Save As Dialog. 
