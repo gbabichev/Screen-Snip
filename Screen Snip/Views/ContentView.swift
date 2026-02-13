@@ -723,10 +723,12 @@ struct ContentView: View {
         let objects: [Drawable]
         let previewImage: NSImage?
         let previewImageSize: CGSize?
+        let objectSpaceSize: CGSize?
     }
     
     @State var undoStack: [Snipshot] = []
     @State var redoStack: [Snipshot] = []
+    private let maxUndoSnapshots: Int = 20
     @State var pushedDragUndo = false
     @State var keyMonitor: Any? = nil
     @State var rotatedPreviewImage: NSImage? = nil
@@ -2130,10 +2132,11 @@ struct ContentView: View {
             imageURL: selectedSnipURL,
             objects: objects,
             previewImage: rotatedPreviewImage,
-            previewImageSize: selectedImageSize
+            previewImageSize: selectedImageSize,
+            objectSpaceSize: objectSpaceSize
         ))
         // Limit for 24/7 operation
-        while undoStack.count > 3 { undoStack.removeFirst() }
+        while undoStack.count > maxUndoSnapshots { undoStack.removeFirst() }
         redoStack.removeAll()
         
         updateMenuState()
@@ -3064,12 +3067,14 @@ struct ContentView: View {
             imageURL: selectedSnipURL,
             objects: objects,
             previewImage: rotatedPreviewImage,
-            previewImageSize: selectedImageSize
+            previewImageSize: selectedImageSize,
+            objectSpaceSize: objectSpaceSize
         )
         redoStack.append(current)
         selectedSnipURL = prev.imageURL  // Just change the URL
         objects = prev.objects
         rotatedPreviewImage = prev.previewImage
+        objectSpaceSize = prev.objectSpaceSize
         if let size = prev.previewImageSize {
             selectedImageSize = size
         } else if let url = prev.imageURL {
@@ -3090,12 +3095,14 @@ struct ContentView: View {
             imageURL: selectedSnipURL,
             objects: objects,
             previewImage: rotatedPreviewImage,
-            previewImageSize: selectedImageSize
+            previewImageSize: selectedImageSize,
+            objectSpaceSize: objectSpaceSize
         )
         undoStack.append(current)
         selectedSnipURL = next.imageURL  // Just change the URL
         objects = next.objects
         rotatedPreviewImage = next.previewImage
+        objectSpaceSize = next.objectSpaceSize
         if let size = next.previewImageSize {
             selectedImageSize = size
         } else if let url = next.imageURL {
