@@ -884,13 +884,14 @@ struct BadgeObject: @MainActor DrawableObject {
     var number: Int
     var fillColor: NSColor
     var textColor: NSColor
+    var rotation: CGFloat = 0
     
     init(id: UUID = UUID(), rect: CGRect, number: Int, fillColor: NSColor, textColor: NSColor) {
         self.id = id; self.rect = rect; self.number = number; self.fillColor = fillColor; self.textColor = textColor
     }
     
     static func == (lhs: BadgeObject, rhs: BadgeObject) -> Bool {
-        lhs.id == rhs.id && lhs.rect == rhs.rect && lhs.number == rhs.number && lhs.fillColor == rhs.fillColor && lhs.textColor == rhs.textColor
+        lhs.id == rhs.id && lhs.rect == rhs.rect && lhs.number == rhs.number && lhs.fillColor == rhs.fillColor && lhs.textColor == rhs.textColor && lhs.rotation == rhs.rotation
     }
     
     func hitTest(_ p: CGPoint) -> Bool {

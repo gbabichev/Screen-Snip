@@ -563,7 +563,9 @@ struct ContentView: View {
                     return .highlight(c)
                 case .badge(let o):
                     var c = o
-                    c.rect = mapRect(c.rect)
+                    let mapped = mapOrientedRect(c.rect, rotation: c.rotation)
+                    c.rect = mapped.rect
+                    c.rotation = mapped.rotation
                     return .badge(c)
                 }
             }
@@ -981,16 +983,16 @@ struct ContentView: View {
                                                     lastTextEditDoubleClickAt = CACurrentMediaTime()
                                                 }
                                             case .badge(let o):
-                                                Circle()
-                                                    .fill(Color(nsColor: o.fillColor))
-                                                    .frame(width: o.rect.width, height: o.rect.height)
-                                                    .position(x: o.rect.midX, y: o.rect.midY)
-                                                    .overlay {
-                                                        Text("\(o.number)")
-                                                            .font(.system(size: max(10, min(o.rect.width, o.rect.height) * 0.6), weight: .bold))
-                                                            .foregroundStyle(Color(nsColor: o.textColor))
-                                                            .position(x: o.rect.midX, y: o.rect.midY)
-                                                    }
+                                                ZStack {
+                                                    Circle()
+                                                        .fill(Color(nsColor: o.fillColor))
+                                                    Text("\(o.number)")
+                                                        .font(.system(size: max(10, min(o.rect.width, o.rect.height) * 0.6), weight: .bold))
+                                                        .foregroundStyle(Color(nsColor: o.textColor))
+                                                }
+                                                .frame(width: o.rect.width, height: o.rect.height)
+                                                .rotationEffect(Angle(radians: o.rotation))
+                                                .position(x: o.rect.midX, y: o.rect.midY)
                                             case .highlight(let o):
                                                 Rectangle()
                                                     .fill(Color(nsColor: o.color))
