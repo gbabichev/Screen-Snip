@@ -11,6 +11,30 @@ final class GalleryWindow {
     static let shared = GalleryWindow()
     private var window: NSWindow?
     
+    private func makeGalleryRootContent(
+        urls: [URL],
+        onSelect: @escaping (URL) -> Void,
+        onReload: @escaping () -> [URL],
+        onVisibleDateChange: @escaping (String?) -> Void
+    ) -> AnyView {
+        let content = GalleryView(
+            urls: urls,
+            onSelect: onSelect,
+            onReload: onReload,
+            onVisibleDateChange: onVisibleDateChange
+        )
+        #if DEBUG
+        return AnyView(
+            content.overlay(alignment: .bottomTrailing) {
+                BetaTag()
+                    .padding(12)
+            }
+        )
+        #else
+        return AnyView(content)
+        #endif
+    }
+    
     func present(urls: [URL], onSelect: @escaping (URL) -> Void, onReload: @escaping () -> [URL]) {
         // If already visible, just bring to front and update content
         if let win = window {
@@ -19,15 +43,14 @@ final class GalleryWindow {
             let freshUrls = urls.isEmpty ? onReload() : urls
             
             // Always create a new hosting controller with fresh data to ensure SwiftUI updates
-            let content = GalleryView(urls: freshUrls, onSelect: onSelect, onReload: onReload, onVisibleDateChange: { [weak win] date in
-                win?.title = date.map { "Snip Gallery — \($0)" } ?? "Snip Gallery"
-            })
-#if DEBUG
-            .overlay(alignment: .bottomTrailing) {
-                BetaTag()
-                    .padding(12)
-            }
-#endif
+            let content = makeGalleryRootContent(
+                urls: freshUrls,
+                onSelect: onSelect,
+                onReload: onReload,
+                onVisibleDateChange: { [weak win] date in
+                    win?.title = date.map { "Snip Gallery — \($0)" } ?? "Snip Gallery"
+                }
+            )
             win.contentViewController = NSHostingController(rootView: content)
             
             // Enforce a sane size if it somehow got too small
@@ -52,15 +75,14 @@ final class GalleryWindow {
         
         // Seed with the provided URLs if possible to avoid an extra reload
         let initialUrls = urls.isEmpty ? onReload() : urls
-        let content = GalleryView(urls: initialUrls, onSelect: onSelect, onReload: onReload, onVisibleDateChange: { [weak win] date in
-            win?.title = date.map { "Snip Gallery — \($0)" } ?? "Snip Gallery"
-        })
-#if DEBUG
-        .overlay(alignment: .bottomTrailing) {
-            BetaTag()
-                .padding(12)
-        }
-#endif
+        let content = makeGalleryRootContent(
+            urls: initialUrls,
+            onSelect: onSelect,
+            onReload: onReload,
+            onVisibleDateChange: { [weak win] date in
+                win?.title = date.map { "Snip Gallery — \($0)" } ?? "Snip Gallery"
+            }
+        )
         let hosting = NSHostingController(rootView: content)
         
         //win.titleVisibility = .hidden
