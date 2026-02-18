@@ -153,6 +153,7 @@ struct ContentView: View {
     @State var exportScaleOption: ExportScaleOption = .full
     private let exportScaleDefaultsKey = "exportScaleFactor"
     private let exportQualityDefaultsKey = "exportQuality"
+    private let exportRoundedCornersDefaultsKey = "exportRoundedCorners"
     private var storedExportScaleFactor: CGFloat {
         let v = UserDefaults.standard.double(forKey: exportScaleDefaultsKey)
         return v > 0 ? CGFloat(v) : 1.0
@@ -161,7 +162,11 @@ struct ContentView: View {
         let v = UserDefaults.standard.double(forKey: exportQualityDefaultsKey)
         return v > 0 ? v : saveQuality
     }
+    private var storedExportRoundedCorners: Bool {
+        UserDefaults.standard.bool(forKey: exportRoundedCornersDefaultsKey)
+    }
     @State var exportQuality: Double = 0.9
+    @State var exportRoundedCorners: Bool = false
 
     // Preferred-first ordering for fileExporter so the initial selection matches the global default.
     var exporterContentTypes: [UTType] {
@@ -247,10 +252,22 @@ struct ContentView: View {
         let qualityValueLabel = NSTextField(labelWithString: "\(Int(storedExportQuality * 100))%")
         qualityValueLabel.alignment = .left
         qualityValueLabel.font = .monospacedDigitSystemFont(ofSize: NSFont.systemFontSize, weight: .regular)
+        self.exportQuality = storedExportQuality
 
         let qualityRow = NSStackView(views: [qualityLabel, qualitySlider, qualityValueLabel])
         qualityRow.orientation = .horizontal
         qualityRow.spacing = 8
+
+        // Rounded corners toggle
+        let styleLabel = NSTextField(labelWithString: "Style:")
+        styleLabel.alignment = .right
+        styleLabel.font = .systemFont(ofSize: NSFont.systemFontSize)
+        let roundedCornersCheckbox = NSButton(checkboxWithTitle: "Rounded corners", target: nil, action: nil)
+        roundedCornersCheckbox.state = storedExportRoundedCorners ? .on : .off
+        self.exportRoundedCorners = storedExportRoundedCorners
+        let roundedCornersRow = NSStackView(views: [styleLabel, roundedCornersCheckbox])
+        roundedCornersRow.orientation = .horizontal
+        roundedCornersRow.spacing = 8
 
         // Estimated size label
         let estimateLabel = NSTextField(labelWithString: "Estimated size: —")
@@ -258,7 +275,18 @@ struct ContentView: View {
         estimateLabel.font = .monospacedDigitSystemFont(ofSize: NSFont.systemFontSize, weight: .regular)
 
         // Initially hide quality if PNG
-        qualityRow.isHidden = (preferredSaveFormat == .png)
+        let initialRoundedEnabled = self.exportRoundedCorners
+        if initialRoundedEnabled, preferredSaveFormat != .png, let pngIndex = formats.firstIndex(of: .png) {
+            formatPopup.selectItem(at: pngIndex)
+            panel.allowedContentTypes = [SaveFormat.png.utType]
+            let currentName = panel.nameFieldStringValue
+            if !currentName.isEmpty {
+                let nameWithoutExt = (currentName as NSString).deletingPathExtension
+                panel.nameFieldStringValue = "\(nameWithoutExt).png"
+            }
+        }
+        let selectedInitialFormat = formats[max(0, min(formatPopup.indexOfSelectedItem, formats.count - 1))]
+        qualityRow.isHidden = (selectedInitialFormat == .png)
 
         var estimateToken = UUID()
         func updateEstimatedSize() {
@@ -270,6 +298,7 @@ struct ContentView: View {
             let selectedFormat = (idx >= 0 && idx < formats.count) ? formats[idx] : preferredSaveFormat
             let scaleFactor = exportScaleOption.factor
             let quality = exportQuality
+            let shouldRoundCorners = exportRoundedCorners
 
             guard let baseCG = image.cgImage(forProposedRect: nil, context: nil, hints: nil) else {
                 estimateLabel.stringValue = "Estimated size: —"
@@ -278,7 +307,10 @@ struct ContentView: View {
 
             DispatchQueue.global(qos: .utility).async {
                 let scaledCG = ImageSaver.scaledCGImage(baseCG, factor: scaleFactor) ?? baseCG
-                let data = ImageSaver.imageData(from: scaledCG, format: selectedFormat.rawValue, quality: quality)
+                let roundedCG = shouldRoundCorners
+                    ? (ImageSaver.roundedCornerCGImage(from: scaledCG) ?? scaledCG)
+                    : scaledCG
+                let data = ImageSaver.imageData(from: roundedCG, format: selectedFormat.rawValue, quality: quality)
                 let text = data.map {
                     "Estimated size: \(ByteCountFormatter.string(fromByteCount: Int64($0.count), countStyle: .file))"
                 } ?? "Estimated size: —"
@@ -294,7 +326,11 @@ struct ContentView: View {
         formatPopup.onAction {
             let idx = formatPopup.indexOfSelectedItem
             guard idx >= 0, idx < formats.count else { return }
-            let selected = formats[idx]
+            var selected = formats[idx]
+            if self.exportRoundedCorners, selected != .png, let pngIndex = formats.firstIndex(of: .png) {
+                formatPopup.selectItem(at: pngIndex)
+                selected = .png
+            }
 
             // Update filename extension
             let currentName = panel.nameFieldStringValue
@@ -308,6 +344,33 @@ struct ContentView: View {
 
             // Show/hide quality based on format
             qualityRow.isHidden = (selected == .png)
+            updateEstimatedSize()
+        }
+
+        // Handle rounded corner changes
+        roundedCornersCheckbox.onAction {
+            let shouldRoundCorners = (roundedCornersCheckbox.state == .on)
+            self.exportRoundedCorners = shouldRoundCorners
+            UserDefaults.standard.set(shouldRoundCorners, forKey: self.exportRoundedCornersDefaultsKey)
+
+            if shouldRoundCorners {
+                let idx = formatPopup.indexOfSelectedItem
+                if idx >= 0, idx < formats.count, formats[idx] != .png, let pngIndex = formats.firstIndex(of: .png) {
+                    formatPopup.selectItem(at: pngIndex)
+                    let currentName = panel.nameFieldStringValue
+                    if !currentName.isEmpty {
+                        let nameWithoutExt = (currentName as NSString).deletingPathExtension
+                        panel.nameFieldStringValue = "\(nameWithoutExt).png"
+                    }
+                    panel.allowedContentTypes = [SaveFormat.png.utType]
+                }
+                qualityRow.isHidden = true
+            } else {
+                let idx = formatPopup.indexOfSelectedItem
+                let selected = (idx >= 0 && idx < formats.count) ? formats[idx] : preferredSaveFormat
+                qualityRow.isHidden = (selected == .png)
+            }
+
             updateEstimatedSize()
         }
 
@@ -330,7 +393,11 @@ struct ContentView: View {
         }
 
         // Set initial allowed content type
-        panel.allowedContentTypes = [preferredSaveFormat.utType]
+        let selectedInitialIndex = formatPopup.indexOfSelectedItem
+        let selectedInitial = (selectedInitialIndex >= 0 && selectedInitialIndex < formats.count)
+            ? formats[selectedInitialIndex]
+            : preferredSaveFormat
+        panel.allowedContentTypes = [selectedInitial.utType]
 
         // Layout
         let formatRow = NSStackView(views: [formatLabel, formatPopup])
@@ -341,11 +408,11 @@ struct ContentView: View {
         sizeRow.orientation = .horizontal
         sizeRow.spacing = 8
 
-        let column = NSStackView(views: [formatRow, sizeRow, qualityRow, estimateLabel])
+        let column = NSStackView(views: [formatRow, sizeRow, qualityRow, roundedCornersRow, estimateLabel])
         column.orientation = .vertical
         column.spacing = 12
 
-        let container = NSView(frame: NSRect(x: 0, y: 0, width: 320, height: 114))
+        let container = NSView(frame: NSRect(x: 0, y: 0, width: 320, height: 146))
         column.translatesAutoresizingMaskIntoConstraints = false
         container.addSubview(column)
         NSLayoutConstraint.activate([
@@ -364,7 +431,7 @@ struct ContentView: View {
 
         // Get the selected format from the filename extension
         let ext = url.pathExtension.lowercased()
-        let formatString: String
+        var formatString: String
         if ext == "png" {
             formatString = "png"
         } else if ext == "jpg" || ext == "jpeg" {
@@ -377,14 +444,27 @@ struct ContentView: View {
 
         // Scale image if needed
         let scaleFactor = exportScaleOption.factor
-        let imageToSave = scaleImage(image, factor: scaleFactor)
+        var imageToSave = scaleImage(image, factor: scaleFactor)
+
+        // Rounded corners require alpha to preserve transparent corners.
+        if exportRoundedCorners {
+            formatString = "png"
+            if let baseCG = imageToSave.cgImage(forProposedRect: nil, context: nil, hints: nil),
+               let roundedCG = ImageSaver.roundedCornerCGImage(from: baseCG) {
+                imageToSave = NSImage(
+                    cgImage: roundedCG,
+                    size: NSSize(width: CGFloat(roundedCG.width), height: CGFloat(roundedCG.height))
+                )
+            }
+        }
 
         // Save the image
         let quality = exportQuality
-        let success = ImageSaver.writeImage(imageToSave, to: url, format: formatString, quality: quality)
+        let finalURL = ImageSaver.urlByEnsuringExtension(for: url, format: formatString)
+        let success = ImageSaver.writeImage(imageToSave, to: finalURL, format: formatString, quality: quality)
 
         if success {
-            refreshGalleryAfterSaving(to: url)
+            refreshGalleryAfterSaving(to: finalURL)
         } else {
             print("Save failed")
         }

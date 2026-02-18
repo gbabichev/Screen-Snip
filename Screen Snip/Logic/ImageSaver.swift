@@ -394,6 +394,35 @@ struct ImageSaver {
         ctx.draw(cgImage, in: CGRect(x: 0, y: 0, width: targetWidth, height: targetHeight))
         return ctx.makeImage()
     }
+
+    nonisolated static func roundedCornerCGImage(from cgImage: CGImage,
+                                                 radiusFraction: CGFloat = 0.06,
+                                                 maxRadius: CGFloat = 48.0) -> CGImage? {
+        let width = cgImage.width
+        let height = cgImage.height
+        guard width > 0, height > 0 else { return nil }
+
+        let size = CGSize(width: CGFloat(width), height: CGFloat(height))
+        let minSide = min(size.width, size.height)
+        let radius = min(max(2.0, minSide * radiusFraction), maxRadius)
+
+        guard let ctx = CGContext(
+            data: nil,
+            width: width,
+            height: height,
+            bitsPerComponent: 8,
+            bytesPerRow: 0,
+            space: CGColorSpaceCreateDeviceRGB(),
+            bitmapInfo: CGImageAlphaInfo.premultipliedLast.rawValue
+        ) else { return nil }
+
+        let rect = CGRect(origin: .zero, size: size)
+        let path = CGPath(roundedRect: rect, cornerWidth: radius, cornerHeight: radius, transform: nil)
+        ctx.addPath(path)
+        ctx.clip()
+        ctx.draw(cgImage, in: rect)
+        return ctx.makeImage()
+    }
     
 }
 
