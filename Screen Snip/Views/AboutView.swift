@@ -41,6 +41,7 @@ struct AboutView: View {
             VStack(alignment: .leading, spacing: 6) {
                 AboutRow(label: "Version", value: appVersion)
                 AboutRow(label: "Build", value: appBuild)
+                AboutRow(label: "Release Channel", value: releaseChannel)
                 AboutRow(label: "Developer", value: "George Babichev")
                 AboutRow(label: "Copyright", value: "© \(Calendar.current.component(.year, from: Date())) George Babichev")
             }
@@ -82,6 +83,14 @@ struct AboutView: View {
     
     private var appBuild: String {
         Bundle.main.infoDictionary?["CFBundleVersion"] as? String ?? "–"
+    }
+
+    private var releaseChannel: String {
+        #if WEB_RELEASE
+        return "Web Release"
+        #else
+        return "App Store"
+        #endif
     }
 }
 
