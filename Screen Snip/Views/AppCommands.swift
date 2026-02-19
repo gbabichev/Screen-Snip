@@ -3,6 +3,9 @@ import SwiftUI
 struct AppCommands: Commands {
     @ObservedObject var menuState: MenuState
     let appDelegate: AppDelegate
+    #if WEB_RELEASE
+    @ObservedObject private var updateCenter = AppUpdateCenter.shared
+    #endif
     
     var body: some Commands {
         CommandGroup(replacing: .appInfo) {
@@ -12,7 +15,14 @@ struct AppCommands: Commands {
                 Label("About Screen Snip", systemImage: "info.circle")
             }
             
+            #if WEB_RELEASE
+            Button("Check for Updates…", systemImage: "arrow.triangle.2.circlepath.circle") {
+                updateCenter.checkForUpdates(trigger: .manual)
+            }
+            .disabled(updateCenter.isChecking)
+
             Divider()
+            #endif
             
             Button {
                 NSApplication.shared.terminate(nil)

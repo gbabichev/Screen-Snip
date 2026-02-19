@@ -591,6 +591,7 @@
 				INFOPLIST_FILE = "Screen-Snip-Info.plist";
 				INFOPLIST_KEY_LSApplicationCategoryType = "public.app-category.utilities";
 				INFOPLIST_KEY_NSHumanReadableCopyright = "2025 George Babichev";
+				INFOPLIST_KEY_UpdateCheckReleasesURL = "https://github.com/gbabichev/Screen-Snip/releases";
 				LD_RUNPATH_SEARCH_PATHS = (
 					"$(inherited)",
 					"@executable_path/../Frameworks",

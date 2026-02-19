@@ -26,6 +26,10 @@ struct LiveAppIconView: View {
 }
 
 struct AboutView: View {
+    #if WEB_RELEASE
+    @ObservedObject private var updateCenter = AppUpdateCenter.shared
+    #endif
+
     var body: some View {
         VStack(spacing: 18) {
             
@@ -65,6 +69,22 @@ struct AboutView: View {
                 }
                 .frame(maxWidth: .infinity, alignment: .leading)
             }
+
+            #if WEB_RELEASE
+            VStack(alignment: .center, spacing: 8) {
+                Button("Check for Updates…", systemImage: "arrow.triangle.2.circlepath.circle") {
+                    updateCenter.checkForUpdates(trigger: .manual)
+                }
+                .disabled(updateCenter.isChecking)
+
+                if let lastStatusMessage = updateCenter.lastStatusMessage {
+                    Text(lastStatusMessage)
+                        .font(.footnote)
+                        .foregroundStyle(.secondary)
+                        .multilineTextAlignment(.center)
+                }
+            }
+            #endif
             
             Divider()
             

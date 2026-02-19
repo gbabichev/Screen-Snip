@@ -42,5 +42,7 @@
 			</array>
 		</dict>
 	</array>
+	<key>UpdateCheckReleasesURL</key>
+	<string>https://github.com/gbabichev/Screen-Snip/releases</string>
 </dict>
 </plist>
