@@ -1,276 +1,155 @@
 <!DOCTYPE html>
 <html lang="en">
 <head>
-    <meta charset="UTF-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Screen Snip - Support</title>
-    <style>
-        * {
-            margin: 0;
-            padding: 0;
-            box-sizing: border-box;
-        }
-        
-        body {
-            font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Oxygen, Ubuntu, Cantarell, sans-serif;
-            line-height: 1.6;
-            color: #333;
-            background-color: #f8f9fa;
-        }
-        
-        .container {
-            max-width: 800px;
-            margin: 0 auto;
-            padding: 20px;
-        }
-        
-        header {
-            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
-            color: white;
-            text-align: center;
-            padding: 40px 20px;
-            margin-bottom: 40px;
-            border-radius: 12px;
-            box-shadow: 0 4px 15px rgba(0,0,0,0.1);
-        }
-        
-        h1 {
-            font-size: 2.5em;
-            margin-bottom: 10px;
-            font-weight: 300;
-        }
-        
-        .subtitle {
-            font-size: 1.2em;
-            opacity: 0.9;
-        }
-        
-        .support-section {
-            background: white;
-            margin-bottom: 30px;
-            padding: 30px;
-            border-radius: 12px;
-            box-shadow: 0 2px 10px rgba(0,0,0,0.05);
-            border-left: 4px solid #667eea;
-        }
-        
-        h2 {
-            color: #667eea;
-            margin-bottom: 20px;
-            font-size: 1.8em;
-            font-weight: 600;
-        }
-        
-        h3 {
-            color: #555;
-            margin-bottom: 15px;
-            margin-top: 25px;
-            font-size: 1.3em;
-        }
-        
-        .contact-info {
-            background: #f8f9ff;
-            padding: 20px;
-            border-radius: 8px;
-            margin: 20px 0;
-        }
-        
-        .contact-method {
-            display: flex;
-            align-items: center;
-            margin-bottom: 15px;
-            padding: 15px;
-            background: white;
-            border-radius: 8px;
-            border: 1px solid #e9ecef;
-        }
-        
-        .contact-icon {
-            width: 40px;
-            height: 40px;
-            background: #667eea;
-            border-radius: 50%;
-            display: flex;
-            align-items: center;
-            justify-content: center;
-            margin-right: 15px;
-            color: white;
-            font-weight: bold;
-        }
-        
-        .faq-item {
-            margin-bottom: 25px;
-            padding: 20px;
-            background: #f8f9ff;
-            border-radius: 8px;
-            border-left: 3px solid #667eea;
-        }
-        
-        .faq-question {
-            font-weight: 600;
-            color: #333;
-            margin-bottom: 10px;
-            font-size: 1.1em;
-        }
-        
-        .faq-answer {
-            color: #666;
-            line-height: 1.6;
-        }
-        
-        a {
-            color: #667eea;
-            text-decoration: none;
-        }
-        
-        a:hover {
-            text-decoration: underline;
-        }
-        
-        .app-info {
-            background: linear-gradient(135deg, #f093fb 0%, #f5576c 100%);
-            color: white;
-            padding: 20px;
-            border-radius: 8px;
-            margin: 20px 0;
-            text-align: center;
-        }
-        
-        .response-time {
-            background: #e8f5e8;
-            padding: 15px;
-            border-radius: 8px;
-            margin-top: 15px;
-            border-left: 4px solid #28a745;
-        }
-        
-        footer {
-            text-align: center;
-            margin-top: 50px;
-            padding: 20px;
-            color: #666;
-            font-size: 0.9em;
-        }
-        
-        @media (max-width: 600px) {
-            .container {
-                padding: 10px;
-            }
-            
-            header {
-                padding: 30px 15px;
-            }
-            
-            h1 {
-                font-size: 2em;
-            }
-            
-            .support-section {
-                padding: 20px;
-            }
-        }
-    </style>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Screen Snip Support</title>
+  <meta
+    name="description"
+    content="Support information for Screen Snip, including contact details, common questions, troubleshooting steps, and compatibility notes."
+  >
+  <meta name="theme-color" media="(prefers-color-scheme: light)" content="#edf2f7">
+  <meta name="theme-color" media="(prefers-color-scheme: dark)" content="#0d1522">
+  <link rel="icon" type="image/png" href="icon-light.png">
+  <link rel="apple-touch-icon" href="icon-light.png">
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Instrument+Sans:wght@400;500;600;700&amp;family=Instrument+Serif:ital@0;1&amp;display=swap" rel="stylesheet">
+  <link rel="stylesheet" href="site.css">
 </head>
-<body>
-    <div class="container">
-        <header>
-            <h1>Screen Snip</h1>
-            <p class="subtitle">Support & Help Center</p>
-        </header>
+<body class="info-page">
+  <div class="info-shell">
+    <nav class="topbar" aria-label="Primary">
+      <a class="brand" href="index.html" aria-label="Screen Snip home">
+        <picture class="brand-mark">
+          <source srcset="icon-dark.png" media="(prefers-color-scheme: dark)">
+          <source srcset="icon-light.png" media="(prefers-color-scheme: light)">
+          <img src="icon-light.png" alt="" width="56" height="56">
+        </picture>
+        <span>Screen Snip</span>
+      </a>
+      <div class="nav-links">
+        <a href="index.html#features">Features</a>
+        <a href="PrivacyPolicy.html">Privacy</a>
+      </div>
+    </nav>
 
-        <div class="support-section">
-            <h2>📧 Contact Support</h2>
-            <p>Need help with Screen Snip? I'm here to assist you! Please reach out using any of the methods below:</p>
-            
-            <div class="contact-info">
-                <div class="contact-method">
-                    <div class="contact-icon">📧</div>
-                    <div>
-                        <strong>Email Support</strong><br>
-                        <a href="mailto:george@babichevIT.com">george@babichevIT.com</a>
-                    </div>
-                </div>
-                
-                <div class="contact-method">
-                    <div class="contact-icon">🐛</div>
-                    <div>
-                        <strong>Bug Reports & Feature Requests</strong><br>
-                        <a href="https://github.com/gbabichev/Screen-Snip/issues" target="_blank">GitHub Issues</a>
-                    </div>
-                </div>
-            </div>
-            
-            <div class="response-time">
-                <strong>⏱️ Response Time:</strong> We typically respond to support requests within 24-48 hours.
-            </div>
+    <header class="info-header reveal">
+      <a class="back-link" href="index.html">&larr; Back to Screen Snip</a>
+      <p class="eyebrow">Support</p>
+      <h1>Help for Screen Snip.</h1>
+      <p>
+        If something is unclear or broken, use the resources below. Screen Snip is a local-first Mac app,
+        so most support issues come down to permissions, save settings, or expected export behavior.
+      </p>
+    </header>
+
+    <main class="info-grid">
+      <section class="info-card">
+        <h2>Contact</h2>
+        <p>Support for Screen Snip is handled through GitHub Issues.</p>
+
+        <div class="stack-list">
+          <div class="stack-item">
+            <strong>Support, bugs, and requests</strong>
+            <p><a href="https://github.com/gbabichev/Screen-Snip/issues" target="_blank" rel="noreferrer">Open a GitHub issue</a></p>
+          </div>
         </div>
 
-        <div class="support-section">
-            <h2>❓ Frequently Asked Questions</h2>
-            
-            <div class="faq-item">
-                <div class="faq-question">How do I take a screenshot with Screen Snip?</div>
-                <div class="faq-answer">Simply launch the app and use the capture tools to select the area of your screen you want to capture. The app provides intuitive controls for precise screenshot capture.</div>
-            </div>
-            
-            <div class="faq-item">
-                <div class="faq-question">Where are my screenshots saved?</div>
-                <div class="faq-answer">Screenshots are automatically saved to the "Screen Snip" folder inside your Photos folder. You can change this in app settings. </div>
-            </div>
-            
-            <div class="faq-item">
-                <div class="faq-question">Why won't Screen Snip capture my screen?</div>
-                <div class="faq-answer">Make sure you've granted Screen Snip the necessary permissions in your device settings! <br><br>
-                Go to Settings > Privacy & Security > Screen Recording and ensure Screen Snip is enabled.
-                <br><br>
-                Go to Settings > Privacy & Security > Accessibility and ensure Screen Snip is enabled.
-                </div>
-            </div>
-            
-            <div class="faq-item">
-                <div class="faq-question">Can I edit screenshots within the app?</div>
-                <div class="faq-answer">Yep! You can edit your screenshots, or open your own photos.</div>
-            </div>
-            
-            <div class="faq-item">
-                <div class="faq-question">Is Screen Snip free to use?</div>
-                <div class="faq-answer">Yes! Screen Snip is completely free with no hidden charges or in-app purchases. I believe in providing a simple, effective tool for everyone.</div>
-            </div>
+        <div class="callout">
+          Response target: usually within 24 to 48 hours.
         </div>
+      </section>
 
-        <div class="support-section">
-            <h2>🔧 Troubleshooting</h2>
-            
-            <h3>Permission Issues</h3>
-            <p>If you're having trouble with screen recording permissions:</p>
-            <ul style="margin-left: 20px; margin-top: 10px;">
-                <li>Go to Settings > Privacy & Security > Screen Recording</li>
-                <li>Enable Screen Snip in the list</li>
-                <li>Restart the app after granting permissions</li>
-            </ul>
+      <section class="info-card">
+        <h2>What to Include</h2>
+        <p>If you are reporting a problem, include enough detail to reproduce it quickly.</p>
+        <ul>
+          <li>Your macOS version.</li>
+          <li>The Screen Snip version you are using.</li>
+          <li>What you expected to happen.</li>
+          <li>What actually happened.</li>
+          <li>Whether the issue affects capture, editing, saving, or permissions.</li>
+        </ul>
+      </section>
+
+      <section class="info-card">
+        <h2>Common Questions</h2>
+
+        <div class="faq-list">
+          <article class="faq-item">
+            <h3>How do I start a screenshot quickly?</h3>
+            <p>Use <strong>Command + Shift + 2</strong>. Screen Snip supports a global hotkey, so capture can start even when the app is not frontmost.</p>
+          </article>
+
+          <article class="faq-item">
+            <h3>Where are my screenshots saved?</h3>
+            <p>Your save location is configurable in the app settings. Screen Snip can also save automatically when you copy to the clipboard if you enable that option.</p>
+          </article>
+
+          <article class="faq-item">
+            <h3>Can I edit images that were not captured in Screen Snip?</h3>
+            <p>Yes. You can open existing images for editing, including using Finder's Open With integration.</p>
+          </article>
+
+          <article class="faq-item">
+            <h3>Can I export in different formats?</h3>
+            <p>Yes. Screen Snip supports PNG, JPG, and HEIC output, with quality controls where those formats support it.</p>
+          </article>
+
+          <article class="faq-item">
+            <h3>Does Screen Snip upload my images anywhere?</h3>
+            <p>No. The app is designed to work locally on your Mac. Nothing leaves your device unless you choose to export or share it.</p>
+          </article>
         </div>
+      </section>
 
-        <div class="support-section">
-            <h2>📱 App Information</h2>
-            <div class="app-info">
-                <p><strong>Compatibility:</strong> macOS 26.0 or later</p>
-                <p><strong>Developer:</strong> George Babichev</p>
-            </div>
+      <section class="info-card">
+        <h2>Troubleshooting</h2>
+
+        <div class="faq-list">
+          <article class="faq-item">
+            <h3>Capture is not working</h3>
+            <p>Check macOS permissions under <strong>Privacy &amp; Security &gt; Screen Recording</strong>. If the app uses accessibility-based interactions on your setup, confirm <strong>Accessibility</strong> is also enabled.</p>
+          </article>
+
+          <article class="faq-item">
+            <h3>The app still does not capture after permissions are enabled</h3>
+            <p>Quit and relaunch Screen Snip after granting permissions. macOS permission changes often need a relaunch before they take effect.</p>
+          </article>
+
+          <article class="faq-item">
+            <h3>Saved files are larger than I expected</h3>
+            <p>Review the export format and the Retina downsampling options in settings. PNG keeps maximum fidelity, while JPG and HEIC can reduce file size.</p>
+          </article>
         </div>
+      </section>
 
-        <div class="support-section">
-            <h2>💡 Feature Requests</h2>
-            <p>Have an idea for improving Screen Snip? We'd love to hear from you! Create an issue on the <a href="https://github.com/gbabichev/Screen-Snip" target="_blank">GitHub repository</a>.</p>
+      <section class="info-card">
+        <h2>Compatibility</h2>
+        <p>Screen Snip is built for macOS.</p>
+        <ul>
+          <li>Minimum OS: macOS 26.0 or later.</li>
+          <li>Built for Apple Silicon and Intel Macs, though Intel is not actively tested.</li>
+          <li>Approximate disk footprint: 20 MB.</li>
+        </ul>
+      </section>
+
+      <section class="info-card reveal">
+        <h2>More Links</h2>
+        <div class="card-actions">
+          <a class="button button-primary" href="https://apps.apple.com/us/app/screen-snip/id6752541530" target="_blank" rel="noreferrer">App Store</a>
+          <a class="button button-secondary" href="https://github.com/gbabichev/Screen-Snip" target="_blank" rel="noreferrer">GitHub</a>
+          <a class="button button-tertiary" href="PrivacyPolicy.html">Privacy Policy</a>
         </div>
+      </section>
+    </main>
 
-        <div class="support-section">
-            <h2>More Apps</h2>
-            <p>Check out more apps on my website: <a href="https://georgebabichev.com">George Babichev</a></p>
-        </div>        
+    <footer class="site-footer">
+      <p>&copy; <span data-current-year>2026</span> George Babichev.</p>
+    </footer>
+  </div>
 
-        <footer>
-            <p>&copy; 2025 George Babichev. All rights reserved.</p>
-        </footer>
-    </div>
+  <script src="site.js"></script>
 </body>
 </html>
