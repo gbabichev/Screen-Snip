@@ -18,9 +18,9 @@ Fast, native screenshots for Mac.
 </div>
 
 <p align="center">
-  <a href="docs/App1.jpg"><img src="Documentation/App1.jpg" width="32%"></a>
-  <a href="docs/App3.jpg"><img src="Documentation/App3.jpg" width="32%"></a>
-  <a href="docsD/App2.jpg"><img src="Documentation/App2.jpg" width="32%"></a>
+  <a href="docs/App1.jpg"><img src="docs/App1.jpg" width="32%"></a>
+  <a href="docs/App3.jpg"><img src="docs/App3.jpg" width="32%"></a>
+  <a href="docsD/App2.jpg"><img src="docs/App2.jpg" width="32%"></a>
 </p>
 
 <p align="center">
