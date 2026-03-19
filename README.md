@@ -25,7 +25,7 @@ Fast, native screenshots for Mac.
 
 <p align="center">
   <strong>Product website:</strong>
-  <a href="https://gbabichev.github.io/Screen-Snip/">gbabichev.github.io/Screen-Snip/Documentation/</a>
+  <a href="https://gbabichev.github.io/Screen-Snip">gbabichev.github.io/Screen-Snip</a>
 </p>
 
 Screen Snip is a focused screenshot utility for macOS. It is built for people who take a lot of screenshots and want the job done without turning it into a mini design project.
