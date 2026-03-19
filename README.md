@@ -1,9 +1,9 @@
 <div align="center">
 
 <picture>
-  <source srcset="Documentation/icon-dark.png" media="(prefers-color-scheme: dark)">
-  <source srcset="Documentation/icon-light.png" media="(prefers-color-scheme: light)">
-  <img src="Documentation/icon-light.png" alt="Screen Snip icon" width="100">
+  <source srcset="docs/icon-dark.png" media="(prefers-color-scheme: dark)">
+  <source srcset="docs/icon-light.png" media="(prefers-color-scheme: light)">
+  <img src="docs/icon-light.png" alt="Screen Snip icon" width="100">
 </picture>
 
 ## Screen Snip
@@ -12,15 +12,15 @@ Fast, native screenshots for Mac.
 
 [Website](https://gbabichev.github.io/Screen-Snip/) ·
 [Mac App Store](https://apps.apple.com/us/app/screen-snip/id6752541530) ·
-[Support](https://gbabichev.github.io/Screen-Snip/Documentation/Support.html) ·
-[Privacy](https://gbabichev.github.io/Screen-Snip/Documentation/PrivacyPolicy.html)
+[Support](https://gbabichev.github.io/Screen-Snip/Support.html) ·
+[Privacy](https://gbabichev.github.io/Screen-Snip/PrivacyPolicy.html)
 
 </div>
 
 <p align="center">
-  <a href="Documentation/App1.jpg"><img src="Documentation/App1.jpg" width="32%"></a>
-  <a href="Documentation/App3.jpg"><img src="Documentation/App3.jpg" width="32%"></a>
-  <a href="Documentation/App2.jpg"><img src="Documentation/App2.jpg" width="32%"></a>
+  <a href="docs/App1.jpg"><img src="Documentation/App1.jpg" width="32%"></a>
+  <a href="docs/App3.jpg"><img src="Documentation/App3.jpg" width="32%"></a>
+  <a href="docsD/App2.jpg"><img src="Documentation/App2.jpg" width="32%"></a>
 </p>
 
 <p align="center">
