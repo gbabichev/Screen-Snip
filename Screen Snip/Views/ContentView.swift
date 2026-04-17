@@ -327,6 +327,7 @@ struct ContentView: View {
         }
         let selectedInitialFormat = formats[max(0, min(formatPopup.indexOfSelectedItem, formats.count - 1))]
         qualityRow.isHidden = (selectedInitialFormat == .png)
+        formatPopup.isEnabled = !initialRoundedEnabled
 
         let estimateToken = EstimatedSizeTokenBox()
         func updateEstimatedSize() {
@@ -410,6 +411,7 @@ struct ContentView: View {
                 qualityRow.isHidden = (selected == .png)
             }
 
+            formatPopup.isEnabled = !shouldRoundCorners
             updateEstimatedSize()
         }
 
@@ -500,7 +502,25 @@ struct ContentView: View {
         // Save the image
         let quality = exportQuality
         let finalURL = ImageSaver.urlByEnsuringExtension(for: url, format: formatString)
-        let success = ImageSaver.writeImage(imageToSave, to: finalURL, format: formatString, quality: quality)
+        let scaleIsOriginal = abs(scaleFactor - 1.0) < 0.001
+        let reusableSourceURL =
+            scaleIsOriginal &&
+            !exportRoundedCorners &&
+            objects.isEmpty &&
+            rotatedPreviewImage == nil &&
+            cropRect == nil &&
+            cropDraftRect == nil
+            ? selectedSnipURL.flatMap { sourceURL in
+                ImageSaver.canReuseOriginalFileData(from: sourceURL, format: formatString, quality: quality) ? sourceURL : nil
+            }
+            : nil
+
+        let success: Bool
+        if let sourceURL = reusableSourceURL {
+            success = ImageSaver.copyOriginalFileData(from: sourceURL, to: finalURL)
+        } else {
+            success = ImageSaver.writeImage(imageToSave, to: finalURL, format: formatString, quality: quality)
+        }
 
         if success {
             refreshGalleryAfterSaving(to: finalURL)

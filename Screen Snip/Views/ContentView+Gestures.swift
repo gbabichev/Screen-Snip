@@ -1033,6 +1033,10 @@ extension ContentView {
         guard let img = currentImage else { return }
         if objectSpaceSize == nil { objectSpaceSize = lastFittedSize ?? img.size }
         pushUndoSnipshot()
+        if objects.isEmpty {
+            showSavePanel(image: img, window: NSApplication.shared.keyWindow)
+            return
+        }
         if let flattened = rasterize(base: img, objects: objects) {
             objects.removeAll()
             showSavePanel(image: flattened, window: NSApplication.shared.keyWindow)

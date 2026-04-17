@@ -9,6 +9,23 @@ import Combine
 // MARK: - Centralized Image Saving
 struct ImageSaver {
 
+    private nonisolated static func normalizedFormat(for format: String) -> String? {
+        switch format.lowercased() {
+        case "jpg", "jpeg":
+            return "jpeg"
+        case "png":
+            return "png"
+        case "heic", "heif":
+            return "heic"
+        default:
+            return nil
+        }
+    }
+
+    private nonisolated static func normalizedFormat(for url: URL) -> String? {
+        normalizedFormat(for: url.pathExtension)
+    }
+
     private nonisolated static func fileExtension(for format: String) -> String {
         switch format.lowercased() {
         case "jpeg", "jpg": return "jpg"
@@ -38,6 +55,42 @@ struct ImageSaver {
         let desiredExtension = fileExtension(for: normalizedFormat)
         let baseURL = currentExtension.isEmpty ? url : url.deletingPathExtension()
         return baseURL.appendingPathExtension(desiredExtension)
+    }
+
+    nonisolated static func canReuseOriginalFileData(from sourceURL: URL, format: String, quality: Double) -> Bool {
+        guard let sourceFormat = normalizedFormat(for: sourceURL),
+              let targetFormat = normalizedFormat(for: format),
+              sourceFormat == targetFormat else {
+            return false
+        }
+
+        switch targetFormat {
+        case "png":
+            return true
+        case "jpeg", "heic":
+            return quality >= 0.999
+        default:
+            return false
+        }
+    }
+
+    @discardableResult
+    nonisolated static func copyOriginalFileData(from sourceURL: URL, to destinationURL: URL) -> Bool {
+        let fm = FileManager.default
+        if sourceURL.standardizedFileURL == destinationURL.standardizedFileURL {
+            return true
+        }
+
+        do {
+            if fm.fileExists(atPath: destinationURL.path) {
+                try fm.removeItem(at: destinationURL)
+            }
+            try fm.copyItem(at: sourceURL, to: destinationURL)
+            return true
+        } catch {
+            print("Could not copy original image data: \(error)")
+            return false
+        }
     }
 
     /// Write an image, adjusting the filename extension when needed. Returns the final URL on success.
@@ -227,45 +280,74 @@ struct ImageSaver {
         let targetPixelsWide = downsampleToNonRetinaForSave ? Int(round(pointsWidth * 1.0)) : backingWidth
         let targetPixelsHigh = downsampleToNonRetinaForSave ? Int(round(pointsHeight * 1.0)) : backingHeight
 
-        guard let finalRep = NSBitmapImageRep(
-            bitmapDataPlanes: nil,
-            pixelsWide: max(1, targetPixelsWide),
-            pixelsHigh: max(1, targetPixelsHigh),
-            bitsPerSample: 8,
-            samplesPerPixel: 4,
-            hasAlpha: true,
-            isPlanar: false,
-            colorSpaceName: .deviceRGB,
-            bytesPerRow: 0,
-            bitsPerPixel: 0
-        ) else { return false }
+        let isJPEG = (format == "jpeg" || format == "jpg")
+        let targetSize = CGSize(width: CGFloat(targetPixelsWide), height: CGFloat(targetPixelsHigh))
+        let drawRect = CGRect(origin: .zero, size: targetSize)
 
-        // Set logical size equal to pixel size so 1 unit = 1 pixel during draw
-        finalRep.size = NSSize(width: CGFloat(targetPixelsWide), height: CGFloat(targetPixelsHigh))
+        let sourceCGImage: CGImage? =
+            image.cgImage(forProposedRect: nil, context: nil, hints: nil) ??
+            image.representations.compactMap({ $0 as? NSBitmapImageRep }).max(by: { $0.pixelsWide < $1.pixelsWide })?.cgImage
 
-        NSGraphicsContext.saveGraphicsState()
-        if let ctx = NSGraphicsContext(bitmapImageRep: finalRep) {
-            NSGraphicsContext.current = ctx
-            ctx.imageInterpolation = .high
+        let cgImage: CGImage? = {
+            if isJPEG {
+                guard let ctx = CGContext(
+                    data: nil,
+                    width: max(1, targetPixelsWide),
+                    height: max(1, targetPixelsHigh),
+                    bitsPerComponent: 8,
+                    bytesPerRow: 0,
+                    space: CGColorSpaceCreateDeviceRGB(),
+                    bitmapInfo: CGImageAlphaInfo.noneSkipLast.rawValue
+                ) else { return nil }
 
-            let drawRect = NSRect(x: 0, y: 0, width: finalRep.size.width, height: finalRep.size.height)
+                ctx.interpolationQuality = .high
+                ctx.setFillColor(NSColor.white.cgColor)
+                ctx.fill(drawRect)
 
-            // Prefer drawing the CGImage/backing rep directly to avoid NSImage scale ambiguity
-            if let cg = image.cgImage(forProposedRect: nil, context: nil, hints: nil) {
-                ctx.cgContext.interpolationQuality = .high
-                ctx.cgContext.draw(cg, in: drawRect)
-            } else if let rep = image.representations.compactMap({ $0 as? NSBitmapImageRep }).max(by: { $0.pixelsWide < $1.pixelsWide }), let cg = rep.cgImage {
-                ctx.cgContext.interpolationQuality = .high
-                ctx.cgContext.draw(cg, in: drawRect)
-            } else {
-                // Fallback
-                image.draw(in: drawRect)
+                if let sourceCGImage {
+                    ctx.draw(sourceCGImage, in: drawRect)
+                } else {
+                    return nil
+                }
+
+                return ctx.makeImage()
             }
-            ctx.flushGraphics()
-        }
-        NSGraphicsContext.restoreGraphicsState()
 
-        guard let cgImage = finalRep.cgImage else { return false }
+            guard let finalRep = NSBitmapImageRep(
+                bitmapDataPlanes: nil,
+                pixelsWide: max(1, targetPixelsWide),
+                pixelsHigh: max(1, targetPixelsHigh),
+                bitsPerSample: 8,
+                samplesPerPixel: 4,
+                hasAlpha: true,
+                isPlanar: false,
+                colorSpaceName: .deviceRGB,
+                bytesPerRow: 0,
+                bitsPerPixel: 0
+            ) else { return nil }
+
+            // Set logical size equal to pixel size so 1 unit = 1 pixel during draw
+            finalRep.size = NSSize(width: targetSize.width, height: targetSize.height)
+
+            NSGraphicsContext.saveGraphicsState()
+            if let ctx = NSGraphicsContext(bitmapImageRep: finalRep) {
+                NSGraphicsContext.current = ctx
+                ctx.imageInterpolation = .high
+
+                if let sourceCGImage {
+                    ctx.cgContext.interpolationQuality = .high
+                    ctx.cgContext.draw(sourceCGImage, in: drawRect)
+                } else {
+                    image.draw(in: drawRect)
+                }
+                ctx.flushGraphics()
+            }
+            NSGraphicsContext.restoreGraphicsState()
+
+            return finalRep.cgImage
+        }()
+
+        guard let cgImage else { return false }
 
         // Match DPI metadata to the pixel scale so apps that honor DPI retain the visual size
         let dpi = 72.0 * Double(effectiveScale)
