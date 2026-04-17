@@ -8,6 +8,45 @@ import Combine
 
 // MARK: - Centralized Image Saving
 struct ImageSaver {
+    private nonisolated static func temporaryReplacementURL(for destinationURL: URL) -> URL {
+        let fileName = ".\(destinationURL.lastPathComponent).\(UUID().uuidString).tmp"
+        return destinationURL.deletingLastPathComponent().appendingPathComponent(fileName)
+    }
+
+    private nonisolated static func cleanupTemporaryItem(at url: URL) {
+        try? FileManager.default.removeItem(at: url)
+    }
+
+    private nonisolated static func installPreparedReplacement(
+        from preparedURL: URL,
+        to destinationURL: URL,
+        preservedCreationDate: Date?
+    ) -> URL? {
+        let fm = FileManager.default
+
+        do {
+            let installedURL: URL
+            if fm.fileExists(atPath: destinationURL.path) {
+                installedURL = try fm.replaceItemAt(destinationURL,
+                                                    withItemAt: preparedURL,
+                                                    backupItemName: nil,
+                                                    options: []) ?? destinationURL
+            } else {
+                try fm.moveItem(at: preparedURL, to: destinationURL)
+                installedURL = destinationURL
+            }
+
+            if let preservedCreationDate {
+                try? fm.setAttributes([.creationDate: preservedCreationDate], ofItemAtPath: installedURL.path)
+            }
+
+            return installedURL
+        } catch {
+            cleanupTemporaryItem(at: preparedURL)
+            print("Could not install prepared image replacement: \(error)")
+            return nil
+        }
+    }
 
     private nonisolated static func normalizedFormat(for format: String) -> String? {
         switch format.lowercased() {
@@ -101,6 +140,7 @@ struct ImageSaver {
                                                 preserveAttributes: Bool = false) -> URL? {
         let targetURL = urlByEnsuringExtension(for: originalURL, format: format)
         let fm = FileManager.default
+        let temporaryURL = temporaryReplacementURL(for: targetURL)
 
         var originalCreationDate: Date?
         if preserveAttributes,
@@ -109,25 +149,24 @@ struct ImageSaver {
             originalCreationDate = creation
         }
 
-        let shouldPreserveAttributesInWrite = preserveAttributes && targetURL == originalURL
-
         let success = writeImage(
             image,
-            to: targetURL,
+            to: temporaryURL,
             format: format,
             quality: quality,
-            preserveAttributes: shouldPreserveAttributesInWrite
+            preserveAttributes: false
         )
 
-        guard success else { return nil }
-
-        if preserveAttributes, targetURL != originalURL, let creationDate = originalCreationDate {
-            do {
-                try fm.setAttributes([.creationDate: creationDate], ofItemAtPath: targetURL.path)
-            } catch {
-                print("Could not transfer original creation date: \(error)")
-            }
+        guard success else {
+            cleanupTemporaryItem(at: temporaryURL)
+            return nil
         }
+
+        guard let installedURL = installPreparedReplacement(
+            from: temporaryURL,
+            to: targetURL,
+            preservedCreationDate: preserveAttributes ? originalCreationDate : nil
+        ) else { return nil }
 
         if targetURL != originalURL {
             do {
@@ -139,7 +178,7 @@ struct ImageSaver {
             }
         }
 
-        return targetURL
+        return installedURL
     }
     
     private static func generateFilename(fileExtension: String) -> String {

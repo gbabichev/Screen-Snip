@@ -2255,10 +2255,17 @@ struct ContentView: View {
         // Capture necessary state
         let objectsSnapshot = objects
         let saveOnCopy = UserDefaults.standard.bool(forKey: "saveOnCopy")
-        let selectedURL = selectedSnipURL
+        let selectedURL = selectedSnipURL?.standardizedFileURL
         let format = preferredSaveFormat.rawValue
         let quality = saveQuality
         let downsampleSetting = downsampleToNonRetinaClipboard
+        let cropRectSnapshot = cropRect
+        let cropDraftRectSnapshot = cropDraftRect
+        let cropHandleSnapshot = cropHandle
+        let selectedObjectIDSnapshot = selectedObjectID
+        let selectedObjectIDsSnapshot = selectedObjectIDs
+        let activeHandleSnapshot = activeHandle
+        let focusedTextIDSnapshot = focusedTextID
 
         // Move heavy image processing to .utility thread to avoid priority inversion
         DispatchQueue.global(qos: .utility).async {
@@ -2309,9 +2316,21 @@ struct ContentView: View {
                 if let url = selectedURL {
                     if let savedURL = ImageSaver.writeImageReplacing(source, at: url, format: format, quality: quality, preserveAttributes: true) {
                         DispatchQueue.main.async {
+                            let currentSelectedURL = self.selectedSnipURL?.standardizedFileURL
+                            guard currentSelectedURL == selectedURL,
+                                  self.objects == objectsSnapshot,
+                                  self.cropRect == cropRectSnapshot,
+                                  self.cropDraftRect == cropDraftRectSnapshot,
+                                  self.cropHandle == cropHandleSnapshot,
+                                  self.selectedObjectID == selectedObjectIDSnapshot,
+                                  self.selectedObjectIDs == selectedObjectIDsSnapshot,
+                                  self.activeHandle == activeHandleSnapshot,
+                                  self.focusedTextID == focusedTextIDSnapshot else { return }
+
                             // Clear all drawn objects after successful save
                             self.objects.removeAll()
                             self.selectedObjectID = nil
+                            self.selectedObjectIDs.removeAll()
                             self.activeHandle = .none
                             self.focusedTextID = nil
                             self.cropRect = nil
@@ -2330,9 +2349,21 @@ struct ContentView: View {
                             DispatchQueue.global(qos: .utility).async {
                                 if ImageSaver.writeImage(source, to: dest, format: format, quality: quality, preserveAttributes: true) {
                                     DispatchQueue.main.async {
+                                        let currentSelectedURL = self.selectedSnipURL?.standardizedFileURL
+                                        guard currentSelectedURL == selectedURL,
+                                              self.objects == objectsSnapshot,
+                                              self.cropRect == cropRectSnapshot,
+                                              self.cropDraftRect == cropDraftRectSnapshot,
+                                              self.cropHandle == cropHandleSnapshot,
+                                              self.selectedObjectID == selectedObjectIDSnapshot,
+                                              self.selectedObjectIDs == selectedObjectIDsSnapshot,
+                                              self.activeHandle == activeHandleSnapshot,
+                                              self.focusedTextID == focusedTextIDSnapshot else { return }
+
                                         // Clear all drawn objects after successful save
                                         self.objects.removeAll()
                                         self.selectedObjectID = nil
+                                        self.selectedObjectIDs.removeAll()
                                         self.activeHandle = .none
                                         self.focusedTextID = nil
                                         self.cropRect = nil
@@ -2348,15 +2379,6 @@ struct ContentView: View {
                         } else {
                             // Fallback if no directory available - must be on main thread
                             self.saveAsCurrent()
-
-                            // Clear objects after saveAsCurrent completes successfully
-                            self.objects.removeAll()
-                            self.selectedObjectID = nil
-                            self.activeHandle = .none
-                            self.focusedTextID = nil
-                            self.cropRect = nil
-                            self.cropDraftRect = nil
-                            self.cropHandle = .none
                         }
                     }
                 }
