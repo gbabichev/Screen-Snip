@@ -163,7 +163,7 @@ struct ContentView: View {
     @State var imageReloadTrigger = UUID()
     @State var missingSnipURLs: Set<URL> = []
     @State var zoomLevel: Double = 1.0
-    @State var pinchBaseZoom: Double? = nil
+    @State var zoomPan: CGSize = .zero
     
     @State var showSettingsPopover = false
     @AppStorage("preferredSaveFormat") var preferredSaveFormatRaw: String = SaveFormat.png.rawValue
@@ -567,6 +567,77 @@ struct ContentView: View {
                    fraction: 1.0)
         newImage.unlockFocus()
         return newImage
+    }
+
+    private func clampZoomPan(for baseSize: CGSize, viewportSize: CGSize) {
+        guard baseSize.width > 0, baseSize.height > 0, viewportSize.width > 0, viewportSize.height > 0 else {
+            zoomPan = .zero
+            return
+        }
+
+        if zoomLevel <= 1.0001 {
+            zoomPan = .zero
+            return
+        }
+
+        let scaled = CGSize(width: baseSize.width * zoomLevel, height: baseSize.height * zoomLevel)
+        let maxX = max(0, (scaled.width - viewportSize.width) / 2)
+        let maxY = max(0, (scaled.height - viewportSize.height) / 2)
+        zoomPan = CGSize(
+            width: min(maxX, max(-maxX, zoomPan.width)),
+            height: min(maxY, max(-maxY, zoomPan.height))
+        )
+    }
+
+    private func applyAnchoredZoom(
+        factor: CGFloat,
+        anchor: CGPoint,
+        baseSize: CGSize,
+        viewportSize: CGSize
+    ) {
+        guard factor.isFinite, factor > 0 else { return }
+
+        let oldZoom = max(zoomLevel, 1.0)
+        let newZoom = min(max(oldZoom * Double(factor), ZOOM_MIN), ZOOM_MAX)
+        guard newZoom.isFinite else { return }
+
+        let anchorX = anchor.x - (viewportSize.width / 2)
+        let anchorY = anchor.y - (viewportSize.height / 2)
+        let proposedPanX = anchorX - ((anchorX - zoomPan.width) * (CGFloat(newZoom) / CGFloat(oldZoom)))
+        let proposedPanY = anchorY - ((anchorY - zoomPan.height) * (CGFloat(newZoom) / CGFloat(oldZoom)))
+
+        let scaled = CGSize(width: baseSize.width * newZoom, height: baseSize.height * newZoom)
+        let maxX = max(0, (scaled.width - viewportSize.width) / 2)
+        let maxY = max(0, (scaled.height - viewportSize.height) / 2)
+
+        zoomLevel = newZoom
+        if newZoom <= 1.0001 {
+            zoomPan = .zero
+        } else {
+            zoomPan = CGSize(
+                width: min(maxX, max(-maxX, proposedPanX)),
+                height: min(maxY, max(-maxY, proposedPanY))
+            )
+        }
+    }
+
+    private func applyZoomPanDelta(
+        delta: CGSize,
+        baseSize: CGSize,
+        viewportSize: CGSize
+    ) {
+        guard zoomLevel > 1.0001 else {
+            zoomPan = .zero
+            return
+        }
+
+        let scaled = CGSize(width: baseSize.width * zoomLevel, height: baseSize.height * zoomLevel)
+        let maxX = max(0, (scaled.width - viewportSize.width) / 2)
+        let maxY = max(0, (scaled.height - viewportSize.height) / 2)
+        zoomPan = CGSize(
+            width: min(maxX, max(-maxX, zoomPan.width + delta.width)),
+            height: min(maxY, max(-maxY, zoomPan.height + delta.height))
+        )
     }
 
     func rotateCurrentImage90(clockwise: Bool) {
@@ -1003,8 +1074,7 @@ struct ContentView: View {
                             let fitted = CGSize(width: baseFitted.width * zoomLevel,
                                                 height: baseFitted.height * zoomLevel)
                             
-                            ScrollView([.horizontal, .vertical], showsIndicators: true) {
-                                ZStack {
+                            ZStack {
                                     let author = objectSpaceSize ?? baseFitted
                                     let sx = fitted.width / max(1, author.width)
                                     let sy = fitted.height / max(1, author.height)
@@ -1355,25 +1425,39 @@ struct ContentView: View {
                                     .onAppear {
                                         lastFittedSize = baseFitted
                                         if objectSpaceSize == nil { objectSpaceSize = baseFitted }
+                                        clampZoomPan(for: baseFitted, viewportSize: geo.size)
+                                    }
+                                    .onChange(of: zoomLevel) { _, _ in
+                                        clampZoomPan(for: baseFitted, viewportSize: geo.size)
+                                    }
+                                    .onChange(of: geo.size) { _, newSize in
+                                        clampZoomPan(for: baseFitted, viewportSize: newSize)
                                     }
                                     
-                                }
-                                .frame(width: fitted.width, height: fitted.height)
-                                .frame(minWidth: geo.size.width, minHeight: geo.size.height, alignment: .center)
                             }
+                            .offset(x: zoomPan.width, y: zoomPan.height)
+                            .frame(width: geo.size.width, height: geo.size.height, alignment: .center)
                             .frame(maxWidth: .infinity, maxHeight: .infinity)
                             .overlay(
-                                LocalScrollWheelZoomView(zoomLevel: $zoomLevel, minZoom: ZOOM_MIN, maxZoom: ZOOM_MAX)
-                                    .allowsHitTesting(true)
-                            )
-                            .gesture(
-                                MagnificationGesture(minimumScaleDelta: 0.01)
-                                    .onChanged { scale in
-                                        if pinchBaseZoom == nil { pinchBaseZoom = zoomLevel }
-                                        let proposed = (pinchBaseZoom ?? zoomLevel) * Double(scale)
-                                        zoomLevel = min(max(proposed, ZOOM_MIN), ZOOM_MAX)
+                                LocalScrollWheelZoomView(
+                                    onPinch: { factor, anchor in
+                                        applyAnchoredZoom(
+                                            factor: factor,
+                                            anchor: anchor,
+                                            baseSize: baseFitted,
+                                            viewportSize: geo.size
+                                        )
+                                    },
+                                    panEnabled: zoomLevel > 1.01,
+                                    onPan: { deltaX, deltaY in
+                                        applyZoomPanDelta(
+                                            delta: CGSize(width: deltaX, height: deltaY),
+                                            baseSize: baseFitted,
+                                            viewportSize: geo.size
+                                        )
                                     }
-                                    .onEnded { _ in pinchBaseZoom = nil }
+                                )
+                                    .allowsHitTesting(true)
                             )
                         }
                     } else {
@@ -1556,6 +1640,7 @@ struct ContentView: View {
                                     selectedImageSize = pixelSize(of: cropped)
                                     imageReloadTrigger = UUID()
                                     zoomLevel = 1.0
+                                    zoomPan = .zero
                                 }
                             }
                         }

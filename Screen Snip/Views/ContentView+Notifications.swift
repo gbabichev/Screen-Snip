@@ -147,7 +147,9 @@ extension ContentView {
         switch notification.name {
         case .zoomIn:    zoomLevel = min(zoomLevel * 1.25, 3.0)
         case .zoomOut:   zoomLevel = max(zoomLevel / 1.25, 1.0)
-        case .resetZoom: zoomLevel = 1.0
+        case .resetZoom:
+            zoomLevel = 1.0
+            zoomPan = .zero
         default: break
         }
     }

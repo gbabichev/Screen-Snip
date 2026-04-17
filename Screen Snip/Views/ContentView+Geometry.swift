@@ -545,6 +545,7 @@ extension ContentView {
                 undoStack.removeAll()
                 redoStack.removeAll()
                 zoomLevel = 1.0
+                zoomPan = .zero
                 imageReloadTrigger = UUID()
                 GalleryWindow.shared.close()
             },
