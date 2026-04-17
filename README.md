@@ -112,6 +112,11 @@ open "Screen Snip.xcodeproj"
 
 ## Recent Changes
 
+### 1.4.2
+- Fixed "Save As JPG" not working on App Store build. 
+- Improved the Save-As dialog.
+- Added anchoring to pinch-to-zoom & mouse scroll zoom. 
+
 ### 1.4.1
 
 - Added rounded corners in the Save As dialog
