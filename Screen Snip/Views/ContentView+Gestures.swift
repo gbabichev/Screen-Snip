@@ -1020,7 +1020,7 @@ extension ContentView {
                 if let savedURL = ImageSaver.writeImageReplacing(flattened, at: url, format: preferredSaveFormat.rawValue, quality: saveQuality, preserveAttributes: true) {
                     selectedSnipURL = savedURL
                     rotatedPreviewImage = nil
-                    refreshGalleryAfterSaving(to: savedURL)
+                    refreshGalleryAfterSaving(to: savedURL, replacing: url)
                     reloadCurrentImage()
                 }
             } else {

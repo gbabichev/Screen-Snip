@@ -524,7 +524,7 @@ struct ContentView: View {
         }
 
         if success {
-            refreshGalleryAfterSaving(to: finalURL)
+            refreshGalleryAfterSaving(to: finalURL, replacing: selectedSnipURL)
         } else {
             print("Save failed")
         }
@@ -2318,7 +2318,7 @@ struct ContentView: View {
                             self.cropDraftRect = nil
                             self.cropHandle = .none
                             self.selectedSnipURL = savedURL
-                            self.refreshGalleryAfterSaving(to: savedURL)
+                            self.refreshGalleryAfterSaving(to: savedURL, replacing: url)
                             self.reloadCurrentImage()
                         }
                     }
@@ -2340,7 +2340,7 @@ struct ContentView: View {
                                         self.cropHandle = .none
 
                                         self.selectedSnipURL = dest
-                                        self.refreshGalleryAfterSaving(to: dest)
+                                        self.refreshGalleryAfterSaving(to: dest, replacing: nil)
                                         self.reloadCurrentImage()
                                     }
                                 }
@@ -2410,14 +2410,24 @@ struct ContentView: View {
     }
     
     /// If saved file is within our Snips directory, update the gallery list.
-    func refreshGalleryAfterSaving(to url: URL) {
-        if let dir = SnipsDirectory(), url.path.hasPrefix(dir.path) {
-            loadExistingSnips()
+    func refreshGalleryAfterSaving(to url: URL, replacing previousURL: URL? = nil) {
+        let normalizedURL = url.standardizedFileURL
+        let normalizedPreviousURL = previousURL?.standardizedFileURL
+        let samePathReplace = normalizedPreviousURL == normalizedURL
+
+        if let dir = SnipsDirectory(), normalizedURL.path.hasPrefix(dir.path) {
+            if samePathReplace {
+                if !SnipURLs.contains(normalizedURL) {
+                    insertSnipURL(normalizedURL)
+                    SnipURLs = Array(SnipURLs.prefix(10))
+                }
+            } else {
+                loadExistingSnips()
+            }
         }
-        
+
         // Refresh thumbnails.
         thumbnailRefreshTrigger = UUID()
-        
     }
     
     
