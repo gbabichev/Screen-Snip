@@ -2,6 +2,7 @@ import SwiftUI
 import AppKit
 
 final class _ZoomCatcherView: NSView {
+    var zoomEnabled: Bool = true
     var onPinch: ((CGFloat, CGPoint) -> Void)?
     var onPan: ((CGFloat, CGFloat) -> Void)?
     var panEnabled: Bool = false
@@ -51,6 +52,7 @@ final class _ZoomCatcherView: NSView {
     }
 
     private func applyPinchDelta(_ delta: CGFloat, anchor: CGPoint) {
+        guard zoomEnabled else { return }
         guard delta.isFinite, delta != 0 else { return }
         let scaledDelta = delta * 2.0
         let factor = min(2.0, max(0.5, exp(scaledDelta)))
@@ -59,12 +61,13 @@ final class _ZoomCatcherView: NSView {
 
     override func hitTest(_ point: NSPoint) -> NSView? {
         guard let ev = NSApp.currentEvent else { return nil }
-        if ev.type == .magnify { return self }
+        if ev.type == .magnify { return zoomEnabled ? self : nil }
         guard ev.type == .scrollWheel else { return nil }
-        return (ev.modifierFlags.contains(.command) || panEnabled) ? self : nil
+        return (zoomEnabled && ev.modifierFlags.contains(.command)) || panEnabled ? self : nil
     }
 
     override func magnify(with event: NSEvent) {
+        guard zoomEnabled else { return }
         let factor = min(2.0, max(0.5, exp(event.magnification * 2.0)))
         onPinch?(factor, pinchAnchorPoint(for: event))
     }
@@ -138,7 +141,7 @@ final class _ZoomCatcherView: NSView {
             return (event.deltaX * 10.0, event.deltaY * 10.0)
         }
 
-        if event.modifierFlags.contains(.command) {
+        if zoomEnabled && event.modifierFlags.contains(.command) {
             onPinch?(scrollZoomFactor(for: event), scrollAnchorPoint(for: event))
             return
         }
@@ -154,6 +157,7 @@ final class _ZoomCatcherView: NSView {
 }
 
 struct LocalScrollWheelZoomView: NSViewRepresentable {
+    var zoomEnabled: Bool = true
     var onPinch: (CGFloat, CGPoint) -> Void
     var panEnabled: Bool = false
     var onPan: ((CGFloat, CGFloat) -> Void)? = nil
@@ -162,6 +166,7 @@ struct LocalScrollWheelZoomView: NSViewRepresentable {
         let v = _ZoomCatcherView()
         v.wantsLayer = true
         v.layer?.backgroundColor = NSColor.clear.cgColor
+        v.zoomEnabled = zoomEnabled
         v.onPinch = onPinch
         v.panEnabled = panEnabled
         v.onPan = onPan
@@ -169,6 +174,7 @@ struct LocalScrollWheelZoomView: NSViewRepresentable {
     }
 
     func updateNSView(_ nsView: _ZoomCatcherView, context: Context) {
+        nsView.zoomEnabled = zoomEnabled
         nsView.onPinch = onPinch
         nsView.panEnabled = panEnabled
         nsView.onPan = onPan

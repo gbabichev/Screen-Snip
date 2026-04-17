@@ -164,6 +164,7 @@ struct ContentView: View {
     @State var missingSnipURLs: Set<URL> = []
     @State var zoomLevel: Double = 1.0
     @State var zoomPan: CGSize = .zero
+    private var isViewportFitMode: Bool { imageDisplayMode == "fit" }
     
     @State var showSettingsPopover = false
     @AppStorage("preferredSaveFormat") var preferredSaveFormatRaw: String = SaveFormat.png.rawValue
@@ -570,6 +571,11 @@ struct ContentView: View {
     }
 
     private func clampZoomPan(for baseSize: CGSize, viewportSize: CGSize) {
+        guard !isViewportFitMode else {
+            zoomPan = .zero
+            return
+        }
+
         guard baseSize.width > 0, baseSize.height > 0, viewportSize.width > 0, viewportSize.height > 0 else {
             zoomPan = .zero
             return
@@ -595,6 +601,12 @@ struct ContentView: View {
         baseSize: CGSize,
         viewportSize: CGSize
     ) {
+        guard !isViewportFitMode else {
+            zoomLevel = 1.0
+            zoomPan = .zero
+            return
+        }
+
         guard factor.isFinite, factor > 0 else { return }
 
         let oldZoom = max(zoomLevel, 1.0)
@@ -626,6 +638,11 @@ struct ContentView: View {
         baseSize: CGSize,
         viewportSize: CGSize
     ) {
+        guard !isViewportFitMode else {
+            zoomPan = .zero
+            return
+        }
+
         guard zoomLevel > 1.0001 else {
             zoomPan = .zero
             return
@@ -1071,8 +1088,9 @@ struct ContentView: View {
                             let baseFitted = imageDisplayMode == "fit"
                             ? fittedImageSize(original: getActualDisplaySize(imgSize), in: geo.size)  // Use point size for fitting
                             : getActualDisplaySize(imgSize)  // Use point size for actual
-                            let fitted = CGSize(width: baseFitted.width * zoomLevel,
-                                                height: baseFitted.height * zoomLevel)
+                            let effectiveZoom = isViewportFitMode ? 1.0 : zoomLevel
+                            let fitted = CGSize(width: baseFitted.width * effectiveZoom,
+                                                height: baseFitted.height * effectiveZoom)
                             
                             ZStack {
                                     let author = objectSpaceSize ?? baseFitted
@@ -1440,6 +1458,7 @@ struct ContentView: View {
                             .frame(maxWidth: .infinity, maxHeight: .infinity)
                             .overlay(
                                 LocalScrollWheelZoomView(
+                                    zoomEnabled: !isViewportFitMode,
                                     onPinch: { factor, anchor in
                                         applyAnchoredZoom(
                                             factor: factor,
@@ -1448,7 +1467,7 @@ struct ContentView: View {
                                             viewportSize: geo.size
                                         )
                                     },
-                                    panEnabled: zoomLevel > 1.01,
+                                    panEnabled: !isViewportFitMode && zoomLevel > 1.01,
                                     onPan: { deltaX, deltaY in
                                         applyZoomPanDelta(
                                             delta: CGSize(width: deltaX, height: deltaY),
@@ -1459,6 +1478,11 @@ struct ContentView: View {
                                 )
                                     .allowsHitTesting(true)
                             )
+                            .onChange(of: imageDisplayMode) { _, _ in
+                                zoomLevel = 1.0
+                                zoomPan = .zero
+                                clampZoomPan(for: baseFitted, viewportSize: geo.size)
+                            }
                         }
                     } else {
                         // your empty/missing states unchanged
