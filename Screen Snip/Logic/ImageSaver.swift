@@ -11,18 +11,31 @@ struct ImageSaver {
 
     private nonisolated static func fileExtension(for format: String) -> String {
         switch format.lowercased() {
-        case "jpeg": return "jpg"
+        case "jpeg", "jpg": return "jpg"
         case "heic": return "heic"
         default: return "png"
         }
     }
 
     nonisolated static func urlByEnsuringExtension(for url: URL, format: String) -> URL {
-        let desiredExtension = fileExtension(for: format)
         let currentExtension = url.pathExtension.lowercased()
-        if currentExtension == desiredExtension {
+        let normalizedFormat = format.lowercased()
+        let validExtensions: Set<String> = {
+            switch normalizedFormat {
+            case "jpeg", "jpg":
+                return ["jpg", "jpeg"]
+            case "heic":
+                return ["heic"]
+            default:
+                return ["png"]
+            }
+        }()
+
+        if validExtensions.contains(currentExtension) {
             return url
         }
+
+        let desiredExtension = fileExtension(for: normalizedFormat)
         let baseURL = currentExtension.isEmpty ? url : url.deletingPathExtension()
         return baseURL.appendingPathExtension(desiredExtension)
     }

@@ -44,6 +44,20 @@ enum Tool { case pointer, line, rect, oval, text, crop, badge, highlighter, blur
 enum SaveFormat: String, CaseIterable, Identifiable {
     case png, jpeg, heic
     var id: String { rawValue }
+    var preferredFilenameExtension: String {
+        switch self {
+        case .png: return "png"
+        case .jpeg: return "jpg"
+        case .heic: return "heic"
+        }
+    }
+    var displayTitle: String {
+        switch self {
+        case .png: return "PNG"
+        case .jpeg: return "JPG"
+        case .heic: return "HEIC"
+        }
+    }
     var utType: UTType {
         switch self {
         case .png:  return .png
@@ -51,7 +65,6 @@ enum SaveFormat: String, CaseIterable, Identifiable {
         case .heic: return .heic
         }
     }
-
 }
 
 enum ExportScaleOption: CaseIterable, Identifiable {
@@ -78,6 +91,23 @@ enum ExportScaleOption: CaseIterable, Identifiable {
 enum CaptureMode: String, CaseIterable {
     case captureWithWindows = "captureWithWindows"
     case captureWithoutWindows = "captureWithoutWindows"
+}
+
+private final class EstimatedSizeTokenBox: @unchecked Sendable {
+    private let lock = NSLock()
+    private var token = UUID()
+
+    func replace(with newToken: UUID) {
+        lock.lock()
+        token = newToken
+        lock.unlock()
+    }
+
+    func matches(_ expectedToken: UUID) -> Bool {
+        lock.lock()
+        defer { lock.unlock() }
+        return token == expectedToken
+    }
 }
 
 struct ContentView: View {
@@ -216,6 +246,16 @@ struct ContentView: View {
         }
     }
 
+    private func configureSavePanelFileType(_ panel: NSSavePanel, format: SaveFormat) {
+        panel.allowedContentTypes = [format.utType]
+        if #available(macOS 15.0, *) {
+            panel.currentContentType = format.utType
+        }
+        // `allowedContentTypes` alone still lets NSSavePanel prefer `.jpeg`.
+        // KVC keeps the working `.jpg` enforcement without compiling against deprecated API.
+        panel.setValue([format.preferredFilenameExtension], forKey: "allowedFileTypes")
+    }
+
     private func createSavePanelAccessory(for panel: NSSavePanel, image: NSImage) -> NSView {
         // Format dropdown
         let formats = SaveFormat.allCases
@@ -223,7 +263,7 @@ struct ContentView: View {
         formatLabel.alignment = .right
         formatLabel.font = .systemFont(ofSize: NSFont.systemFontSize)
         let formatPopup = NSPopUpButton(frame: NSRect(x: 0, y: 0, width: 170, height: 26), pullsDown: false)
-        formats.forEach { formatPopup.addItem(withTitle: $0.rawValue.uppercased()) }
+        formats.forEach { formatPopup.addItem(withTitle: $0.displayTitle) }
         formatPopup.selectItem(at: formats.firstIndex(of: preferredSaveFormat) ?? 0)
 
         // Size dropdown
@@ -278,7 +318,7 @@ struct ContentView: View {
         let initialRoundedEnabled = self.exportRoundedCorners
         if initialRoundedEnabled, preferredSaveFormat != .png, let pngIndex = formats.firstIndex(of: .png) {
             formatPopup.selectItem(at: pngIndex)
-            panel.allowedContentTypes = [SaveFormat.png.utType]
+            configureSavePanelFileType(panel, format: .png)
             let currentName = panel.nameFieldStringValue
             if !currentName.isEmpty {
                 let nameWithoutExt = (currentName as NSString).deletingPathExtension
@@ -288,10 +328,10 @@ struct ContentView: View {
         let selectedInitialFormat = formats[max(0, min(formatPopup.indexOfSelectedItem, formats.count - 1))]
         qualityRow.isHidden = (selectedInitialFormat == .png)
 
-        var estimateToken = UUID()
+        let estimateToken = EstimatedSizeTokenBox()
         func updateEstimatedSize() {
             let token = UUID()
-            estimateToken = token
+            estimateToken.replace(with: token)
             estimateLabel.stringValue = "Estimated size: Calculating…"
 
             let idx = formatPopup.indexOfSelectedItem
@@ -316,7 +356,7 @@ struct ContentView: View {
                 } ?? "Estimated size: —"
 
                 DispatchQueue.main.async {
-                    guard estimateToken == token else { return }
+                    guard estimateToken.matches(token) else { return }
                     estimateLabel.stringValue = text
                 }
             }
@@ -335,12 +375,11 @@ struct ContentView: View {
             // Update filename extension
             let currentName = panel.nameFieldStringValue
             if !currentName.isEmpty {
-                let nameWithoutExt = (currentName as NSString).deletingPathExtension
-                panel.nameFieldStringValue = "\(nameWithoutExt).\(selected.rawValue)"
+                panel.nameFieldStringValue = ImageSaver.replaceExtension(of: currentName, with: selected.rawValue)
             }
 
             // Update allowed file type
-            panel.allowedContentTypes = [selected.utType]
+            configureSavePanelFileType(panel, format: selected)
 
             // Show/hide quality based on format
             qualityRow.isHidden = (selected == .png)
@@ -362,7 +401,7 @@ struct ContentView: View {
                         let nameWithoutExt = (currentName as NSString).deletingPathExtension
                         panel.nameFieldStringValue = "\(nameWithoutExt).png"
                     }
-                    panel.allowedContentTypes = [SaveFormat.png.utType]
+                    configureSavePanelFileType(panel, format: .png)
                 }
                 qualityRow.isHidden = true
             } else {
@@ -397,7 +436,7 @@ struct ContentView: View {
         let selectedInitial = (selectedInitialIndex >= 0 && selectedInitialIndex < formats.count)
             ? formats[selectedInitialIndex]
             : preferredSaveFormat
-        panel.allowedContentTypes = [selectedInitial.utType]
+        configureSavePanelFileType(panel, format: selectedInitial)
 
         // Layout
         let formatRow = NSStackView(views: [formatLabel, formatPopup])
