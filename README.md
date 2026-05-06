@@ -112,6 +112,9 @@ open "Screen Snip.xcodeproj"
 
 ## Recent Changes
 
+### 1.4.3
+- Fixed (App Store): When pressing "copy to clipboard" and "automatically save on copy" is enabled, a duplicate photo would appear in the snip bar. 
+
 ### 1.4.2
 - Fixed "Save As JPG" not working on App Store build. 
 - Improved the Save-As dialog.

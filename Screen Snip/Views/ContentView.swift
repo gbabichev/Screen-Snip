@@ -1756,7 +1756,7 @@ struct ContentView: View {
                         cropDraftRect = nil
                         cropHandle = .none
                         updateMenuState()
-                        if let dir = SnipsDirectory(), url.path.hasPrefix(dir.path) {
+                        if let dir = SnipsDirectory(), normalizedSnipURL(url).path.hasPrefix(normalizedSnipURL(dir).path) {
                             insertSnipURL(url)
                         }
                     }
@@ -1813,14 +1813,14 @@ struct ContentView: View {
     }
 
     func selectSnip(_ url: URL) {
-        if selectedSnipURL == url { return }
+        if let selectedSnipURL, snipURLsReferToSameFile(selectedSnipURL, url) { return }
         confirmDiscardIfNeeded {
             performSelectSnip(url)
         }
     }
 
     private func performSelectSnip(_ url: URL) {
-        selectedSnipURL = url
+        selectedSnipURL = normalizedSnipURL(url)
         rotatedPreviewImage = nil
         selectedImageSize = probeImageSize(url)
         updateMenuState()
@@ -2336,8 +2336,8 @@ struct ContentView: View {
                             self.cropRect = nil
                             self.cropDraftRect = nil
                             self.cropHandle = .none
-                            self.selectedSnipURL = savedURL
-                            self.refreshGalleryAfterSaving(to: savedURL, replacing: url)
+                            self.selectedSnipURL = self.normalizedSnipURL(savedURL)
+                            self.loadExistingSnips()
                             self.reloadCurrentImage()
                         }
                     }
@@ -2370,8 +2370,8 @@ struct ContentView: View {
                                         self.cropDraftRect = nil
                                         self.cropHandle = .none
 
-                                        self.selectedSnipURL = dest
-                                        self.refreshGalleryAfterSaving(to: dest, replacing: nil)
+                                        self.selectedSnipURL = self.normalizedSnipURL(dest)
+                                        self.loadExistingSnips()
                                         self.reloadCurrentImage()
                                     }
                                 }
@@ -2435,14 +2435,20 @@ struct ContentView: View {
     func refreshGalleryAfterSaving(to url: URL, replacing previousURL: URL? = nil) {
         let normalizedURL = url.standardizedFileURL
         let normalizedPreviousURL = previousURL?.standardizedFileURL
-        let samePathReplace = normalizedPreviousURL == normalizedURL
+        let samePathReplace = normalizedPreviousURL.map { snipURLsReferToSameFile($0, normalizedURL) } ?? false
 
-        if let dir = SnipsDirectory(), normalizedURL.path.hasPrefix(dir.path) {
+        if let dir = SnipsDirectory(), normalizedURL.path.hasPrefix(normalizedSnipURL(dir).path) {
             if samePathReplace {
-                if !SnipURLs.contains(normalizedURL) {
+                let matchingIndexes = SnipURLs.indices.filter { snipURLsReferToSameFile(SnipURLs[$0], normalizedURL) }
+                if let firstMatch = matchingIndexes.first {
+                    SnipURLs[firstMatch] = normalizedURL
+                    for index in matchingIndexes.dropFirst().reversed() {
+                        SnipURLs.remove(at: index)
+                    }
+                } else {
                     insertSnipURL(normalizedURL)
-                    SnipURLs = Array(SnipURLs.prefix(10))
                 }
+                SnipURLs = Array(SnipURLs.prefix(10))
             } else {
                 loadExistingSnips()
             }

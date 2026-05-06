@@ -409,6 +409,27 @@ extension ContentView {
         }
         return nil
     }
+
+    func normalizedSnipURL(_ url: URL) -> URL {
+        url.standardizedFileURL
+    }
+
+    func snipURLsReferToSameFile(_ lhs: URL, _ rhs: URL) -> Bool {
+        normalizedSnipURL(lhs).path == normalizedSnipURL(rhs).path
+    }
+
+    func deduplicatedSnipURLs(_ urls: [URL]) -> [URL] {
+        var seenPaths = Set<String>()
+        var uniqueURLs: [URL] = []
+
+        for url in urls {
+            let normalized = normalizedSnipURL(url)
+            guard seenPaths.insert(normalized.path).inserted else { continue }
+            uniqueURLs.append(normalized)
+        }
+
+        return uniqueURLs
+    }
     
     var currentImage: NSImage? {
         if let preview = rotatedPreviewImage { return preview }
@@ -470,16 +491,20 @@ extension ContentView {
             let dated: [(URL, Date)] = urls.compactMap {
                 return ($0, captureDate(for: $0))
             }
-            let sorted = dated.sorted { $0.1 > $1.1 }.map { $0.0 }
+            let sorted = deduplicatedSnipURLs(dated.sorted { $0.1 > $1.1 }.map { $0.0 })
             SnipURLs = Array(sorted.prefix(10))
             
             // Clean up missing URLs from our tracking set
-            missingSnipURLs = missingSnipURLs.filter { !sorted.contains($0) }
+            missingSnipURLs = missingSnipURLs.filter { missingURL in
+                !sorted.contains { snipURLsReferToSameFile($0, missingURL) }
+            }
             
             // If currently selected Snip no longer exists, clear selection
             if let sel = selectedSnipURL {
                 if !fm.fileExists(atPath: sel.path) {
                     selectedSnipURL = nil
+                } else {
+                    selectedSnipURL = normalizedSnipURL(sel)
                 }
             }
         } catch {
@@ -555,16 +580,15 @@ extension ContentView {
     
     /// Inserts a newly saved URL at the start of the list (leftmost), de-duplicating if necessary.
     func insertSnipURL(_ url: URL) {
-        if let idx = SnipURLs.firstIndex(of: url) {
-            SnipURLs.remove(at: idx)
-        }
-        SnipURLs.insert(url, at: 0)
+        let normalized = normalizedSnipURL(url)
+        SnipURLs.removeAll { snipURLsReferToSameFile($0, normalized) }
+        SnipURLs.insert(normalized, at: 0)
     }
     
     /// Delete a Snip from disk and update gallery/selection.
     func deleteSnip(_ url: URL) {
         let fm = FileManager.default
-        let wasSelected = (selectedSnipURL == url)
+        let wasSelected = selectedSnipURL.map { snipURLsReferToSameFile($0, url) } ?? false
         // Prefer moving to Trash; fall back to remove.
         do {
             var trashedURL: NSURL?
@@ -576,7 +600,7 @@ extension ContentView {
         loadExistingSnips()
 
         // Update current selection / preview
-        if wasSelected || (selectedSnipURL != nil && !SnipURLs.contains(selectedSnipURL!)) {
+        if wasSelected || (selectedSnipURL != nil && !SnipURLs.contains { snipURLsReferToSameFile($0, selectedSnipURL!) }) {
             selectedSnipURL = SnipURLs.first
         }
 
