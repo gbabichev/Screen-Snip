@@ -266,6 +266,9 @@ final class AppDelegate: NSObject, NSApplicationDelegate, ObservableObject {
     }
     
     func applicationShouldHandleReopen(_ sender: NSApplication, hasVisibleWindows flag: Bool) -> Bool {
+        if GlobalHotKeyManager.shared.shouldSuppressMainWindowReopen {
+            return false
+        }
         if !flag {
             WindowManager.shared.ensureMainWindow()
         }

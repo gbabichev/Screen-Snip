@@ -285,6 +285,9 @@ final class SelectionWindowManager {
     private var keyMonitor: Any?
     
     var onCancel: (() -> Void)?
+    var isPresentingSelection: Bool {
+        !panels.isEmpty
+    }
     
     func presentWithCapturedScreens(
         capturedScreens: [(screenInfo: GlobalHotKeyManager.ScreenInfo, cgImage: CGImage)],

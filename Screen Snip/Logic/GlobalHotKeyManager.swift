@@ -108,6 +108,17 @@ final class GlobalHotKeyManager {
     
     private var isCurrentlyCapturing = false
     private var capturedScreens: [(screenInfo: ScreenInfo, cgImage: CGImage)] = []
+    private var suppressMainWindowReopenUntil: CFTimeInterval = 0
+
+    var shouldSuppressMainWindowReopen: Bool {
+        isCurrentlyCapturing ||
+        SelectionWindowManager.shared.isPresentingSelection ||
+        CACurrentMediaTime() < suppressMainWindowReopenUntil
+    }
+
+    private func suppressMainWindowReopenBriefly() {
+        suppressMainWindowReopenUntil = CACurrentMediaTime() + 1.0
+    }
     
     // Sendable struct to hold screen data
     struct ScreenInfo: Sendable {
@@ -143,6 +154,7 @@ final class GlobalHotKeyManager {
         
         // Set up cancel handler
         SelectionWindowManager.shared.onCancel = { [weak self] in
+            self?.suppressMainWindowReopenBriefly()
             self?.isCurrentlyCapturing = false
             self?.capturedScreens.removeAll()
             
@@ -207,6 +219,7 @@ final class GlobalHotKeyManager {
                 }
                 
                 DispatchQueue.main.async { [weak self] in
+                    self?.suppressMainWindowReopenUntil = 0
                     self?.isCurrentlyCapturing = false
                     self?.capturedScreens.removeAll()
                 }
