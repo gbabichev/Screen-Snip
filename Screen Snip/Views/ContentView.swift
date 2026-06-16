@@ -218,7 +218,12 @@ struct ContentView: View {
     }
 
     /// Shows NSSavePanel with custom accessory view (Format, Size, Quality)
-    func showSavePanel(image: NSImage, window: NSWindow?) {
+    func showSavePanel(
+        image: NSImage,
+        window: NSWindow?,
+        allowOriginalDataReuse: Bool = true,
+        onSuccessfulSave: ((URL) -> Void)? = nil
+    ) {
         let panel = SavePanel()
 
         // Set initial filename
@@ -239,11 +244,23 @@ struct ContentView: View {
         // Show as sheet if we have a window, otherwise modal
         if let window = window {
             panel.beginSheetModal(for: window) { response in
-                self.handleSavePanelResponse(response, panel: panel, image: image)
+                self.handleSavePanelResponse(
+                    response,
+                    panel: panel,
+                    image: image,
+                    allowOriginalDataReuse: allowOriginalDataReuse,
+                    onSuccessfulSave: onSuccessfulSave
+                )
             }
         } else {
             let response = panel.runModal()
-            handleSavePanelResponse(response, panel: panel, image: image)
+            handleSavePanelResponse(
+                response,
+                panel: panel,
+                image: image,
+                allowOriginalDataReuse: allowOriginalDataReuse,
+                onSuccessfulSave: onSuccessfulSave
+            )
         }
     }
 
@@ -468,7 +485,13 @@ struct ContentView: View {
         return container
     }
 
-    private func handleSavePanelResponse(_ response: NSApplication.ModalResponse, panel: NSSavePanel, image: NSImage) {
+    private func handleSavePanelResponse(
+        _ response: NSApplication.ModalResponse,
+        panel: NSSavePanel,
+        image: NSImage,
+        allowOriginalDataReuse: Bool,
+        onSuccessfulSave: ((URL) -> Void)?
+    ) {
         guard response == .OK, let url = panel.url else { return }
 
         // Get the selected format from the filename extension
@@ -505,6 +528,7 @@ struct ContentView: View {
         let finalURL = ImageSaver.urlByEnsuringExtension(for: url, format: formatString)
         let scaleIsOriginal = abs(scaleFactor - 1.0) < 0.001
         let reusableSourceURL =
+            allowOriginalDataReuse &&
             scaleIsOriginal &&
             !exportRoundedCorners &&
             objects.isEmpty &&
@@ -525,6 +549,7 @@ struct ContentView: View {
 
         if success {
             refreshGalleryAfterSaving(to: finalURL, replacing: selectedSnipURL)
+            onSuccessfulSave?(finalURL)
         } else {
             print("Save failed")
         }

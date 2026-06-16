@@ -1032,14 +1032,29 @@ extension ContentView {
     func flattenAndSaveAs() {
         guard let img = currentImage else { return }
         if objectSpaceSize == nil { objectSpaceSize = lastFittedSize ?? img.size }
-        pushUndoSnipshot()
         if objects.isEmpty {
             showSavePanel(image: img, window: NSApplication.shared.keyWindow)
             return
         }
         if let flattened = rasterize(base: img, objects: objects) {
-            objects.removeAll()
-            showSavePanel(image: flattened, window: NSApplication.shared.keyWindow)
+            showSavePanel(
+                image: flattened,
+                window: NSApplication.shared.keyWindow,
+                allowOriginalDataReuse: false
+            ) { savedURL in
+                pushUndoSnipshot()
+                objects.removeAll()
+                selectedObjectID = nil
+                selectedObjectIDs.removeAll()
+                activeHandle = .none
+                focusedTextID = nil
+                selectedSnipURL = normalizedSnipURL(savedURL)
+                rotatedPreviewImage = nil
+                selectedImageSize = probeImageSize(savedURL)
+                objectSpaceSize = nil
+                imageReloadTrigger = UUID()
+                updateMenuState()
+            }
         }
     }
     
