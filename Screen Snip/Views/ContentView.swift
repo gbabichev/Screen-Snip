@@ -44,6 +44,21 @@ enum Tool { case pointer, line, rect, oval, text, crop, badge, highlighter, blur
 enum SaveFormat: String, CaseIterable, Identifiable {
     case png, jpeg, heic
     var id: String { rawValue }
+    static func supportedFormat(forFileExtension fileExtension: String) -> SaveFormat? {
+        switch fileExtension.lowercased() {
+        case "png":
+            return .png
+        case "jpg", "jpeg":
+            return .jpeg
+        case "heic", "heif":
+            return .heic
+        default:
+            return nil
+        }
+    }
+    static func supportedFormat(for url: URL) -> SaveFormat? {
+        supportedFormat(forFileExtension: url.pathExtension)
+    }
     var preferredFilenameExtension: String {
         switch self {
         case .png: return "png"
@@ -205,6 +220,10 @@ struct ContentView: View {
         ordered.append(contentsOf: SaveFormat.allCases.filter { $0 != preferredSaveFormat })
         return ordered.map { $0.utType }
     }
+
+    var currentSaveFormat: SaveFormat {
+        selectedSnipURL.flatMap { SaveFormat.supportedFormat(for: $0) } ?? preferredSaveFormat
+    }
     
     private final class SavePanel: NSSavePanel {
         override func performKeyEquivalent(with event: NSEvent) -> Bool {
@@ -225,12 +244,13 @@ struct ContentView: View {
         onSuccessfulSave: ((URL) -> Void)? = nil
     ) {
         let panel = SavePanel()
+        let initialFormat = currentSaveFormat
 
         // Set initial filename
         if let sel = selectedSnipURL {
-            panel.nameFieldStringValue = ImageSaver.replaceExtension(of: sel.lastPathComponent, with: preferredSaveFormat.rawValue)
+            panel.nameFieldStringValue = ImageSaver.replaceExtension(of: sel.lastPathComponent, with: initialFormat.rawValue)
         } else {
-            panel.nameFieldStringValue = ImageSaver.generateFilename(for: preferredSaveFormat.rawValue)
+            panel.nameFieldStringValue = ImageSaver.generateFilename(for: initialFormat.rawValue)
         }
 
         panel.canCreateDirectories = true
@@ -238,7 +258,7 @@ struct ContentView: View {
         panel.allowsOtherFileTypes = false
 
         // Create custom accessory view
-        let accessoryView = createSavePanelAccessory(for: panel, image: image)
+        let accessoryView = createSavePanelAccessory(for: panel, image: image, initialFormat: initialFormat)
         panel.accessoryView = accessoryView
 
         // Show as sheet if we have a window, otherwise modal
@@ -274,7 +294,7 @@ struct ContentView: View {
         panel.setValue([format.preferredFilenameExtension], forKey: "allowedFileTypes")
     }
 
-    private func createSavePanelAccessory(for panel: NSSavePanel, image: NSImage) -> NSView {
+    private func createSavePanelAccessory(for panel: NSSavePanel, image: NSImage, initialFormat: SaveFormat) -> NSView {
         // Format dropdown
         let formats = SaveFormat.allCases
         let formatLabel = NSTextField(labelWithString: "Format:")
@@ -282,7 +302,7 @@ struct ContentView: View {
         formatLabel.font = .systemFont(ofSize: NSFont.systemFontSize)
         let formatPopup = NSPopUpButton(frame: NSRect(x: 0, y: 0, width: 170, height: 26), pullsDown: false)
         formats.forEach { formatPopup.addItem(withTitle: $0.displayTitle) }
-        formatPopup.selectItem(at: formats.firstIndex(of: preferredSaveFormat) ?? 0)
+        formatPopup.selectItem(at: formats.firstIndex(of: initialFormat) ?? 0)
 
         // Size dropdown
         let options = ExportScaleOption.allCases
@@ -334,7 +354,7 @@ struct ContentView: View {
 
         // Initially hide quality if PNG
         let initialRoundedEnabled = self.exportRoundedCorners
-        if initialRoundedEnabled, preferredSaveFormat != .png, let pngIndex = formats.firstIndex(of: .png) {
+        if initialRoundedEnabled, initialFormat != .png, let pngIndex = formats.firstIndex(of: .png) {
             formatPopup.selectItem(at: pngIndex)
             configureSavePanelFileType(panel, format: .png)
             let currentName = panel.nameFieldStringValue
@@ -354,7 +374,7 @@ struct ContentView: View {
             estimateLabel.stringValue = "Estimated size: Calculating…"
 
             let idx = formatPopup.indexOfSelectedItem
-            let selectedFormat = (idx >= 0 && idx < formats.count) ? formats[idx] : preferredSaveFormat
+            let selectedFormat = (idx >= 0 && idx < formats.count) ? formats[idx] : initialFormat
             let scaleFactor = exportScaleOption.factor
             let quality = exportQuality
             let shouldRoundCorners = exportRoundedCorners
@@ -425,7 +445,7 @@ struct ContentView: View {
                 qualityRow.isHidden = true
             } else {
                 let idx = formatPopup.indexOfSelectedItem
-                let selected = (idx >= 0 && idx < formats.count) ? formats[idx] : preferredSaveFormat
+                let selected = (idx >= 0 && idx < formats.count) ? formats[idx] : initialFormat
                 qualityRow.isHidden = (selected == .png)
             }
 
@@ -455,7 +475,7 @@ struct ContentView: View {
         let selectedInitialIndex = formatPopup.indexOfSelectedItem
         let selectedInitial = (selectedInitialIndex >= 0 && selectedInitialIndex < formats.count)
             ? formats[selectedInitialIndex]
-            : preferredSaveFormat
+            : initialFormat
         configureSavePanelFileType(panel, format: selectedInitial)
 
         // Layout
@@ -504,7 +524,7 @@ struct ContentView: View {
         } else if ext == "heic" {
             formatString = "heic"
         } else {
-            formatString = preferredSaveFormat.rawValue
+            formatString = currentSaveFormat.rawValue
         }
 
         // Scale image if needed

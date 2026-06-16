@@ -1017,7 +1017,7 @@ extension ContentView {
             objects.removeAll()
             if let url = selectedSnipURL {
                 // Write the flattened image back to the same file, preserving creation date
-                if let savedURL = ImageSaver.writeImageReplacing(flattened, at: url, format: preferredSaveFormat.rawValue, quality: saveQuality, preserveAttributes: true) {
+                if let savedURL = ImageSaver.writeImageReplacing(flattened, at: url, format: currentSaveFormat.rawValue, quality: saveQuality, preserveAttributes: true) {
                     selectedSnipURL = savedURL
                     rotatedPreviewImage = nil
                     refreshGalleryAfterSaving(to: savedURL, replacing: url)
