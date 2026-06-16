@@ -1584,6 +1584,7 @@ struct ContentView: View {
         .onAppear {
             loadExistingSnips()
             updateMenuState()
+            updateDocumentEditedIndicator()
             // Listen for Cmd+Z / Shift+Cmd+Z globally while this view is active, and Delete for selected objects
             keyMonitor = NSEvent.addLocalMonitorForEvents(matching: .keyDown) { event in
                 
@@ -1725,6 +1726,10 @@ struct ContentView: View {
         }
         .onDisappear {
             if let keyMonitor { NSEvent.removeMonitor(keyMonitor); self.keyMonitor = nil }
+            WindowManager.shared.setMainWindowDocumentEdited(false)
+        }
+        .onChange(of: hasUnsavedChanges) { _, _ in
+            updateDocumentEditedIndicator()
         }
         .onReceive(NotificationCenter.default.publisher(for: .openNewWindow)) { _ in
             openWindow(id: "main")
@@ -1931,6 +1936,10 @@ struct ContentView: View {
         return false
     }
 
+    func updateDocumentEditedIndicator() {
+        WindowManager.shared.setMainWindowDocumentEdited(hasUnsavedChanges)
+    }
+
     func discardUnsavedChanges() {
         objects.removeAll()
         selectedObjectID = nil
@@ -1947,7 +1956,7 @@ struct ContentView: View {
         reloadCurrentImage()
     }
 
-    func confirmDiscardIfNeeded(then: @escaping () -> Void) {
+    func confirmDiscardIfNeeded(then: @escaping () -> Void, onCancel: (() -> Void)? = nil) {
         guard confirmSaveBeforeLeavingChanges, hasUnsavedChanges else {
             then()
             return
@@ -1971,6 +1980,7 @@ struct ContentView: View {
             discardUnsavedChanges()
             then()
         default:
+            onCancel?()
             break
         }
     }

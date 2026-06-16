@@ -22,6 +22,7 @@ extension ContentView {
             nc.publisher(for: .rotateClockwise),
             nc.publisher(for: .rotateCounterclockwise),
             nc.publisher(for: .requestCloseWindow),
+            nc.publisher(for: .requestTerminateApp),
         ])
         .eraseToAnyPublisher()
     }
@@ -64,6 +65,9 @@ extension ContentView {
 
         case .requestCloseWindow:
             onRequestCloseWindow(note)
+
+        case .requestTerminateApp:
+            onRequestTerminateApp()
             
         default:
             break
@@ -171,6 +175,14 @@ extension ContentView {
         confirmDiscardIfNeeded {
             WindowCloseCoordinator.shared.allowClose = true
             window.performClose(nil)
+        }
+    }
+
+    func onRequestTerminateApp() {
+        confirmDiscardIfNeeded {
+            AppDelegate.shared.replyToPendingTermination(shouldTerminate: true)
+        } onCancel: {
+            AppDelegate.shared.replyToPendingTermination(shouldTerminate: false)
         }
     }
     

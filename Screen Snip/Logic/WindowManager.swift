@@ -85,6 +85,14 @@ final class WindowManager {
         // Create new window
         createMainWindow()
     }
+
+    func setMainWindowDocumentEdited(_ isEdited: Bool) {
+        mainWindowController?.window?.isDocumentEdited = isEdited
+    }
+
+    var isMainWindowDocumentEdited: Bool {
+        mainWindowController?.window?.isDocumentEdited ?? false
+    }
     
     private func createMainWindow(shouldActivate: Bool = true) {
         // Clean up existing window

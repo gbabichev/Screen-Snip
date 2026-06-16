@@ -37,6 +37,7 @@ extension Notification.Name {
     static let rotateCounterclockwise = Notification.Name("com.georgebabichev.screenSnip.rotateCounterclockwise")
     static let openNewWindow = Notification.Name("com.georgebabichev.screenSnip.openNewWindow") // Add this line
     static let requestCloseWindow = Notification.Name("com.georgebabichev.screenSnip.requestCloseWindow")
+    static let requestTerminateApp = Notification.Name("com.georgebabichev.screenSnip.requestTerminateApp")
 
 }
 
@@ -99,6 +100,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, ObservableObject {
     @Published var needsScreenRecordingPermission = false
     @Published var showPermissionsView = false
     @Published var showAboutOverlay = false
+    private var isAwaitingTerminationConfirmation = false
     
     override init() {
         super.init()
@@ -236,6 +238,31 @@ final class AppDelegate: NSObject, NSApplicationDelegate, ObservableObject {
     }
 
     func applicationShouldTerminate(_ sender: NSApplication) -> NSApplication.TerminateReply {
+        if WindowManager.shared.isMainWindowDocumentEdited {
+            guard !isAwaitingTerminationConfirmation else {
+                return .terminateLater
+            }
+            isAwaitingTerminationConfirmation = true
+            NotificationCenter.default.post(name: .requestTerminateApp, object: nil)
+            return .terminateLater
+        }
+
+        prepareForTermination()
+        return .terminateNow
+    }
+
+    func replyToPendingTermination(shouldTerminate: Bool) {
+        guard isAwaitingTerminationConfirmation else { return }
+        isAwaitingTerminationConfirmation = false
+
+        if shouldTerminate {
+            prepareForTermination()
+        }
+
+        NSApp.reply(toApplicationShouldTerminate: shouldTerminate)
+    }
+
+    private func prepareForTermination() {
         // Force close all sheets and modal windows immediately
         for window in NSApp.windows {
             // End any attached sheets
@@ -256,9 +283,6 @@ final class AppDelegate: NSObject, NSApplicationDelegate, ObservableObject {
         
         // Stop any modal sessions
         NSApp.stopModal()
-        
-        // Allow immediate termination without delay
-        return .terminateNow
     }
 
     func applicationWillTerminate(_ notification: Notification) {
