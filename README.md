@@ -112,13 +112,20 @@ open "Screen Snip.xcodeproj"
 
 ## Recent Changes
 
+### 1.4.4
+- Fixed "Save As" deleting markups.
+- When opening a file with Screen Snip, Save-As & Save now respect the files extension.
+- Resolved a race condition with the Screen Snip window opening if you pressed Esc to quit a snip.
+- When you have "confirm before leaving unsaved changes" enabled, performing a cmd+q now also will warn.
+- Added a "unsaved changes" indicator into the window red stoplight button.
+
 ### 1.4.3
-- Fixed (App Store): When pressing "copy to clipboard" and "automatically save on copy" is enabled, a duplicate photo would appear in the snip bar. 
+- Fixed (App Store): When pressing "copy to clipboard" and "automatically save on copy" is enabled, a duplicate photo would appear in the snip bar.
 
 ### 1.4.2
-- Fixed "Save As JPG" not working on App Store build. 
+- Fixed "Save As JPG" not working on App Store build.
 - Improved the Save-As dialog.
-- Added anchoring to pinch-to-zoom & mouse scroll zoom. 
+- Added anchoring to pinch-to-zoom & mouse scroll zoom.
 
 ### 1.4.1
 
