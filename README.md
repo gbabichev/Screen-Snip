@@ -112,6 +112,9 @@ open "Screen Snip.xcodeproj"
 
 ## Recent Changes
 
+### 1.4.5
+- Fixed an issue with "cmd+c" not properly copying edits in certain rare conditions.
+
 ### 1.4.4
 - Fixed "Save As" deleting markups.
 - When opening a file with Screen Snip, Save-As & Save now respect the files extension.

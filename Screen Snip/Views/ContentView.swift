@@ -2306,9 +2306,37 @@ struct ContentView: View {
         return c
     }
     
+    func copyableObjectsSnapshot() -> [Drawable] {
+        var snapshot = objects
+        let author = objectSpaceSize ?? lastFittedSize ?? currentImage?.size ?? CGSize(width: 1200, height: 800)
+
+        if let d = draft, selectedTool == .line {
+            snapshot.append(.line(LineObject(start: d.start, end: d.end, width: d.width, arrow: lineHasArrow, color: lineColor)))
+        }
+
+        if let r = draftRect {
+            let clamped = clampRect(r, in: author)
+            switch selectedTool {
+            case .rect:
+                snapshot.append(.rect(RectObject(rect: clamped, width: strokeWidth, color: rectColor)))
+            case .oval:
+                snapshot.append(.oval(OvalObject(rect: clamped, width: strokeWidth, color: ovalColor)))
+            case .highlighter:
+                snapshot.append(.highlight(HighlightObject(rect: clamped, color: highlighterColor)))
+            case .blur:
+                snapshot.append(.blur(BlurRectObject(rect: clamped, blurRadius: blurAmount)))
+            default:
+                break
+            }
+        }
+
+        return snapshot
+    }
+
     func copyToPasteboard(_ image: NSImage) {
-        // Capture necessary state
-        let objectsSnapshot = objects
+        // Capture necessary state before the caller resets selection/tool state.
+        let committedObjectsSnapshot = objects
+        let objectsSnapshot = copyableObjectsSnapshot()
         let saveOnCopy = UserDefaults.standard.bool(forKey: "saveOnCopy")
         let selectedURL = selectedSnipURL?.standardizedFileURL
         let format = preferredSaveFormat.rawValue
@@ -2317,10 +2345,6 @@ struct ContentView: View {
         let cropRectSnapshot = cropRect
         let cropDraftRectSnapshot = cropDraftRect
         let cropHandleSnapshot = cropHandle
-        let selectedObjectIDSnapshot = selectedObjectID
-        let selectedObjectIDsSnapshot = selectedObjectIDs
-        let activeHandleSnapshot = activeHandle
-        let focusedTextIDSnapshot = focusedTextID
 
         // Move heavy image processing to .utility thread to avoid priority inversion
         DispatchQueue.global(qos: .utility).async {
@@ -2371,29 +2395,14 @@ struct ContentView: View {
                 if let url = selectedURL {
                     if let savedURL = ImageSaver.writeImageReplacing(source, at: url, format: format, quality: quality, preserveAttributes: true) {
                         DispatchQueue.main.async {
-                            let currentSelectedURL = self.selectedSnipURL?.standardizedFileURL
-                            guard currentSelectedURL == selectedURL,
-                                  self.objects == objectsSnapshot,
-                                  self.cropRect == cropRectSnapshot,
-                                  self.cropDraftRect == cropDraftRectSnapshot,
-                                  self.cropHandle == cropHandleSnapshot,
-                                  self.selectedObjectID == selectedObjectIDSnapshot,
-                                  self.selectedObjectIDs == selectedObjectIDsSnapshot,
-                                  self.activeHandle == activeHandleSnapshot,
-                                  self.focusedTextID == focusedTextIDSnapshot else { return }
-
-                            // Clear all drawn objects after successful save
-                            self.objects.removeAll()
-                            self.selectedObjectID = nil
-                            self.selectedObjectIDs.removeAll()
-                            self.activeHandle = .none
-                            self.focusedTextID = nil
-                            self.cropRect = nil
-                            self.cropDraftRect = nil
-                            self.cropHandle = .none
-                            self.selectedSnipURL = self.normalizedSnipURL(savedURL)
-                            self.loadExistingSnips()
-                            self.reloadCurrentImage()
+                            self.finishSaveOnCopy(
+                                savedURL: savedURL,
+                                selectedURLSnapshot: selectedURL,
+                                committedObjectsSnapshot: committedObjectsSnapshot,
+                                cropRectSnapshot: cropRectSnapshot,
+                                cropDraftRectSnapshot: cropDraftRectSnapshot,
+                                cropHandleSnapshot: cropHandleSnapshot
+                            )
                         }
                     }
                 } else {
@@ -2404,30 +2413,14 @@ struct ContentView: View {
                             DispatchQueue.global(qos: .utility).async {
                                 if ImageSaver.writeImage(source, to: dest, format: format, quality: quality, preserveAttributes: true) {
                                     DispatchQueue.main.async {
-                                        let currentSelectedURL = self.selectedSnipURL?.standardizedFileURL
-                                        guard currentSelectedURL == selectedURL,
-                                              self.objects == objectsSnapshot,
-                                              self.cropRect == cropRectSnapshot,
-                                              self.cropDraftRect == cropDraftRectSnapshot,
-                                              self.cropHandle == cropHandleSnapshot,
-                                              self.selectedObjectID == selectedObjectIDSnapshot,
-                                              self.selectedObjectIDs == selectedObjectIDsSnapshot,
-                                              self.activeHandle == activeHandleSnapshot,
-                                              self.focusedTextID == focusedTextIDSnapshot else { return }
-
-                                        // Clear all drawn objects after successful save
-                                        self.objects.removeAll()
-                                        self.selectedObjectID = nil
-                                        self.selectedObjectIDs.removeAll()
-                                        self.activeHandle = .none
-                                        self.focusedTextID = nil
-                                        self.cropRect = nil
-                                        self.cropDraftRect = nil
-                                        self.cropHandle = .none
-
-                                        self.selectedSnipURL = self.normalizedSnipURL(dest)
-                                        self.loadExistingSnips()
-                                        self.reloadCurrentImage()
+                                        self.finishSaveOnCopy(
+                                            savedURL: dest,
+                                            selectedURLSnapshot: selectedURL,
+                                            committedObjectsSnapshot: committedObjectsSnapshot,
+                                            cropRectSnapshot: cropRectSnapshot,
+                                            cropDraftRectSnapshot: cropDraftRectSnapshot,
+                                            cropHandleSnapshot: cropHandleSnapshot
+                                        )
                                     }
                                 }
                             }
@@ -2440,16 +2433,43 @@ struct ContentView: View {
             }
         }
     }
+
+    func finishSaveOnCopy(
+        savedURL: URL,
+        selectedURLSnapshot: URL?,
+        committedObjectsSnapshot: [Drawable],
+        cropRectSnapshot: CGRect?,
+        cropDraftRectSnapshot: CGRect?,
+        cropHandleSnapshot: Handle
+    ) {
+        let currentSelectedURL = selectedSnipURL?.standardizedFileURL
+        let cropWasUnchangedOrCleared =
+            (cropRect == cropRectSnapshot || cropRect == nil) &&
+            (cropDraftRect == cropDraftRectSnapshot || cropDraftRect == nil) &&
+            (cropHandle == cropHandleSnapshot || cropHandle == .none)
+
+        guard currentSelectedURL == selectedURLSnapshot,
+              objects == committedObjectsSnapshot,
+              cropWasUnchangedOrCleared else { return }
+
+        objects.removeAll()
+        draft = nil
+        draftRect = nil
+        selectedObjectID = nil
+        selectedObjectIDs.removeAll()
+        activeHandle = .none
+        focusedTextID = nil
+        cropRect = nil
+        cropDraftRect = nil
+        cropHandle = .none
+        selectedSnipURL = normalizedSnipURL(savedURL)
+        loadExistingSnips()
+        reloadCurrentImage()
+    }
     /// Flattens the current canvas into the image, refreshes state, then copies the latest to the clipboard.
     func flattenRefreshAndCopy() {
-        // 1) Flatten into currentImage (and save) using existing logic
-        //flattenAndSaveInPlace()
-        // 2) On the next run loop, copy the refreshed image so we don't grab stale state
-        DispatchQueue.main.async {
-            if let current = self.currentImage {
-                self.copyToPasteboard(current)
-            }
-        }
+        guard let current = currentImage else { return }
+        copyToPasteboard(current)
     }
     
     func pushUndoSnipshot() {
