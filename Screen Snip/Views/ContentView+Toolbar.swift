@@ -156,7 +156,7 @@ extension ContentView {
                                 .disabled(redoStack.isEmpty || selectedSnipURL == nil)
                                 
                                 // Flatten and Save (in place)
-                                Button(action: flattenAndSaveInPlace) {
+                                Button(action: { flattenAndSaveInPlace() }) {
                                     Label("Save", systemImage: "square.and.arrow.down")
                                 }
                                 

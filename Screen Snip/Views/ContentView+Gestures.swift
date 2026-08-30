@@ -1009,24 +1009,47 @@ extension ContentView {
     }
     
     
-    func flattenAndSaveInPlace() {
-        guard let img = currentImage else { return }
+    @discardableResult
+    func flattenAndSaveInPlace() -> Bool {
+        guard let img = currentImage else { return false }
         if objectSpaceSize == nil { objectSpaceSize = lastFittedSize ?? img.size }
-        pushUndoSnipshot()
-        if let flattened = rasterize(base: img, objects: objects) {
-            objects.removeAll()
-            if let url = selectedSnipURL {
-                // Write the flattened image back to the same file, preserving creation date
-                if let savedURL = ImageSaver.writeImageReplacing(flattened, at: url, format: currentSaveFormat.rawValue, quality: saveQuality, preserveAttributes: true) {
-                    selectedSnipURL = savedURL
-                    rotatedPreviewImage = nil
-                    refreshGalleryAfterSaving(to: savedURL, replacing: url)
-                    reloadCurrentImage()
-                }
-            } else {
-                saveAsCurrent()
-            }
+        guard let flattened = rasterize(base: img, objects: objects) else {
+            showErrorAlert(message: "Could Not Save Image", info: "Screen Snip could not render the current edits.")
+            return false
         }
+        guard let url = selectedSnipURL else {
+            saveAsCurrent()
+            return false
+        }
+
+        let previousRedoStack = redoStack
+        pushUndoSnipshot()
+
+        // Do not mutate editor state until the replacement is safely installed.
+        guard let savedURL = ImageSaver.writeImageReplacing(
+            flattened,
+            at: url,
+            format: currentSaveFormat.rawValue,
+            quality: saveQuality,
+            preserveAttributes: true
+        ) else {
+            // The save did not change the document, so discard the synthetic undo entry.
+            _ = undoStack.popLast()
+            redoStack = previousRedoStack
+            updateMenuState()
+            showErrorAlert(
+                message: "Could Not Save Image",
+                info: "Your edits are still open. Check the destination permissions and available disk space, then try again."
+            )
+            return false
+        }
+
+        objects.removeAll()
+        selectedSnipURL = savedURL
+        rotatedPreviewImage = nil
+        refreshGalleryAfterSaving(to: savedURL, replacing: url)
+        reloadCurrentImage()
+        return true
     }
     
     func flattenAndSaveAs() {

@@ -291,6 +291,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, ObservableObject {
 
     func applicationWillTerminate(_ notification: Notification) {
         GlobalHotKeyManager.shared.unregister()
+        SecurityScopedResourceManager.shared.releaseAll()
     }
     
     func applicationShouldHandleReopen(_ sender: NSApplication, hasVisibleWindows flag: Bool) -> Bool {

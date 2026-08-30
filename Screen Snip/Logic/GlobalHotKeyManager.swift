@@ -47,7 +47,7 @@ final class GlobalHotKeyManager {
                 
                 let manager = Unmanaged<GlobalHotKeyManager>.fromOpaque(refcon).takeUnretainedValue()
                 
-                if manager.handleCGEvent(event) {
+                if manager.handleCGEvent(type: type, event: event) {
                     // Consume the event
                     return nil
                 } else {
@@ -84,7 +84,17 @@ final class GlobalHotKeyManager {
         }
     }
     
-    private func handleCGEvent(_ event: CGEvent) -> Bool {
+    private func handleCGEvent(type: CGEventType, event: CGEvent) -> Bool {
+        if type == .tapDisabledByTimeout || type == .tapDisabledByUserInput {
+            if let eventTap {
+                CGEvent.tapEnable(tap: eventTap, enable: true)
+                print("Re-enabled system-wide hotkey monitor after macOS disabled it")
+            }
+            return false
+        }
+
+        guard type == .keyDown else { return false }
+
         let keyCode = event.getIntegerValueField(.keyboardEventKeycode)
         let flags = event.flags
         
@@ -109,6 +119,7 @@ final class GlobalHotKeyManager {
     private var isCurrentlyCapturing = false
     private var capturedScreens: [(screenInfo: ScreenInfo, cgImage: CGImage)] = []
     private var suppressMainWindowReopenUntil: CFTimeInterval = 0
+    private var shouldRestoreMainWindowAfterCapture = false
 
     var shouldSuppressMainWindowReopen: Bool {
         isCurrentlyCapturing ||
@@ -144,6 +155,12 @@ final class GlobalHotKeyManager {
             !window.isSheet &&
             window.contentViewController is NSHostingController<ContentView>
         }
+        shouldRestoreMainWindowAfterCapture = windowsWereHidden && hadVisibleMainWindow
+
+        // Install cancellation handling before asynchronous capture work starts.
+        SelectionWindowManager.shared.onCancel = { [weak self] in
+            self?.finishCapture(restorePreviousMainWindow: true)
+        }
         
         switch captureMode {
         case .captureWithWindows:
@@ -152,17 +169,20 @@ final class GlobalHotKeyManager {
             handleCaptureWithoutWindows()
         }
         
-        // Set up cancel handler
-        SelectionWindowManager.shared.onCancel = { [weak self] in
-            self?.suppressMainWindowReopenBriefly()
-            self?.isCurrentlyCapturing = false
-            self?.capturedScreens.removeAll()
-            
-            // Only restore windows if we actually hid them AND there was a visible window before
-            if windowsWereHidden && hadVisibleMainWindow {
-                DispatchQueue.main.async {
-                    WindowManager.shared.ensureMainWindow()
-                }
+    }
+
+    private func finishCapture(restorePreviousMainWindow: Bool) {
+        let shouldRestore = restorePreviousMainWindow && shouldRestoreMainWindowAfterCapture
+
+        suppressMainWindowReopenBriefly()
+        isCurrentlyCapturing = false
+        capturedScreens.removeAll()
+        shouldRestoreMainWindowAfterCapture = false
+        SelectionWindowManager.shared.onCancel = nil
+
+        if shouldRestore {
+            DispatchQueue.main.async {
+                WindowManager.shared.ensureMainWindow()
             }
         }
     }
@@ -206,25 +226,40 @@ final class GlobalHotKeyManager {
     // MARK: - Shared Selection UI Logic
 
     private func presentSelectionUI(with screenshots: [(screenInfo: ScreenInfo, cgImage: CGImage)]) {
-        SelectionWindowManager.shared.presentWithCapturedScreens(
+        guard !screenshots.isEmpty else {
+            print("Capture failed: no displays produced an image")
+            NSSound.beep()
+            finishCapture(restorePreviousMainWindow: true)
+            return
+        }
+
+        let didPresent = SelectionWindowManager.shared.presentWithCapturedScreens(
             capturedScreens: screenshots,
             onComplete: { [weak self] rect in
+                guard let self else { return }
+
                 // Extract selection from pre-captured screens
-                if let result = self?.extractSelectionFromCapturedScreens(rect: rect) {
-                    if let savedURL = ImageSaver.saveImage(result) {
-                        DispatchQueue.main.async {
-                            WindowManager.shared.loadImageIntoWindow(url: savedURL, shouldActivate: true)
-                        }
-                    }
+                var didSaveCapture = false
+                if let result = self.extractSelectionFromCapturedScreens(rect: rect),
+                   let savedURL = ImageSaver.saveImage(result) {
+                    didSaveCapture = true
+                    WindowManager.shared.loadImageIntoWindow(url: savedURL, shouldActivate: true)
                 }
-                
-                DispatchQueue.main.async { [weak self] in
-                    self?.suppressMainWindowReopenUntil = 0
-                    self?.isCurrentlyCapturing = false
-                    self?.capturedScreens.removeAll()
+
+                if !didSaveCapture {
+                    print("Capture failed: the selected region could not be saved")
+                    NSSound.beep()
                 }
+
+                self.finishCapture(restorePreviousMainWindow: !didSaveCapture)
             }
         )
+
+        guard didPresent else {
+            print("Capture failed: selection UI was already active")
+            finishCapture(restorePreviousMainWindow: true)
+            return
+        }
     }
 
 

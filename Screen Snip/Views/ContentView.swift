@@ -126,6 +126,10 @@ private final class EstimatedSizeTokenBox: @unchecked Sendable {
 }
 
 struct ContentView: View {
+    private nonisolated static let saveOnCopyQueue = DispatchQueue(
+        label: "com.georgebabichev.Screen-Snip.save-on-copy",
+        qos: .utility
+    )
     
     @ObservedObject var appDelegate = AppDelegate.shared
     
@@ -1711,6 +1715,9 @@ struct ContentView: View {
         .onChange(of: hasUnsavedChanges) { _, _ in
             updateDocumentEditedIndicator()
         }
+        .onChange(of: selectedSnipURL) { _, _ in
+            updateMenuState()
+        }
         .onReceive(NotificationCenter.default.publisher(for: .openNewWindow)) { _ in
             openWindow(id: "main")
         }
@@ -1736,8 +1743,8 @@ struct ContentView: View {
                 guard let url = urls.first else { return }
 
                 if url.hasDirectoryPath {
-                    // ——— Directory chosen: start scope and persist bookmark for the folder ———
-                    guard url.startAccessingSecurityScopedResource() else {
+                    // Keep one balanced scope open for the configured destination.
+                    guard SecurityScopedResourceManager.shared.activateSaveDirectory(url) else {
                         print("[Sandbox] Failed to start scope for folder: \(url.path)")
                         return
                     }
@@ -1751,17 +1758,17 @@ struct ContentView: View {
                         saveDirectoryPath = url.path
                     } catch {
                         print("[Sandbox] Failed to create folder bookmark: \(error)")
-                        url.stopAccessingSecurityScopedResource()
+                        SecurityScopedResourceManager.shared.releaseSaveDirectory()
                         return
                     }
                     DispatchQueue.main.async {
                         loadExistingSnips()
                     }
                 } else {
-                    // ——— Image file chosen: start scope and (optionally) persist bookmark for reopen ———
-                    let gotScope = url.startAccessingSecurityScopedResource()
-                    if !gotScope {
+                    // Replace the previous imported-file scope with this selection.
+                    if !SecurityScopedResourceManager.shared.activateImportedImage(url) {
                         print("[Sandbox] Failed to start scope for file: \(url.path)")
+                        return
                     }
 
                     // Persist a bookmark so future reopen flows can resolve with scope if needed
@@ -1954,8 +1961,11 @@ struct ContentView: View {
         let response = alert.runModal()
         switch response {
         case .alertFirstButtonReturn:
-            flattenAndSaveInPlace()
-            then()
+            if flattenAndSaveInPlace() {
+                then()
+            } else {
+                onCancel?()
+            }
         case .alertSecondButtonReturn:
             discardUnsavedChanges()
             then()
@@ -2326,91 +2336,91 @@ struct ContentView: View {
         let cropDraftRectSnapshot = cropDraftRect
         let cropHandleSnapshot = cropHandle
 
-        // Move heavy image processing to .utility thread to avoid priority inversion
-        DispatchQueue.global(qos: .utility).async {
-            // 1) ALWAYS flatten first so annotations are included
-            let flattened: NSImage = {
-                // Use DispatchQueue.main.sync to safely call main-actor methods
-                return DispatchQueue.main.sync {
-                    if let f = self.rasterize(base: image, objects: objectsSnapshot) { return f }
-                    return image // graceful fallback
-                }
-            }()
+        // Complete the pasteboard transaction before returning from Command-C.
+        // This prevents an immediate paste in another app from seeing old data.
+        let flattened = rasterize(base: image, objects: objectsSnapshot) ?? image
+        let shouldDownsample = downsampleSetting && isRetinaImage(flattened)
+        let source = shouldDownsample ? downsampleImage(flattened) : flattened
 
-            // 2) Respect user toggle: only downsample if requested AND the image is retina
-            let shouldDownsample = DispatchQueue.main.sync { downsampleSetting && self.isRetinaImage(flattened) }
-            let source: NSImage = shouldDownsample ? DispatchQueue.main.sync { self.downsampleImage(flattened) } : flattened
-
-            // 3) Generate PNG data on utility thread
-            var pngData: Data?
-            let bestRep = source.representations
-                .compactMap { $0 as? NSBitmapImageRep }
-                .max(by: { $0.pixelsWide * $0.pixelsHigh < $1.pixelsWide * $1.pixelsHigh })
-
-            if let cg = bestRep?.cgImage ?? source.cgImage(forProposedRect: nil, context: nil, hints: nil) {
-                let rep = NSBitmapImageRep(cgImage: cg)
-                pngData = rep.representation(using: .png, properties: [:])
+        let bestRep = source.representations
+            .compactMap { $0 as? NSBitmapImageRep }
+            .max(by: { $0.pixelsWide * $0.pixelsHigh < $1.pixelsWide * $1.pixelsHigh })
+        let pngData: Data? = {
+            guard let cgImage = bestRep?.cgImage ?? source.cgImage(forProposedRect: nil, context: nil, hints: nil) else {
+                return nil
             }
+            return NSBitmapImageRep(cgImage: cgImage).representation(using: .png, properties: [:])
+        }()
 
-            // 4) Update pasteboard on main thread (required for pasteboard operations)
-            DispatchQueue.main.async {
-                let pb = NSPasteboard.general
-                pb.clearContents()
+        let pasteboard = NSPasteboard.general
+        pasteboard.clearContents()
+        let didWrite: Bool
+        if let pngData {
+            didWrite = pasteboard.setData(pngData, forType: .png)
+        } else {
+            didWrite = pasteboard.writeObjects([source])
+        }
 
-                if let data = pngData {
-                    pb.setData(data, forType: .png)
-                } else {
-                    pb.writeObjects([source])
-                }
+        guard didWrite else {
+            print("Failed to write the current image to the pasteboard")
+            NSSound.beep()
+            return
+        }
 
-                // Show HUD after pasteboard is updated
-                withAnimation { self.showCopiedHUD = true }
-                DispatchQueue.main.asyncAfter(deadline: .now() + 1.2) {
-                    withAnimation { self.showCopiedHUD = false }
-                }
-            }
+        withAnimation { showCopiedHUD = true }
+        DispatchQueue.main.asyncAfter(deadline: .now() + 1.2) {
+            withAnimation { self.showCopiedHUD = false }
+        }
 
-            // 5) Optional: Save the rasterized image to disk when enabled in settings
-            if saveOnCopy {
-                if let url = selectedURL {
-                    if let savedURL = ImageSaver.writeImageReplacing(source, at: url, format: format, quality: quality, preserveAttributes: true) {
-                        DispatchQueue.main.async {
-                            self.finishSaveOnCopy(
-                                savedURL: savedURL,
-                                selectedURLSnapshot: selectedURL,
-                                committedObjectsSnapshot: committedObjectsSnapshot,
-                                cropRectSnapshot: cropRectSnapshot,
-                                cropDraftRectSnapshot: cropDraftRectSnapshot,
-                                cropHandleSnapshot: cropHandleSnapshot
-                            )
-                        }
-                    }
-                } else {
-                    DispatchQueue.main.sync {
-                        if let dir = self.SnipsDirectory() {
-                            let newName = ImageSaver.generateFilename(for: format)
-                            let dest = dir.appendingPathComponent(newName)
-                            DispatchQueue.global(qos: .utility).async {
-                                if ImageSaver.writeImage(source, to: dest, format: format, quality: quality, preserveAttributes: true) {
-                                    DispatchQueue.main.async {
-                                        self.finishSaveOnCopy(
-                                            savedURL: dest,
-                                            selectedURLSnapshot: selectedURL,
-                                            committedObjectsSnapshot: committedObjectsSnapshot,
-                                            cropRectSnapshot: cropRectSnapshot,
-                                            cropDraftRectSnapshot: cropDraftRectSnapshot,
-                                            cropHandleSnapshot: cropHandleSnapshot
-                                        )
-                                    }
-                                }
-                            }
-                        } else {
-                            // Fallback if no directory available - must be on main thread
-                            self.saveAsCurrent()
-                        }
-                    }
+        // Disk writes are optional and serialized so rapid copies cannot install
+        // older rendered content after a newer copy.
+        guard saveOnCopy else { return }
+
+        if let url = selectedURL {
+            Self.saveOnCopyQueue.async {
+                guard let savedURL = ImageSaver.writeImageReplacing(
+                    source,
+                    at: url,
+                    format: format,
+                    quality: quality,
+                    preserveAttributes: true
+                ) else { return }
+
+                DispatchQueue.main.async {
+                    self.finishSaveOnCopy(
+                        savedURL: savedURL,
+                        selectedURLSnapshot: selectedURL,
+                        committedObjectsSnapshot: committedObjectsSnapshot,
+                        cropRectSnapshot: cropRectSnapshot,
+                        cropDraftRectSnapshot: cropDraftRectSnapshot,
+                        cropHandleSnapshot: cropHandleSnapshot
+                    )
                 }
             }
+        } else if let directory = SnipsDirectory() {
+            let destination = directory.appendingPathComponent(ImageSaver.generateFilename(for: format))
+            Self.saveOnCopyQueue.async {
+                guard ImageSaver.writeImage(
+                    source,
+                    to: destination,
+                    format: format,
+                    quality: quality,
+                    preserveAttributes: true
+                ) else { return }
+
+                DispatchQueue.main.async {
+                    self.finishSaveOnCopy(
+                        savedURL: destination,
+                        selectedURLSnapshot: selectedURL,
+                        committedObjectsSnapshot: committedObjectsSnapshot,
+                        cropRectSnapshot: cropRectSnapshot,
+                        cropDraftRectSnapshot: cropDraftRectSnapshot,
+                        cropHandleSnapshot: cropHandleSnapshot
+                    )
+                }
+            }
+        } else {
+            saveAsCurrent()
         }
     }
 
@@ -2473,6 +2483,7 @@ struct ContentView: View {
     // Reset the custom save folder back to the default Pictures/Screen Snip directory.
     func resetSaveDirectoryToDefault() {
         // Remove any previously stored security-scoped bookmark + path
+        SecurityScopedResourceManager.shared.releaseSaveDirectory()
         UserDefaults.standard.removeObject(forKey: "saveDirectoryBookmark")
         saveDirectoryPath = ""
         // Ensure the default exists and refresh the visible list

@@ -366,33 +366,9 @@ extension ContentView {
     // MARK: - Snips Persistence
     
     func SnipsDirectory() -> URL? {
-        // If the user has chosen a custom destination, resolve from bookmark
-        if !saveDirectoryPath.isEmpty {
-            if let bookmarkData = UserDefaults.standard.data(forKey: "saveDirectoryBookmark") {
-                do {
-                    var isStale = false
-                    let url = try URL(
-                        resolvingBookmarkData: bookmarkData,
-                        options: .withSecurityScope,
-                        relativeTo: nil,
-                        bookmarkDataIsStale: &isStale
-                    )
-                    
-                    guard url.startAccessingSecurityScopedResource() else {
-                        print("Failed to access security-scoped resource")
-                        return defaultSnipsDirectory()
-                    }
-                    
-                    // Store a reference to stop accessing later if needed
-                    // You might want to manage this lifecycle better
-                    return url
-                    
-                } catch {
-                    print("Failed to resolve bookmark: \(error)")
-                    // Fall back to default directory
-                    return defaultSnipsDirectory()
-                }
-            }
+        if !saveDirectoryPath.isEmpty,
+           let configuredDirectory = SecurityScopedResourceManager.shared.configuredSaveDirectory() {
+            return configuredDirectory
         }
         
         return defaultSnipsDirectory()
@@ -558,6 +534,7 @@ extension ContentView {
                 }
                 
                 selectedSnipURL = url
+                rotatedPreviewImage = nil
                 selectedImageSize = probeImageSize(url)
                 objects.removeAll()
                 objectSpaceSize = nil

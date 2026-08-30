@@ -13,18 +13,15 @@ import UniformTypeIdentifiers
 import ImageIO
 import Combine
 
-// MARK: - Global Cursor Manager (NEW)
-// MARK: - Global Cursor Manager (FIXED)
+// MARK: - Selection Cursor
 @MainActor
 class CursorManager {
     static let shared = CursorManager()
-    private var cursorStack: [NSCursor] = []
-    private var cursorTimer: Timer?
     private var customCursor: NSCursor?
     
     private init() {}
     
-    func setCustomCrosshairCursor() {
+    var crosshairCursor: NSCursor {
         // Create cursor if needed
         if self.customCursor == nil {
             // Create a large orange crosshair cursor (4x larger = 128x128)
@@ -64,40 +61,29 @@ class CursorManager {
             
             self.customCursor = NSCursor(image: cursorImage, hotSpot: NSPoint(x: 64, y: 64))
         }
-        
-        // Set the cursor immediately
-        self.customCursor?.set()
-        
-        // Start a timer to keep enforcing the cursor every 100ms
-        self.cursorTimer?.invalidate()
-        self.cursorTimer = Timer.scheduledTimer(withTimeInterval: 0.1, repeats: true) { _ in
-            Task { @MainActor in
-                // Access the cursor manager's cursor from within the MainActor context
-                guard let cursor = CursorManager.shared.customCursor else { return }
-                
-                // Only set cursor if it's not already our custom cursor
-                if NSCursor.current != cursor {
-                    cursor.set()
-                }
-            }
-        }
-        
-        print("Custom crosshair cursor set with enforcement timer")
+
+        return self.customCursor ?? .crosshair
     }
-    
-    // Force restore - use this when selection is cancelled/completed
+
     func forceRestoreCursor() {
-        // Stop the enforcement timer immediately
-        self.cursorTimer?.invalidate()
-        self.cursorTimer = nil
-        
-        // Clear our references
-        self.cursorStack.removeAll()
-        
-        // Force arrow cursor
         NSCursor.arrow.set()
-        
-        print("Cursor force restored to arrow and timer stopped")
+    }
+}
+
+/// Lets AppKit own the cursor for the complete selection surface. Cursor rects
+/// remain active in event-tracking run-loop modes, unlike a repeating timer.
+@MainActor
+private final class SelectionCursorHostingView: NSHostingView<AnyView> {
+    override func resetCursorRects() {
+        super.resetCursorRects()
+        addCursorRect(bounds, cursor: CursorManager.shared.crosshairCursor)
+    }
+
+    override func viewDidMoveToWindow() {
+        super.viewDidMoveToWindow()
+        if let window {
+            window.invalidateCursorRects(for: self)
+        }
     }
 }
 
@@ -279,10 +265,14 @@ struct SelectionOverlay: View {
 }
 
 // MARK: - SelectionWindowManager Updates
-final class SelectionWindowManager {
+final class SelectionWindowManager: NSObject {
     static let shared = SelectionWindowManager()
     private var panels: [NSPanel] = []
     private var keyMonitor: Any?
+
+    private override init() {
+        super.init()
+    }
     
     var onCancel: (() -> Void)?
     var isPresentingSelection: Bool {
@@ -292,8 +282,8 @@ final class SelectionWindowManager {
     func presentWithCapturedScreens(
         capturedScreens: [(screenInfo: GlobalHotKeyManager.ScreenInfo, cgImage: CGImage)],
         onComplete: @escaping (CGRect) -> Void
-    ) {
-        guard panels.isEmpty else { return }
+    ) -> Bool {
+        guard panels.isEmpty, !capturedScreens.isEmpty else { return false }
         
         print("=== Setting up selection windows ===")
         
@@ -327,8 +317,14 @@ final class SelectionWindowManager {
                 capturedImage: cgImage,
                 onComplete: { rect in
                     print("Selection completed with rect: \(rect)")
-                    onComplete(rect)
+                    // Remove the selection UI before image extraction, encoding,
+                    // disk I/O, and editor setup begin. Running completion on the
+                    // next main-loop turn also gives WindowServer a chance to
+                    // display the dismissal immediately after mouse-up.
                     self.dismiss()
+                    DispatchQueue.main.async {
+                        onComplete(rect)
+                    }
                 },
                 onCancel: {
                     print("Selection canceled")
@@ -337,18 +333,28 @@ final class SelectionWindowManager {
             )
                 .ignoresSafeArea()
             
-            panel.contentView = NSHostingView(rootView: root)
+            let hostingView = SelectionCursorHostingView(rootView: AnyView(root))
+            panel.contentView = hostingView
             panel.makeKeyAndOrderFront(nil)
+            panel.invalidateCursorRects(for: hostingView)
             panels.append(panel)
             
             print("  Window created and displayed")
         }
         
-        NSApp.activate(ignoringOtherApps: true)
-        
-        // FIXED: Set cursor after windows are created and displayed, with a small delay
-        DispatchQueue.main.asyncAfter(deadline: .now() + 0.1) {
-            CursorManager.shared.setCustomCrosshairCursor()
+        if NSApp.isActive {
+            activateSelectionCursor()
+        } else {
+            // A global hotkey usually starts while another app is active. macOS
+            // resets the cursor while activating Screen Snip, so install it only
+            // after that transition has actually completed.
+            NotificationCenter.default.addObserver(
+                self,
+                selector: #selector(applicationDidBecomeActive),
+                name: NSApplication.didBecomeActiveNotification,
+                object: NSApp
+            )
+            NSApp.activate(ignoringOtherApps: true)
         }
         
         keyMonitor = NSEvent.addLocalMonitorForEvents(matching: .keyDown) { [weak self] event in
@@ -361,6 +367,30 @@ final class SelectionWindowManager {
         }
         
         print("Selection windows ready")
+        return true
+    }
+
+    @objc private func applicationDidBecomeActive() {
+        NotificationCenter.default.removeObserver(
+            self,
+            name: NSApplication.didBecomeActiveNotification,
+            object: NSApp
+        )
+        activateSelectionCursor()
+    }
+
+    private func activateSelectionCursor() {
+        for panel in panels {
+            if let contentView = panel.contentView {
+                panel.invalidateCursorRects(for: contentView)
+            }
+        }
+
+        // Cursor rects handle subsequent movement; set immediately for a pointer
+        // that was already stationary over a panel when it appeared.
+        if panels.contains(where: { $0.frame.contains(NSEvent.mouseLocation) }) {
+            CursorManager.shared.crosshairCursor.set()
+        }
     }
     
     private func handleCancellation() {
@@ -373,6 +403,11 @@ final class SelectionWindowManager {
     func dismiss() {
         // FIXED: Force restore cursor when dismissing selection windows
         CursorManager.shared.forceRestoreCursor()
+        NotificationCenter.default.removeObserver(
+            self,
+            name: NSApplication.didBecomeActiveNotification,
+            object: NSApp
+        )
         
         for p in panels {
             p.orderOut(nil)

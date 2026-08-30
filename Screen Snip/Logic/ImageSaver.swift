@@ -204,8 +204,9 @@ struct ImageSaver {
         let saveDir: URL
         if let directory = directory {
             saveDir = directory
-        } else if !saveDirectoryPath.isEmpty {
-            saveDir = URL(fileURLWithPath: saveDirectoryPath, isDirectory: true)
+        } else if !saveDirectoryPath.isEmpty,
+                  let configuredDirectory = SecurityScopedResourceManager.shared.configuredSaveDirectory() {
+            saveDir = configuredDirectory
         } else {
             guard let pictures = FileManager.default.urls(for: .picturesDirectory, in: .userDomainMask).first else { return nil }
             saveDir = pictures.appendingPathComponent("Screen Snip", isDirectory: true)
