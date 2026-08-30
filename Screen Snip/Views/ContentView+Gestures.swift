@@ -16,49 +16,60 @@ extension ContentView {
                         selectedObjectID = nil  // Don't show single selection handles
                         activeHandle = .none
                         focusedTextID = nil
-                    } else if let idx = objects.firstIndex(where: { obj in
-                        switch obj {
-                        case .line(let o): return o.handleHitTest(p) != .none || o.hitTest(p)
-                        case .rect(let o): return o.handleHitTest(p) != .none || o.hitTest(p)
-                        case .oval(let o): return o.handleHitTest(p) != .none || o.hitTest(p)
-                        case .text(let o): return o.handleHitTest(p) != .none || o.hitTest(p)
-                        case .badge(let o): return o.handleHitTest(p) != .none || o.hitTest(p)
-                        case .highlight(let o): return o.handleHitTest(p) != .none || o.hitTest(p)
-                        case .image(let o): return o.handleHitTest(p) != .none || o.hitTest(p)
-                        case .blur(let o): return o.handleHitTest(p) != .none || o.hitTest(p)
-                        }
-                    }) {
-                        let clickedID = objects[idx].id
-                        // Check if clicked object is part of multi-selection
-                        if !selectedObjectIDs.isEmpty && selectedObjectIDs.contains(clickedID) {
-                            // Clicked on a multi-selected object - prepare to move all
-                            selectedObjectID = nil  // Don't show single selection handles
-                            activeHandle = .none
-                        } else {
-                            // Single object selection
-                            selectedObjectID = clickedID
-                            selectedObjectIDs.removeAll()  // Clear multi-selection
-                            switch objects[idx] {
-                            case .line(let o): activeHandle = o.handleHitTest(p)
-                            case .rect(let o): activeHandle = o.handleHitTest(p)
-                            case .oval(let o): activeHandle = o.handleHitTest(p)
-                            case .text(let o): activeHandle = o.handleHitTest(p)
-                            case .badge(let o): activeHandle = o.handleHitTest(p)
-                            case .highlight(let o): activeHandle = o.handleHitTest(p)
-                            case .image(let o): activeHandle = o.handleHitTest(p)
-                            case .blur(let o): activeHandle = o.handleHitTest(p)
+                    } else {
+                        let hitsObject: (Drawable) -> Bool = { obj in
+                            switch obj {
+                            case .line(let o): return o.handleHitTest(p) != .none || o.hitTest(p)
+                            case .rect(let o): return o.handleHitTest(p) != .none || o.hitTest(p)
+                            case .oval(let o): return o.handleHitTest(p) != .none || o.hitTest(p)
+                            case .text(let o): return o.handleHitTest(p) != .none || o.hitTest(p)
+                            case .badge(let o): return o.handleHitTest(p) != .none || o.hitTest(p)
+                            case .highlight(let o): return o.handleHitTest(p) != .none || o.hitTest(p)
+                            case .image(let o): return o.handleHitTest(p) != .none || o.hitTest(p)
+                            case .blur(let o): return o.handleHitTest(p) != .none || o.hitTest(p)
                             }
                         }
-                        // On single click or drag, always clear focus (do not enter edit mode)
-                        focusedTextID = nil
 
-                    } else {
-                        // No object clicked - start selection rectangle
-                        selectedObjectID = nil
-                        activeHandle = .none
-                        focusedTextID = nil
-                        selectionDragStart = p
-                        selectedObjectIDs.removeAll()
+                        // Keep dragging the visibly selected object when objects
+                        // overlap. Otherwise hit-test front-to-back: later objects
+                        // are rendered on top of earlier objects in the ZStack.
+                        let selectedIndex = selectedObjectID.flatMap { selectedID in
+                            objects.firstIndex { $0.id == selectedID && hitsObject($0) }
+                        }
+                        let hitIndex = selectedIndex ?? objects.lastIndex(where: hitsObject)
+
+                        if let idx = hitIndex {
+                            let clickedID = objects[idx].id
+                            // Check if clicked object is part of multi-selection
+                            if !selectedObjectIDs.isEmpty && selectedObjectIDs.contains(clickedID) {
+                                // Clicked on a multi-selected object - prepare to move all
+                                selectedObjectID = nil  // Don't show single selection handles
+                                activeHandle = .none
+                            } else {
+                                // Single object selection
+                                selectedObjectID = clickedID
+                                selectedObjectIDs.removeAll()  // Clear multi-selection
+                                switch objects[idx] {
+                                case .line(let o): activeHandle = o.handleHitTest(p)
+                                case .rect(let o): activeHandle = o.handleHitTest(p)
+                                case .oval(let o): activeHandle = o.handleHitTest(p)
+                                case .text(let o): activeHandle = o.handleHitTest(p)
+                                case .badge(let o): activeHandle = o.handleHitTest(p)
+                                case .highlight(let o): activeHandle = o.handleHitTest(p)
+                                case .image(let o): activeHandle = o.handleHitTest(p)
+                                case .blur(let o): activeHandle = o.handleHitTest(p)
+                                }
+                            }
+                            // On single click or drag, always clear focus (do not enter edit mode)
+                            focusedTextID = nil
+                        } else {
+                            // No object clicked - start selection rectangle
+                            selectedObjectID = nil
+                            activeHandle = .none
+                            focusedTextID = nil
+                            selectionDragStart = p
+                            selectedObjectIDs.removeAll()
+                        }
                     }
                 } else if let selStart = selectionDragStart {
                     // Update selection rectangle

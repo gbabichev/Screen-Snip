@@ -358,6 +358,7 @@ extension ContentView {
             objects.append(.image(obj))
             if objectSpaceSize == nil { objectSpaceSize = author }
             selectedObjectID = obj.id
+            selectedObjectIDs.removeAll()
             activeHandle = .none
             // no focus change for text
         }
