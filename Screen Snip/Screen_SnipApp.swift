@@ -108,6 +108,10 @@ final class AppDelegate: NSObject, NSApplicationDelegate, ObservableObject {
     }
     
     func applicationDidFinishLaunching(_ notification: Notification) {
+        let removedTemporaryFiles = TemporaryFileCleanup.removeLegacyAsyncImageDownloads()
+        if removedTemporaryFiles > 0 {
+            print("Cleaned up \(removedTemporaryFiles) legacy image-loading temporary files")
+        }
         
         #if DEBUG
         print("Running in Debug mode")

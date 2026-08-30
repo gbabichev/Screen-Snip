@@ -1154,34 +1154,14 @@ struct ContentView: View {
                                                 .interpolation(.high)
                                                 .frame(width: fitted.width, height: fitted.height)
                                         } else {
-                                            // Base image streamed without holding NSImage in @State
-                                            AsyncImage(url: url) { phase in
-                                                switch phase {
-                                                case .success(let img):
-                                                    img.resizable()
-                                                        .interpolation(.high)
-                                                        .frame(width: fitted.width, height: fitted.height)
-                                                case .empty:
-                                                    ProgressView()
-                                                        .frame(width: fitted.width, height: fitted.height)
-                                                case .failure(_):
-                                                    Color.secondary.opacity(0.1)
-                                                        .frame(width: fitted.width, height: fitted.height)
-                                                        .overlay(
-                                                            VStack(spacing: 6) {
-                                                                Image(systemName: "exclamationmark.triangle")
-                                                                Text("Failed to load image")
-                                                                    .font(.caption)
-                                                                    .foregroundStyle(.secondary)
-                                                            }
-                                                        )
-                                                @unknown default:
-                                                    Color.clear.frame(width: fitted.width, height: fitted.height)
-                                                }
-                                            }
+                                            LocalFileImageView(
+                                                url: url,
+                                                reloadToken: imageReloadTrigger,
+                                                width: fitted.width,
+                                                height: fitted.height
+                                            )
                                         }
                                     }
-                                    .id(imageReloadTrigger)
                                     .onAppear { currentGeometrySize = geo.size }
                                     .onChange(of: geo.size) { _, newSize in currentGeometrySize = newSize }
                                     
