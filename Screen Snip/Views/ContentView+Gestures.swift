@@ -30,13 +30,11 @@ extension ContentView {
                             }
                         }
 
-                        // Keep dragging the visibly selected object when objects
-                        // overlap. Otherwise hit-test front-to-back: later objects
-                        // are rendered on top of earlier objects in the ZStack.
-                        let selectedIndex = selectedObjectID.flatMap { selectedID in
-                            objects.firstIndex { $0.id == selectedID && hitsObject($0) }
-                        }
-                        let hitIndex = selectedIndex ?? objects.lastIndex(where: hitsObject)
+                        // Hit-test front-to-back. Later objects are rendered on
+                        // top of earlier objects in the ZStack, so an overlapping
+                        // top object must receive the click even if an object
+                        // underneath was previously selected.
+                        let hitIndex = objects.lastIndex(where: hitsObject)
 
                         if let idx = hitIndex {
                             let clickedID = objects[idx].id
