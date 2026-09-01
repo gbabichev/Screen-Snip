@@ -10,7 +10,6 @@ import SwiftUI
 import UniformTypeIdentifiers
 import Combine
 import Cocoa
-import VideoToolbox
 
 final class GlobalHotKeyManager {
     static let shared = GlobalHotKeyManager()
@@ -282,27 +281,11 @@ final class GlobalHotKeyManager {
     }
     
     private func captureAllScreensImmediately() async -> [(screenInfo: ScreenInfo, cgImage: CGImage)] {
+        let captureStartedAt = CACurrentMediaTime()
         var results: [(screenInfo: ScreenInfo, cgImage: CGImage)] = []
         
         do {
             let content = try await SCShareableContent.current
-            
-            print("=== Multi-Monitor Capture Debug ===")
-            print("Found \(content.displays.count) SCDisplays")
-            print("Found \(NSScreen.screens.count) NSScreens")
-            
-            // Log all available displays
-            for (index, display) in content.displays.enumerated() {
-                print("SCDisplay \(index): ID=\(display.displayID), Size=\(display.width)x\(display.height)")
-            }
-            
-            // Log all NSScreens
-            for (index, screen) in NSScreen.screens.enumerated() {
-                if let cgIDNum = screen.deviceDescription[NSDeviceDescriptionKey("NSScreenNumber")] as? NSNumber {
-                    let cgID = CGDirectDisplayID(truncating: cgIDNum)
-                    print("NSScreen \(index): ID=\(cgID), Frame=\(screen.frame), Scale=\(screen.backingScaleFactor)")
-                }
-            }
             
             // Strategy 1: Try to match NSScreens to SCDisplays
             var matchedScreens: [(screenInfo: ScreenInfo, scDisplay: SCDisplay)] = []
@@ -318,7 +301,6 @@ final class GlobalHotKeyManager {
                             index: index
                         )
                         matchedScreens.append((screenInfo: screenInfo, scDisplay: scDisplay))
-                        print("✓ Matched NSScreen \(index) with SCDisplay ID \(cgID)")
                     } else {
                         print("✗ Could not match NSScreen \(index) (ID: \(cgID)) to any SCDisplay")
                     }
@@ -352,38 +334,69 @@ final class GlobalHotKeyManager {
                     )
                     
                     matchedScreens.append((screenInfo: screenInfo, scDisplay: scDisplay))
-                    print("Fallback: Added SCDisplay \(scDisplay.displayID) as screen \(index)")
                 }
             }
-            
-            print("Proceeding with \(matchedScreens.count) screens to capture")
-            
-            // Capture screens sequentially instead of concurrently to avoid issues
-            for (screenInfo, scDisplay) in matchedScreens {
-                print("Capturing screen \(screenInfo.index) (SCDisplay ID: \(scDisplay.displayID))...")
-                
-                let filter = SCContentFilter(display: scDisplay, excludingWindows: [])
-                
-                // Create a fresh ScreenCapturer instance for each display
-                let capturer = SingleDisplayCapturer()
-                
-                if let cgImage = await capturer.captureImage(using: filter, display: scDisplay) {
-                    results.append((screenInfo: screenInfo, cgImage: cgImage))
-                    print("✓ Successfully captured screen \(screenInfo.index): \(cgImage.width)x\(cgImage.height)")
-                } else {
-                    print("✗ Failed to capture screen \(screenInfo.index)")
+
+            // SCScreenshotManager is designed for one-off frames, so each display
+            // can be captured directly without starting and polling a video stream.
+            // Run the independent display captures together so multi-monitor
+            // desktops freeze at nearly the same instant.
+            results = await withTaskGroup(
+                of: (screenInfo: ScreenInfo, cgImage: CGImage)?.self,
+                returning: [(screenInfo: ScreenInfo, cgImage: CGImage)].self
+            ) { group in
+                for (screenInfo, scDisplay) in matchedScreens {
+                    group.addTask {
+                        let filter = SCContentFilter(display: scDisplay, excludingWindows: [])
+                        let config = Self.makeScreenshotConfiguration(
+                            for: scDisplay,
+                            backingScale: screenInfo.backingScaleFactor
+                        )
+
+                        do {
+                            let image = try await SCScreenshotManager.captureImage(
+                                contentFilter: filter,
+                                configuration: config
+                            )
+                            return (screenInfo: screenInfo, cgImage: image)
+                        } catch {
+                            print("Failed to capture display \(scDisplay.displayID): \(error)")
+                            return nil
+                        }
+                    }
                 }
-                
-                // Small delay between captures to avoid overwhelming the system
-                try? await Task.sleep(nanoseconds: 100_000_000) // 0.1 seconds
+
+                var captured: [(screenInfo: ScreenInfo, cgImage: CGImage)] = []
+                for await result in group {
+                    if let result {
+                        captured.append(result)
+                    }
+                }
+
+                // Task groups finish in completion order; restore NSScreen order
+                // so panel setup and diagnostics remain deterministic.
+                return captured.sorted { $0.screenInfo.index < $1.screenInfo.index }
             }
             
         } catch {
             print("Failed to capture screens: \(error)")
         }
         
-        print("Capture complete: \(results.count) screens captured successfully")
+        let elapsedMilliseconds = Int((CACurrentMediaTime() - captureStartedAt) * 1_000)
+        print("Capture complete: \(results.count) screens in \(elapsedMilliseconds) ms")
         return results
+    }
+
+    private nonisolated static func makeScreenshotConfiguration(
+        for display: SCDisplay,
+        backingScale: CGFloat
+    ) -> SCStreamConfiguration {
+        let config = SCStreamConfiguration()
+        config.width = Int(CGFloat(display.width) * backingScale)
+        config.height = Int(CGFloat(display.height) * backingScale)
+        config.pixelFormat = kCVPixelFormatType_32BGRA
+        config.showsCursor = false
+        return config
     }
     
     
@@ -415,15 +428,6 @@ final class GlobalHotKeyManager {
         // Get the app's scaling preference (only affects final output, not coordinate calculation)
         let downsampleToNonRetina = UserDefaults.standard.bool(forKey: "downsampleToNonRetinaForSave")
         
-        #if DEBUG
-        print("=== Extract Region Debug ===")
-        print("Selected global rect: \(selectedGlobalRect)")
-        print("Screen frame: \(screenFrame)")
-        print("Screen scale: \(screenScale)")
-        print("Intersection rect: \(intersectionRect)")
-        print("CGImage size: \(cgImage.width)x\(cgImage.height)")
-        print("Downsample setting: \(downsampleToNonRetina)")
-#endif // DEBUG
         // Convert from global coordinates to screen-local coordinates (in points)
         let localRect = CGRect(
             x: intersectionRect.origin.x - screenFrame.origin.x,
@@ -432,12 +436,8 @@ final class GlobalHotKeyManager {
             height: intersectionRect.height
         )
         
-        print("Local rect (points): \(localRect)")
-        
         // Since we always capture at full resolution, always use the screen scale for pixel conversion
         let pixelScale = screenScale
-        
-        print("Pixel scale factor: \(pixelScale)")
         
         // Convert to pixel coordinates and flip Y axis (screen coordinates are bottom-left origin, CGImage is top-left)
         let pixelRect = CGRect(
@@ -447,8 +447,6 @@ final class GlobalHotKeyManager {
             height: localRect.height * pixelScale
         ).integral
         
-        print("Pixel rect (before clamping): \(pixelRect)")
-        
         // Clamp to image bounds
         let clampedRect = CGRect(
             x: max(0, pixelRect.origin.x),
@@ -457,15 +455,11 @@ final class GlobalHotKeyManager {
             height: min(pixelRect.height, CGFloat(cgImage.height) - max(0, pixelRect.origin.y))
         )
         
-        print("Clamped pixel rect: \(clampedRect)")
-        
         guard clampedRect.width > 0 && clampedRect.height > 0,
               let croppedCGImage = cgImage.cropping(to: clampedRect) else {
             print("Failed to crop image - invalid rect or crop operation failed")
             return nil
         }
-        
-        print("Cropped image size: \(croppedCGImage.width)x\(croppedCGImage.height)")
         
         // Apply downsample setting here - affects both pixel data AND final NSImage size
         let finalPointSize: CGSize
@@ -478,7 +472,6 @@ final class GlobalHotKeyManager {
                 height: clampedRect.height / screenScale
             )
             finalCGImage = croppedCGImage
-            print("Keeping full resolution: \(croppedCGImage.width)x\(croppedCGImage.height) pixels at \(finalPointSize) points = crisp")
         } else {
             // Actually downsample: reduce both pixel data AND point size
             let targetPointSize = CGSize(
@@ -490,7 +483,6 @@ final class GlobalHotKeyManager {
             if let downsampledImage = createDownsampledImage(from: croppedCGImage, to: targetPointSize) {
                 finalCGImage = downsampledImage
                 finalPointSize = targetPointSize
-                print("Downsampled to 1x: \(downsampledImage.width)x\(downsampledImage.height) pixels at \(finalPointSize) points = smaller file")
             } else {
                 // Fallback if downsampling fails
                 finalCGImage = croppedCGImage
@@ -534,100 +526,4 @@ final class GlobalHotKeyManager {
     
     
     
-}
-
-private final class SingleDisplayCapturer: NSObject, SCStreamOutput {
-    private var captureResult: CGImage?
-    private var captureError: Error?
-    
-    func captureImage(using filter: SCContentFilter, display: SCDisplay) async -> CGImage? {
-        // Reset state
-        captureResult = nil
-        captureError = nil
-        
-        do {
-            // Find the matching NSScreen to get the backing scale factor
-            let backingScale = getBackingScaleForDisplay(display) ?? 1.0
-            let config = createFullResolutionConfig(for: display, backingScale: backingScale)
-            let stream = SCStream(filter: filter, configuration: config, delegate: nil)
-            
-            print("Stream config for display \(display.displayID):")
-            print("  Display reported size: \(display.width)x\(display.height)")
-            print("  Backing scale factor: \(backingScale)")
-            print("  Configured capture size: \(config.width)x\(config.height)")
-            
-            try stream.addStreamOutput(self, type: .screen, sampleHandlerQueue: .main)
-            try await stream.startCapture()
-            
-            // Wait for result with timeout
-            let startTime = CACurrentMediaTime()
-            let timeout: TimeInterval = 5.0
-            
-            while captureResult == nil && captureError == nil {
-                if CACurrentMediaTime() - startTime > timeout {
-                    print("Capture timeout for display \(display.displayID)")
-                    break
-                }
-                try await Task.sleep(nanoseconds: 50_000_000)
-            }
-            
-            // Cleanup
-            try stream.removeStreamOutput(self, type: .screen)
-            try await stream.stopCapture()
-            
-            if let error = captureError {
-                print("Capture error for display \(display.displayID): \(error)")
-                return nil
-            }
-            
-            return captureResult
-            
-        } catch {
-            print("Stream setup error for display \(display.displayID): \(error)")
-            return nil
-        }
-    }
-    
-    private func createFullResolutionConfig(for display: SCDisplay, backingScale: CGFloat) -> SCStreamConfiguration {
-        let config = SCStreamConfiguration()
-        
-        // Force native pixel resolution by scaling up the display dimensions
-        config.width = Int(CGFloat(display.width) * backingScale)
-        config.height = Int(CGFloat(display.height) * backingScale)
-        config.pixelFormat = kCVPixelFormatType_32BGRA
-        config.showsCursor = false
-        config.minimumFrameInterval = CMTime(value: 1, timescale: 60)
-        
-        print("Full resolution config: \(config.width)x\(config.height) (scale factor: \(backingScale))")
-        
-        return config
-    }
-    
-    private func getBackingScaleForDisplay(_ scDisplay: SCDisplay) -> CGFloat? {
-        for screen in NSScreen.screens {
-            if let cgIDNum = screen.deviceDescription[NSDeviceDescriptionKey("NSScreenNumber")] as? NSNumber {
-                let cgID = CGDirectDisplayID(truncating: cgIDNum)
-                if cgID == scDisplay.displayID {
-                    return screen.backingScaleFactor
-                }
-            }
-        }
-        return nil
-    }
-    
-    // MARK: - SCStreamOutput
-    func stream(_ stream: SCStream, didOutputSampleBuffer sampleBuffer: CMSampleBuffer, of outputType: SCStreamOutputType) {
-        guard outputType == .screen,
-              captureResult == nil, // Only capture the first frame
-              let pixelBuffer = CMSampleBufferGetImageBuffer(sampleBuffer) else { return }
-        
-        var cgImage: CGImage?
-        let status = VTCreateCGImageFromCVPixelBuffer(pixelBuffer, options: nil, imageOut: &cgImage)
-        
-        if status == noErr, let cgImage = cgImage {
-            captureResult = cgImage
-        } else {
-            captureError = NSError(domain: "CaptureError", code: Int(status), userInfo: [NSLocalizedDescriptionKey: "Failed to create CGImage from pixel buffer"])
-        }
-    }
 }

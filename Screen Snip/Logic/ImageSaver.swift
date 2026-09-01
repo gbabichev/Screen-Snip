@@ -281,26 +281,14 @@ struct ImageSaver {
         }
         
         // For JPEG and HEIC, explicitly rasterize at the desired pixel scale, preserving backing pixel dimensions when not downsampling.
-        // DEBUG: collect representation info
-        var dbg_cgW: Int = -1
-        var dbg_cgH: Int = -1
-        var dbg_repW: Int = -1
-        var dbg_repH: Int = -1
-        var dbg_bestRepClass: String = "none"
-        
         var backingWidth = Int(round(image.size.width))
         var backingHeight = Int(round(image.size.height))
         if let cg = image.cgImage(forProposedRect: nil, context: nil, hints: nil) {
             backingWidth = cg.width
             backingHeight = cg.height
-            dbg_cgW = cg.width
-            dbg_cgH = cg.height
         } else if let rep = image.representations.compactMap({ $0 as? NSBitmapImageRep }).max(by: { $0.pixelsWide < $1.pixelsWide }) {
             backingWidth = rep.pixelsWide
             backingHeight = rep.pixelsHigh
-            dbg_repW = rep.pixelsWide
-            dbg_repH = rep.pixelsHigh
-            dbg_bestRepClass = String(describing: type(of: rep))
         }
 
         let pointsWidth = max(1.0, image.size.width)
@@ -309,10 +297,6 @@ struct ImageSaver {
         let scaleFromRepH = CGFloat(backingHeight) / CGFloat(pointsHeight)
         let scaleFromRep = max(scaleFromRepW, scaleFromRepH)
 
-        #if DEBUG
-        print("[ImageSaver] NSImage.size (pt)=\(Int(pointsWidth))x\(Int(pointsHeight)) cg=\(dbg_cgW)x\(dbg_cgH) bestRep=\(dbg_repW)x\(dbg_repH) class=\(dbg_bestRepClass) scaleFromRep=\(String(format: "%.2f", Double(scaleFromRep))) downsample=\(downsampleToNonRetinaForSave)")
-        #endif
-        
         // Effective output scale: 1x if explicitly downsampling, otherwise preserve backing scale (e.g., 2x)
         let effectiveScale = CGFloat(downsampleToNonRetinaForSave ? 1.0 : max(1.0, scaleFromRep))
 
@@ -391,10 +375,6 @@ struct ImageSaver {
 
         // Match DPI metadata to the pixel scale so apps that honor DPI retain the visual size
         let dpi = 72.0 * Double(effectiveScale)
-        
-        #if DEBUG
-        print("[ImageSaver] targetPixels=\(targetPixelsWide)x\(targetPixelsHigh) effectiveScale=\(String(format: "%.2f", Double(effectiveScale))) dpi=\(dpi) format=\(format)")
-        #endif
         
         // Determine UTType
         let utType: CFString = {

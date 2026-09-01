@@ -13,11 +13,66 @@ import UniformTypeIdentifiers
 import ImageIO
 import Combine
 
+@MainActor
+private enum CursorTrace {
+#if DEBUG
+    private static var sessionNumber = 0
+    private static var startedAt: CFTimeInterval?
+
+    static func begin() {
+        sessionNumber += 1
+        startedAt = CACurrentMediaTime()
+        log("selection presentation began")
+    }
+
+    static func log(_ event: String, panels: [NSWindow] = []) {
+        guard let startedAt else { return }
+        let elapsed = (CACurrentMediaTime() - startedAt) * 1_000
+        let keyWindow = NSApp.keyWindow.map { "\($0.windowNumber):\(type(of: $0))" } ?? "none"
+        let frontmost = NSWorkspace.shared.frontmostApplication?.bundleIdentifier ?? "none"
+        let mouse = NSEvent.mouseLocation
+        let panelState = panels.map {
+            "\($0.windowNumber){key=\($0.isKeyWindow),visible=\($0.isVisible),canKey=\($0.canBecomeKey)}"
+        }.joined(separator: ",")
+        let cursorMatches = NSCursor.current == CursorManager.shared.crosshairCursor
+
+        print(
+            String(
+                format: "[CursorTrace #%d +%.1fms] %@ | active=%@ hidden=%@ key=%@ front=%@ mouse=(%.0f,%.0f) customCurrent=%@ panels=[%@]",
+                sessionNumber,
+                elapsed,
+                event,
+                String(NSApp.isActive),
+                String(NSApp.isHidden),
+                keyWindow,
+                frontmost,
+                mouse.x,
+                mouse.y,
+                String(cursorMatches),
+                panelState
+            )
+        )
+    }
+
+    static func end() {
+        log("selection dismissed")
+        startedAt = nil
+    }
+#else
+    static func begin() {}
+    static func log(_ event: String, panels: [NSWindow] = []) {}
+    static func end() {}
+#endif
+}
+
 // MARK: - Selection Cursor
 @MainActor
 class CursorManager {
     static let shared = CursorManager()
     private var customCursor: NSCursor?
+    private var enforcementTimer: Timer?
+    private var enforcementGeneration = 0
+    private var loggedTimerGeneration = 0
     
     private init() {}
     
@@ -65,25 +120,32 @@ class CursorManager {
         return self.customCursor ?? .crosshair
     }
 
-    func forceRestoreCursor() {
-        NSCursor.arrow.set()
-    }
-}
+    func startEnforcingCrosshairCursor() {
+        enforcementTimer?.invalidate()
+        enforcementGeneration += 1
+        let generation = enforcementGeneration
+        crosshairCursor.set()
 
-/// Lets AppKit own the cursor for the complete selection surface. Cursor rects
-/// remain active in event-tracking run-loop modes, unlike a repeating timer.
-@MainActor
-private final class SelectionCursorHostingView: NSHostingView<AnyView> {
-    override func resetCursorRects() {
-        super.resetCursorRects()
-        addCursorRect(bounds, cursor: CursorManager.shared.crosshairCursor)
-    }
-
-    override func viewDidMoveToWindow() {
-        super.viewDidMoveToWindow()
-        if let window {
-            window.invalidateCursorRects(for: self)
+        let timer = Timer(timeInterval: 0.1, repeats: true) { _ in
+            Task { @MainActor in
+                // NSCursor.current can describe this app's logical cursor even
+                // while another app's arrow is still displayed. Reapply without
+                // relying on that value during the short capture session.
+                CursorManager.shared.crosshairCursor.set()
+                if CursorManager.shared.loggedTimerGeneration != generation {
+                    CursorManager.shared.loggedTimerGeneration = generation
+                    CursorTrace.log("first cursor enforcement timer tick")
+                }
+            }
         }
+        enforcementTimer = timer
+        RunLoop.main.add(timer, forMode: .common)
+    }
+
+    func forceRestoreCursor() {
+        enforcementTimer?.invalidate()
+        enforcementTimer = nil
+        NSCursor.arrow.set()
     }
 }
 
@@ -188,19 +250,13 @@ struct SelectionOverlay: View {
             .onChanged { value in
                 if startPoint == nil {
                     startPoint = value.startLocation
-                    print("Selection started at local: \(value.startLocation)")
+                    CursorTrace.log("drag gesture began")
                 }
                 currentPoint = value.location
             }
             .onEnded { value in
                 let gStart = globalPoint(from: value.startLocation, in: geo)
                 let gEnd = globalPoint(from: value.location, in: geo)
-                
-                print("Selection ended:")
-                print("  Start local: \(value.startLocation) -> global: \(gStart)")
-                print("  End local: \(value.location) -> global: \(gEnd)")
-                print("  Window origin: \(windowOrigin)")
-                print("  Geo size: \(geo.size)")
                 
                 let rect = buildRect(from: gStart, to: gEnd)
                 startPoint = nil
@@ -210,10 +266,10 @@ struct SelectionOverlay: View {
                 CursorManager.shared.forceRestoreCursor()
                 
                 if let rect, rect.width > 2, rect.height > 2 {
-                    print("  Final selection rect: \(rect)")
+                    CursorTrace.log("drag gesture completed")
                     onComplete(rect)
                 } else {
-                    print("  Selection too small, canceling")
+                    CursorTrace.log("selection canceled: region too small")
                     onCancel()
                 }
             }
@@ -231,16 +287,7 @@ struct SelectionOverlay: View {
         let globalX = windowOrigin.x + local.x
         let globalY = windowOrigin.y + (geo.size.height - local.y)
         
-        let result = CGPoint(x: globalX, y: globalY)
-        
-        // Debug logging
-        print("Coordinate conversion:")
-        print("  Local: \(local)")
-        print("  Window origin: \(windowOrigin)")
-        print("  Geo size: \(geo.size)")
-        print("  Global result: \(result)")
-        
-        return result
+        return CGPoint(x: globalX, y: globalY)
     }
     
     private func selectionRect() -> CGRect? {
@@ -269,6 +316,7 @@ final class SelectionWindowManager: NSObject {
     static let shared = SelectionWindowManager()
     private var panels: [NSPanel] = []
     private var keyMonitor: Any?
+    private var globalKeyMonitor: Any?
 
     private override init() {
         super.init()
@@ -284,16 +332,13 @@ final class SelectionWindowManager: NSObject {
         onComplete: @escaping (CGRect) -> Void
     ) -> Bool {
         guard panels.isEmpty, !capturedScreens.isEmpty else { return false }
-        
-        print("=== Setting up selection windows ===")
-        
+        CursorTrace.begin()
+
         for (screenInfo, cgImage) in capturedScreens {
             let frame = screenInfo.frame
-            print("Creating selection window for screen \(screenInfo.index):")
-            print("  Frame: \(frame)")
-            print("  Scale: \(screenInfo.backingScaleFactor)")
-            print("  Image size: \(cgImage.width)x\(cgImage.height)")
             
+            // Match the proven 1.4.5 behavior: the frozen selection surface is
+            // intentionally visible and interactive without activating the app.
             let panel = NSPanel(contentRect: frame,
                                 styleMask: [.borderless, .nonactivatingPanel],
                                 backing: .buffered,
@@ -316,7 +361,6 @@ final class SelectionWindowManager: NSObject {
                 windowOrigin: frame.origin,
                 capturedImage: cgImage,
                 onComplete: { rect in
-                    print("Selection completed with rect: \(rect)")
                     // Remove the selection UI before image extraction, encoding,
                     // disk I/O, and editor setup begin. Running completion on the
                     // next main-loop turn also gives WindowServer a chance to
@@ -327,34 +371,31 @@ final class SelectionWindowManager: NSObject {
                     }
                 },
                 onCancel: {
-                    print("Selection canceled")
+                    CursorTrace.log("selection cancellation requested", panels: self.panels)
                     self.handleCancellation()
                 }
             )
                 .ignoresSafeArea()
             
-            let hostingView = SelectionCursorHostingView(rootView: AnyView(root))
+            let hostingView = NSHostingView(rootView: root)
             panel.contentView = hostingView
             panel.makeKeyAndOrderFront(nil)
-            panel.invalidateCursorRects(for: hostingView)
             panels.append(panel)
-            
-            print("  Window created and displayed")
         }
-        
-        if NSApp.isActive {
-            activateSelectionCursor()
-        } else {
-            // A global hotkey usually starts while another app is active. macOS
-            // resets the cursor while activating Screen Snip, so install it only
-            // after that transition has actually completed.
-            NotificationCenter.default.addObserver(
-                self,
-                selector: #selector(applicationDidBecomeActive),
-                name: NSApplication.didBecomeActiveNotification,
-                object: NSApp
-            )
-            NSApp.activate(ignoringOtherApps: true)
+        CursorTrace.log("selection panels displayed", panels: panels)
+
+        // Preserve the activation request and delayed cursor installation order
+        // used by 1.4.5. The panels themselves do not depend on activation.
+        NSApp.activate(ignoringOtherApps: true)
+
+        // Keep the original proven fallback as well: app activation and panel
+        // ordering may finish without a didBecomeActive notification (notably
+        // when the editor window is hidden). Refresh after those updates settle.
+        DispatchQueue.main.asyncAfter(deadline: .now() + 0.1) { [weak self] in
+            guard let self, self.isPresentingSelection else { return }
+            CursorTrace.log("100ms activation fallback fired", panels: self.panels)
+            CursorManager.shared.startEnforcingCrosshairCursor()
+            CursorTrace.log("cursor enforcement started: 100ms fallback", panels: self.panels)
         }
         
         keyMonitor = NSEvent.addLocalMonitorForEvents(matching: .keyDown) { [weak self] event in
@@ -365,35 +406,23 @@ final class SelectionWindowManager: NSObject {
             }
             return event
         }
-        
-        print("Selection windows ready")
-        return true
-    }
 
-    @objc private func applicationDidBecomeActive() {
-        NotificationCenter.default.removeObserver(
-            self,
-            name: NSApplication.didBecomeActiveNotification,
-            object: NSApp
-        )
-        activateSelectionCursor()
-    }
-
-    private func activateSelectionCursor() {
-        for panel in panels {
-            if let contentView = panel.contentView {
-                panel.invalidateCursorRects(for: contentView)
+        // If activation is still settling, macOS may briefly send keys to the
+        // previously active app. Accessibility permission is already required
+        // for the hotkey, so use a global fallback for Escape during selection.
+        globalKeyMonitor = NSEvent.addGlobalMonitorForEvents(matching: .keyDown) { [weak self] event in
+            guard event.keyCode == 53 else { return }
+            Task { @MainActor in
+                self?.handleCancellation()
             }
         }
 
-        // Cursor rects handle subsequent movement; set immediately for a pointer
-        // that was already stationary over a panel when it appeared.
-        if panels.contains(where: { $0.frame.contains(NSEvent.mouseLocation) }) {
-            CursorManager.shared.crosshairCursor.set()
-        }
+        CursorTrace.log("selection input monitors installed", panels: panels)
+        return true
     }
-    
+
     private func handleCancellation() {
+        guard !panels.isEmpty else { return }
         // FIXED: Ensure cursor is restored on cancellation
         CursorManager.shared.forceRestoreCursor()
         onCancel?()
@@ -401,14 +430,9 @@ final class SelectionWindowManager: NSObject {
     }
     
     func dismiss() {
+        CursorTrace.end()
         // FIXED: Force restore cursor when dismissing selection windows
         CursorManager.shared.forceRestoreCursor()
-        NotificationCenter.default.removeObserver(
-            self,
-            name: NSApplication.didBecomeActiveNotification,
-            object: NSApp
-        )
-        
         for p in panels {
             p.orderOut(nil)
         }
@@ -416,6 +440,10 @@ final class SelectionWindowManager: NSObject {
         if let keyMonitor {
             NSEvent.removeMonitor(keyMonitor)
             self.keyMonitor = nil
+        }
+        if let globalKeyMonitor {
+            NSEvent.removeMonitor(globalKeyMonitor)
+            self.globalKeyMonitor = nil
         }
         onCancel = nil
     }
