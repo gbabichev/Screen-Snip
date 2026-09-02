@@ -31,6 +31,8 @@ struct ThumbnailView: View {
     let width: CGFloat
     let height: CGFloat
     let refreshTrigger: UUID
+    var showsDeleteButton = true
+    var showsSelectionBadge = false
 
     @State private var image: NSImage?
     @State private var loadingID = UUID()
@@ -61,7 +63,7 @@ struct ThumbnailView: View {
             .clipShape(RoundedRectangle(cornerRadius: 6))
 
             // Hover delete button overlay, aligned to the thumbnail's top-right
-            if isHovering {
+            if isHovering && showsDeleteButton {
                 Button(action: onDelete) {
                     Image(systemName: "xmark.circle.fill")
                         .font(.system(size: 16, weight: .medium))
@@ -82,6 +84,14 @@ struct ThumbnailView: View {
             RoundedRectangle(cornerRadius: 6)
                 .strokeBorder(selected ? Color.accentColor : Color.clear, lineWidth: 2)
         )
+        .overlay(alignment: .topLeading) {
+            if selected && showsSelectionBadge {
+                Image(systemName: "checkmark.circle.fill")
+                    .font(.system(size: 19, weight: .semibold))
+                    .foregroundStyle(.white, Color.accentColor)
+                    .padding(10)
+            }
+        }
         .shadow(radius: isHovering ? 2 : 0) // subtle depth without affecting layout
         .padding(6) // << uniform outer spacing between tiles
         .onHover { hovering in
@@ -92,8 +102,10 @@ struct ThumbnailView: View {
         .contextMenu {
             Button("Reveal in Finder") { NSWorkspace.shared.activateFileViewerSelecting([url]) }
             Divider()
-            Button(role: .destructive) { onDelete() } label: {
-                Label("Delete", systemImage: "trash")
+            if showsDeleteButton {
+                Button(role: .destructive) { onDelete() } label: {
+                    Label("Delete", systemImage: "trash")
+                }
             }
         }
         .onAppear { loadThumb() }

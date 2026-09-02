@@ -158,6 +158,12 @@ final class GalleryWindow {
 
 /// SwiftUI gallery view: scrollable grid of thumbnails that calls `onSelect(url)` when tapped.
 struct GalleryView: View {
+    private struct TrashedItem: Identifiable {
+        let id = UUID()
+        let originalURL: URL
+        let trashedURL: URL
+    }
+
     let onSelect: (URL) -> Void
     let onReload: () async -> [URL]
     let onVisibleDateChange: (String?) -> Void
@@ -166,6 +172,10 @@ struct GalleryView: View {
     @State private var refreshTrigger = UUID()
     @State private var currentVisibleDate: String? = nil
     @State private var isReloading = false
+    @State private var isSelecting = false
+    @State private var selectedURLs: Set<URL> = []
+    @State private var pendingDeletion: [TrashedItem] = []
+    @State private var deletionNoticeID = UUID()
     
     @AppStorage("saveDirectoryPath") private var saveDirectoryPath: String = ""
     
@@ -265,15 +275,100 @@ struct GalleryView: View {
         NSWorkspace.shared.open(dir)
     }
     
-    private func deleteFile(at url: URL) {
-        do {
-            try FileManager.default.trashItem(at: url, resultingItemURL: nil)
-            urlsLocal.removeAll { $0 == url }
-            if selectedUrl == url {
-                selectedUrl = nil
+    private func deleteFiles(_ urls: [URL]) {
+        guard !urls.isEmpty else { return }
+
+        let fileManager = FileManager.default
+        var trashedItems: [TrashedItem] = []
+        var deletedURLs = Set<URL>()
+
+        for url in urls {
+            do {
+                var resultingURL: NSURL?
+                try fileManager.trashItem(at: url, resultingItemURL: &resultingURL)
+                deletedURLs.insert(url)
+                if let resultingURL {
+                    trashedItems.append(
+                        TrashedItem(originalURL: url, trashedURL: resultingURL as URL)
+                    )
+                }
+            } catch {
+                print("Failed to delete file: \(error)")
             }
-        } catch {
-            print("Failed to delete file: \(error)")
+        }
+
+        guard !deletedURLs.isEmpty else { return }
+
+        withAnimation {
+            urlsLocal.removeAll { deletedURLs.contains($0) }
+            selectedURLs.subtract(deletedURLs)
+            if let selectedUrl, deletedURLs.contains(selectedUrl) {
+                self.selectedUrl = nil
+            }
+            pendingDeletion = trashedItems
+            isSelecting = false
+        }
+
+        let noticeID = UUID()
+        deletionNoticeID = noticeID
+        DispatchQueue.main.asyncAfter(deadline: .now() + 8) {
+            guard deletionNoticeID == noticeID else { return }
+            withAnimation { pendingDeletion.removeAll() }
+        }
+    }
+
+    private func undoLastDeletion() {
+        let itemsToRestore = pendingDeletion
+        guard !itemsToRestore.isEmpty else { return }
+
+        deletionNoticeID = UUID()
+        let fileManager = FileManager.default
+        var restoredURLs: [URL] = []
+        var failedItems: [TrashedItem] = []
+
+        for item in itemsToRestore {
+            let destination = availableRestoreURL(for: item.originalURL, fileManager: fileManager)
+            do {
+                try fileManager.moveItem(at: item.trashedURL, to: destination)
+                restoredURLs.append(destination)
+            } catch {
+                print("Failed to restore deleted file: \(error)")
+                failedItems.append(item)
+            }
+        }
+
+        withAnimation {
+            urlsLocal.append(contentsOf: restoredURLs)
+            pendingDeletion = failedItems
+        }
+        refreshTrigger = UUID()
+    }
+
+    private func availableRestoreURL(for originalURL: URL, fileManager: FileManager) -> URL {
+        guard fileManager.fileExists(atPath: originalURL.path) else { return originalURL }
+
+        let directory = originalURL.deletingLastPathComponent()
+        let baseName = originalURL.deletingPathExtension().lastPathComponent
+        let pathExtension = originalURL.pathExtension
+        var suffix = 1
+
+        while true {
+            let restoredName = suffix == 1 ? "\(baseName) restored" : "\(baseName) restored \(suffix)"
+            let candidate = directory
+                .appendingPathComponent(restoredName)
+                .appendingPathExtension(pathExtension)
+            if !fileManager.fileExists(atPath: candidate.path) {
+                return candidate
+            }
+            suffix += 1
+        }
+    }
+
+    private func toggleSelection(of url: URL) {
+        if selectedURLs.contains(url) {
+            selectedURLs.remove(url)
+        } else {
+            selectedURLs.insert(url)
         }
     }
     
@@ -357,15 +452,21 @@ struct GalleryView: View {
                             ForEach(urls, id: \.self) { url in
                                 ThumbnailView(
                                     url: url,
-                                    selected: selectedUrl == url,
-                                    onDelete: { deleteFile(at: url) },
+                                    selected: isSelecting ? selectedURLs.contains(url) : selectedUrl == url,
+                                    onDelete: { deleteFiles([url]) },
                                     width: 180,
                                     height: 120,
-                                    refreshTrigger: refreshTrigger
+                                    refreshTrigger: refreshTrigger,
+                                    showsDeleteButton: !isSelecting,
+                                    showsSelectionBadge: isSelecting
                                 )
                                 .onTapGesture {
-                                    selectedUrl = url
-                                    onSelect(url)
+                                    if isSelecting {
+                                        toggleSelection(of: url)
+                                    } else {
+                                        selectedUrl = url
+                                        onSelect(url)
+                                    }
                                 }
                             }
                         }
@@ -399,10 +500,62 @@ struct GalleryView: View {
                     Label("Open in Finder", systemImage: "folder")
                 }
             }
+            ToolbarItemGroup(placement: .primaryAction) {
+                if isSelecting {
+                    Button(role: .destructive) {
+                        deleteFiles(Array(selectedURLs))
+                    } label: {
+                        Label(
+                            selectedURLs.isEmpty ? "Delete" : "Delete \(selectedURLs.count)",
+                            systemImage: "trash"
+                        )
+                    }
+                    .disabled(selectedURLs.isEmpty)
+
+                    Button("Done") {
+                        withAnimation {
+                            isSelecting = false
+                            selectedURLs.removeAll()
+                        }
+                    }
+                } else {
+                    Button {
+                        withAnimation {
+                            isSelecting = true
+                            selectedURLs.removeAll()
+                            selectedUrl = nil
+                        }
+                    } label: {
+                        Label("Select", systemImage: "checkmark.circle")
+                    }
+                }
+            }
         }
         .frame(minWidth: 480, maxWidth: .infinity,
                minHeight: 360, maxHeight: .infinity)
         .background(Color(NSColor.windowBackgroundColor))
+        .overlay(alignment: .bottom) {
+            if !pendingDeletion.isEmpty {
+                HStack(spacing: 12) {
+                    Text(
+                        pendingDeletion.count == 1
+                            ? "Moved 1 snip to Trash"
+                            : "Moved \(pendingDeletion.count) snips to Trash"
+                    )
+                    .font(.callout)
+
+                    Button("Undo", action: undoLastDeletion)
+                        .buttonStyle(.borderless)
+                        .fontWeight(.semibold)
+                }
+                .padding(.horizontal, 16)
+                .padding(.vertical, 10)
+                .background(.regularMaterial, in: Capsule())
+                .shadow(color: .black.opacity(0.25), radius: 8, y: 3)
+                .padding(.bottom, 18)
+                .transition(.move(edge: .bottom).combined(with: .opacity))
+            }
+        }
         .onDisappear { onVisibleDateChange(nil) }
         // Display the recent in-memory thumbnails immediately, then replace
         // them with one complete directory scan performed off the main thread.
