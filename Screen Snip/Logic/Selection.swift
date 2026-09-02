@@ -162,6 +162,8 @@ struct SelectionOverlay: View {
 
     private let magnifierDiameter: CGFloat = 180
     private let magnification: CGFloat = 4
+    private let magnifierOffset: CGFloat = 145
+    private let magnifierEdgePadding: CGFloat = 12
     
     var body: some View {
         GeometryReader { geo in
@@ -348,6 +350,9 @@ struct SelectionOverlay: View {
                     x: magnifierDiameter / 2 + magnification * (canvasSize.width / 2 - point.x),
                     y: magnifierDiameter / 2 + magnification * (canvasSize.height / 2 - point.y)
                 )
+
+            magnifierCrosshair(color: .black.opacity(0.9), thickness: 7)
+            magnifierCrosshair(color: .white, thickness: 3)
         }
         .frame(width: magnifierDiameter, height: magnifierDiameter)
         .clipShape(Circle())
@@ -359,9 +364,56 @@ struct SelectionOverlay: View {
                 }
         }
         .shadow(color: .black.opacity(0.65), radius: 8, x: 0, y: 3)
-        .position(point)
+        .position(magnifierCenter(for: point, canvasSize: canvasSize))
         .allowsHitTesting(false)
         .accessibilityHidden(true)
+    }
+
+    private func magnifierCenter(for point: CGPoint, canvasSize: CGSize) -> CGPoint {
+        let radius = magnifierDiameter / 2
+        let minimumX = radius + magnifierEdgePadding
+        let maximumX = canvasSize.width - radius - magnifierEdgePadding
+        let minimumY = radius + magnifierEdgePadding
+        let maximumY = canvasSize.height - radius - magnifierEdgePadding
+
+        // Prefer down and to the right like Greenshot. Flip either axis when
+        // needed so the loupe remains visible without covering the cursor.
+        let proposedRight = point.x + magnifierOffset
+        let proposedDown = point.y + magnifierOffset
+        let x = proposedRight <= maximumX ? proposedRight : point.x - magnifierOffset
+        let y = proposedDown <= maximumY ? proposedDown : point.y - magnifierOffset
+
+        return CGPoint(
+            x: min(max(x, minimumX), maximumX),
+            y: min(max(y, minimumY), maximumY)
+        )
+    }
+
+    private func magnifierCrosshair(color: Color, thickness: CGFloat) -> some View {
+        let center = magnifierDiameter / 2
+        let outerInset: CGFloat = 14
+        let centerGap: CGFloat = 14
+        let segmentLength = center - outerInset - centerGap
+        let nearCenter = outerInset + segmentLength / 2
+
+        return ZStack {
+            Rectangle()
+                .fill(color)
+                .frame(width: segmentLength, height: thickness)
+                .position(x: nearCenter, y: center)
+            Rectangle()
+                .fill(color)
+                .frame(width: segmentLength, height: thickness)
+                .position(x: magnifierDiameter - nearCenter, y: center)
+            Rectangle()
+                .fill(color)
+                .frame(width: thickness, height: segmentLength)
+                .position(x: center, y: nearCenter)
+            Rectangle()
+                .fill(color)
+                .frame(width: thickness, height: segmentLength)
+                .position(x: center, y: magnifierDiameter - nearCenter)
+        }
     }
     
     private func selectionRect() -> CGRect? {
