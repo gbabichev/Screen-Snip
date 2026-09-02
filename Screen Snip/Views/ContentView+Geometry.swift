@@ -496,33 +496,12 @@ extension ContentView {
     }
     
     func openSnipsInGallery() {
-        // First, refresh the main view's data
-        loadExistingSnips()
-        
-        // Create a function that builds on the refreshed main data
-        func loadAllGalleryURLs() -> [URL] {
-            guard let dir = SnipsDirectory() else { return [] }
-            let fm = FileManager.default
-            do {
-                let supportedExtensions = Set(["png", "jpg", "jpeg", "heic"])
-                let urls = try fm.contentsOfDirectory(at: dir, includingPropertiesForKeys: [.creationDateKey], options: [.skipsHiddenFiles])
-                    .filter { supportedExtensions.contains($0.pathExtension.lowercased()) }
-                let dated: [(URL, Date)] = urls.compactMap {
-                    return ($0, captureDate(for: $0))
-                }
-                // Return ALL files (not limited to 10 like SnipURLs)
-                return dated.sorted { $0.1 > $1.1 }.map { $0.0 }
-            } catch {
-                return []
-            }
-        }
-        
-        // Use the already-refreshed SnipURLs as the immediate data source, then load all files
-        let initialUrls = loadAllGalleryURLs()
-        guard !initialUrls.isEmpty else { return }
+        guard let galleryDirectory = SnipsDirectory() else { return }
         
         GalleryWindow.shared.present(
-            urls: initialUrls,
+            // The editor already keeps the ten newest items in memory. Present
+            // those immediately instead of blocking on another directory scan.
+            urls: SnipURLs,
             onSelect: { url in
                 // Your existing onSelect code...
                 let fm = FileManager.default
@@ -552,7 +531,9 @@ extension ContentView {
                 imageReloadTrigger = UUID()
                 GalleryWindow.shared.close()
             },
-            onReload: loadAllGalleryURLs  // Use the same function for reload
+            onReload: {
+                await GalleryFileLoader.loadURLs(from: galleryDirectory)
+            }
         )
     }
     

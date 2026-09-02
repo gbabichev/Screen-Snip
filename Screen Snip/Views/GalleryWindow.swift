@@ -10,11 +10,13 @@ import ImageIO
 final class GalleryWindow {
     static let shared = GalleryWindow()
     private var window: NSWindow?
+    private var windowController: NSWindowController?
+    private var closeHandler: WindowCloseHandler?
     
     private func makeGalleryRootContent(
         urls: [URL],
         onSelect: @escaping (URL) -> Void,
-        onReload: @escaping () -> [URL],
+        onReload: @escaping () async -> [URL],
         onVisibleDateChange: @escaping (String?) -> Void
     ) -> AnyView {
         let content = GalleryView(
@@ -35,16 +37,13 @@ final class GalleryWindow {
         #endif
     }
     
-    func present(urls: [URL], onSelect: @escaping (URL) -> Void, onReload: @escaping () -> [URL]) {
+    func present(urls: [URL], onSelect: @escaping (URL) -> Void, onReload: @escaping () async -> [URL]) {
         // If already visible, just bring to front and update content
         if let win = window {
             
-            // Prefer the provided URLs when available, otherwise pull a fresh list
-            let freshUrls = urls.isEmpty ? onReload() : urls
-            
             // Always create a new hosting controller with fresh data to ensure SwiftUI updates
             let content = makeGalleryRootContent(
-                urls: freshUrls,
+                urls: urls,
                 onSelect: onSelect,
                 onReload: onReload,
                 onVisibleDateChange: { [weak win] date in
@@ -68,15 +67,13 @@ final class GalleryWindow {
         
         let win = NSWindow(
             contentRect: NSRect(x: 0, y: 0, width: 820, height: 620),
-            styleMask: [.titled, .closable, .miniaturizable, .resizable, .fullSizeContentView],
+            styleMask: [.titled, .closable, .miniaturizable, .resizable],
             backing: .buffered,
             defer: false
         )
         
-        // Seed with the provided URLs if possible to avoid an extra reload
-        let initialUrls = urls.isEmpty ? onReload() : urls
         let content = makeGalleryRootContent(
-            urls: initialUrls,
+            urls: urls,
             onSelect: onSelect,
             onReload: onReload,
             onVisibleDateChange: { [weak win] date in
@@ -85,10 +82,12 @@ final class GalleryWindow {
         )
         let hosting = NSHostingController(rootView: content)
         
-        //win.titleVisibility = .hidden
         win.title = "Snip Gallery"
-        win.titlebarAppearsTransparent = true
-        win.isMovableByWindowBackground = true
+        win.titleVisibility = .visible
+        win.titlebarAppearsTransparent = false
+        win.titlebarSeparatorStyle = .automatic
+        win.toolbarStyle = .unified
+        win.isMovableByWindowBackground = false
         win.tabbingMode = .disallowed
         win.isReleasedWhenClosed = false
         win.contentMinSize = NSSize(width: 900, height: 600)
@@ -100,11 +99,15 @@ final class GalleryWindow {
         controller.windowFrameAutosaveName = autosaveName
         
         self.window = win
+        self.windowController = controller
         
         // Set up close handler
         let closeHandler = WindowCloseHandler() { [weak self] in
             self?.window = nil
+            self?.windowController = nil
+            self?.closeHandler = nil
         }
+        self.closeHandler = closeHandler
         win.delegate = closeHandler
         
         // Show the window - this will trigger automatic frame restoration
@@ -148,18 +151,21 @@ final class GalleryWindow {
     func close() {
         window?.close()
         window = nil
+        windowController = nil
+        closeHandler = nil
     }
 }
 
 /// SwiftUI gallery view: scrollable grid of thumbnails that calls `onSelect(url)` when tapped.
 struct GalleryView: View {
     let onSelect: (URL) -> Void
-    let onReload: () -> [URL]
+    let onReload: () async -> [URL]
     let onVisibleDateChange: (String?) -> Void
     @State private var urlsLocal: [URL]
     @State private var selectedUrl: URL?
     @State private var refreshTrigger = UUID()
     @State private var currentVisibleDate: String? = nil
+    @State private var isReloading = false
     
     @AppStorage("saveDirectoryPath") private var saveDirectoryPath: String = ""
     
@@ -272,7 +278,7 @@ struct GalleryView: View {
     }
     
     
-    init(urls: [URL], onSelect: @escaping (URL) -> Void, onReload: @escaping () -> [URL], onVisibleDateChange: @escaping (String?) -> Void) {
+    init(urls: [URL], onSelect: @escaping (URL) -> Void, onReload: @escaping () async -> [URL], onVisibleDateChange: @escaping (String?) -> Void) {
         self.onSelect = onSelect
         self.onReload = onReload
         self.onVisibleDateChange = onVisibleDateChange
@@ -306,6 +312,19 @@ struct GalleryView: View {
     // Grid for each section
     private var columns: [GridItem] {
         [GridItem(.adaptive(minimum: 192), spacing: 8)]
+    }
+
+    private func reload() async {
+        guard !isReloading else { return }
+        isReloading = true
+        let refreshedURLs = await onReload()
+        guard !Task.isCancelled else {
+            isReloading = false
+            return
+        }
+        urlsLocal = refreshedURLs
+        refreshTrigger = UUID()
+        isReloading = false
     }
     
     var body: some View {
@@ -370,11 +389,11 @@ struct GalleryView: View {
         .toolbar {
             ToolbarItemGroup(placement: .navigation) {
                 Button {
-                    urlsLocal = onReload()
-                    refreshTrigger = UUID()
+                    Task { await reload() }
                 } label: {
                     Label("Reload", systemImage: "arrow.clockwise")
                 }
+                .disabled(isReloading)
                 Button {
                     openSnipsInFinder()
                 } label: {
@@ -386,10 +405,64 @@ struct GalleryView: View {
                minHeight: 360, maxHeight: .infinity)
         .background(Color(NSColor.windowBackgroundColor))
         .onDisappear { onVisibleDateChange(nil) }
-        // Add this to ensure the view updates when presented again
-        .onAppear {
-            urlsLocal = onReload()
-            refreshTrigger = UUID()
-        }
+        // Display the recent in-memory thumbnails immediately, then replace
+        // them with one complete directory scan performed off the main thread.
+        .task { await reload() }
+    }
+}
+
+enum GalleryFileLoader {
+    nonisolated static func loadURLs(from directory: URL) async -> [URL] {
+        await Task.detached(priority: .userInitiated) {
+            let supportedExtensions = Set(["png", "jpg", "jpeg", "heic"])
+            let fileManager = FileManager.default
+            let urls: [URL]
+
+            do {
+                urls = try fileManager.contentsOfDirectory(
+                    at: directory,
+                    includingPropertiesForKeys: [.creationDateKey],
+                    options: [.skipsHiddenFiles]
+                ).filter { supportedExtensions.contains($0.pathExtension.lowercased()) }
+            } catch {
+                return []
+            }
+
+            let dateTimeFormatter = DateFormatter()
+            dateTimeFormatter.calendar = Calendar(identifier: .gregorian)
+            dateTimeFormatter.locale = Locale(identifier: "en_US_POSIX")
+            dateTimeFormatter.timeZone = .current
+            dateTimeFormatter.dateFormat = "yyyyMMdd_HHmmss"
+
+            let dateFormatter = DateFormatter()
+            dateFormatter.calendar = Calendar(identifier: .gregorian)
+            dateFormatter.locale = Locale(identifier: "en_US_POSIX")
+            dateFormatter.timeZone = .current
+            dateFormatter.dateFormat = "yyyyMMdd"
+
+            func captureDate(for url: URL) -> Date {
+                let filename = url.deletingPathExtension().lastPathComponent
+                if filename.hasPrefix("Snip_") {
+                    let components = filename.split(separator: "_")
+                    if components.count >= 3,
+                       let date = dateTimeFormatter.date(from: "\(components[1])_\(components[2])") {
+                        return date
+                    }
+                    if components.count >= 2,
+                       let date = dateFormatter.date(from: String(components[1])) {
+                        return date
+                    }
+                }
+                return (try? url.resourceValues(forKeys: [.creationDateKey]).creationDate) ?? .distantPast
+            }
+
+            var seenPaths = Set<String>()
+            return urls
+                .map { ($0.standardizedFileURL, captureDate(for: $0)) }
+                .sorted { $0.1 > $1.1 }
+                .compactMap { url, _ in
+                    seenPaths.insert(url.path).inserted ? url : nil
+                }
+        }.value
     }
 }
