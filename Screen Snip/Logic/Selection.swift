@@ -152,11 +152,16 @@ class CursorManager {
 struct SelectionOverlay: View {
     let windowOrigin: CGPoint
     let capturedImage: CGImage?
+    let magnifierEnabled: Bool
     let onComplete: (CGRect) -> Void
     let onCancel: () -> Void
     
     @State private var startPoint: CGPoint? = nil
     @State private var currentPoint: CGPoint? = nil
+    @State private var hoverPoint: CGPoint? = nil
+
+    private let magnifierDiameter: CGFloat = 180
+    private let magnification: CGFloat = 4
     
     var body: some View {
         GeometryReader { geo in
@@ -233,9 +238,33 @@ struct SelectionOverlay: View {
                     .cornerRadius(12)
                     .position(x: geo.size.width / 2, y: geo.size.height / 2)
                 }
+
+                if magnifierEnabled,
+                   let capturedImage,
+                   let hoverPoint,
+                   CGRect(origin: .zero, size: geo.size).contains(hoverPoint) {
+                    captureMagnifier(
+                        image: capturedImage,
+                        at: hoverPoint,
+                        canvasSize: geo.size
+                    )
+                }
             }
             .contentShape(Rectangle())
             .gesture(dragGesture(in: geo))
+            .onContinuousHover { phase in
+                guard magnifierEnabled else { return }
+                switch phase {
+                case .active(let location):
+                    hoverPoint = location
+                case .ended:
+                    hoverPoint = nil
+                }
+            }
+            .onAppear {
+                guard magnifierEnabled else { return }
+                hoverPoint = localPoint(fromGlobal: NSEvent.mouseLocation, canvasSize: geo.size)
+            }
             .onTapGesture(count: 2) {
                 // FIXED: Ensure cursor is restored on cancel
                 CursorManager.shared.forceRestoreCursor()
@@ -253,6 +282,9 @@ struct SelectionOverlay: View {
                     CursorTrace.log("drag gesture began")
                 }
                 currentPoint = value.location
+                if magnifierEnabled {
+                    hoverPoint = value.location
+                }
             }
             .onEnded { value in
                 let gStart = globalPoint(from: value.startLocation, in: geo)
@@ -288,6 +320,48 @@ struct SelectionOverlay: View {
         let globalY = windowOrigin.y + (geo.size.height - local.y)
         
         return CGPoint(x: globalX, y: globalY)
+    }
+
+    private func localPoint(fromGlobal global: CGPoint, canvasSize: CGSize) -> CGPoint? {
+        let local = CGPoint(
+            x: global.x - windowOrigin.x,
+            y: canvasSize.height - (global.y - windowOrigin.y)
+        )
+        return CGRect(origin: .zero, size: canvasSize).contains(local) ? local : nil
+    }
+
+    private func captureMagnifier(
+        image: CGImage,
+        at point: CGPoint,
+        canvasSize: CGSize
+    ) -> some View {
+        ZStack {
+            Image(image, scale: 1.0, label: Text("Magnified capture area"))
+                .resizable()
+                .interpolation(.none)
+                .aspectRatio(contentMode: .fill)
+                .frame(
+                    width: canvasSize.width * magnification,
+                    height: canvasSize.height * magnification
+                )
+                .position(
+                    x: magnifierDiameter / 2 + magnification * (canvasSize.width / 2 - point.x),
+                    y: magnifierDiameter / 2 + magnification * (canvasSize.height / 2 - point.y)
+                )
+        }
+        .frame(width: magnifierDiameter, height: magnifierDiameter)
+        .clipShape(Circle())
+        .overlay {
+            Circle()
+                .stroke(Color.white.opacity(0.9), lineWidth: 7)
+                .overlay {
+                    Circle().stroke(Color.orange, lineWidth: 3)
+                }
+        }
+        .shadow(color: .black.opacity(0.65), radius: 8, x: 0, y: 3)
+        .position(point)
+        .allowsHitTesting(false)
+        .accessibilityHidden(true)
     }
     
     private func selectionRect() -> CGRect? {
@@ -360,6 +434,7 @@ final class SelectionWindowManager: NSObject {
             let root = SelectionOverlay(
                 windowOrigin: frame.origin,
                 capturedImage: cgImage,
+                magnifierEnabled: UserDefaults.standard.bool(forKey: "captureMagnifierEnabled"),
                 onComplete: { rect in
                     // Remove the selection UI before image extraction, encoding,
                     // disk I/O, and editor setup begin. Running completion on the

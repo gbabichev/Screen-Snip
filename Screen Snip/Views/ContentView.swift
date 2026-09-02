@@ -200,6 +200,7 @@ struct ContentView: View {
     @AppStorage("imageDisplayMode") var imageDisplayMode: String = "fit" // "actual" or "fit"
     @AppStorage("saveOnCopy") var saveOnCopy: Bool = false
     @AppStorage("confirmSaveBeforeLeavingChanges") var confirmSaveBeforeLeavingChanges: Bool = true
+    @AppStorage("captureMagnifierEnabled") var captureMagnifierEnabled: Bool = false
     @State var exportScaleOption: ExportScaleOption = .full
     private let exportScaleDefaultsKey = "exportScaleFactor"
     private let exportQualityDefaultsKey = "exportQuality"

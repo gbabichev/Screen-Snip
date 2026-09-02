@@ -83,6 +83,11 @@ extension ContentView {
                                     ))
                                     .toggleStyle(.switch)
                                 }
+
+                                SettingsRow("Magnify Capture Cursor", subtitle: "Show a zoomed-in view beneath the orange cursor while selecting an area.") {
+                                    Toggle("", isOn: $captureMagnifierEnabled)
+                                        .toggleStyle(.switch)
+                                }
                                 
                                 SettingsRow("Fit image to window", subtitle: "Enabled : Fill Full Window.\nDisabled: Show True Size.") {
                                     Toggle("", isOn: Binding(
