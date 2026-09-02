@@ -3,6 +3,27 @@ import QuickLookThumbnailing
 import UniformTypeIdentifiers
 import ImageIO
 
+@MainActor
+private final class ThumbnailImageCache {
+    static let shared = ThumbnailImageCache()
+
+    private let images = NSCache<NSString, NSImage>()
+
+    private init() {
+        // Keep scrolling smooth without allowing a long-running app to retain
+        // an unbounded number of decoded thumbnails.
+        images.countLimit = 300
+    }
+
+    func image(for key: String) -> NSImage? {
+        images.object(forKey: key as NSString)
+    }
+
+    func insert(_ image: NSImage, for key: String) {
+        images.setObject(image, forKey: key as NSString)
+    }
+}
+
 struct ThumbnailView: View {
     let url: URL
     let selected: Bool
@@ -37,7 +58,6 @@ struct ThumbnailView: View {
                 }
             }
             .clipped()
-            .background(.thinMaterial.opacity(0.0001))
             .clipShape(RoundedRectangle(cornerRadius: 6))
 
             // Hover delete button overlay, aligned to the thumbnail's top-right
@@ -85,12 +105,26 @@ struct ThumbnailView: View {
     private func loadThumb() {
         let myID = UUID()
         loadingID = myID
+        let scale = NSScreen.main?.backingScaleFactor ?? 2.0
+        let resourceValues = try? url.resourceValues(forKeys: [.contentModificationDateKey, .fileSizeKey])
+        let modificationTime = resourceValues?.contentModificationDate?.timeIntervalSinceReferenceDate ?? 0
+        let fileSize = resourceValues?.fileSize ?? 0
+        let cacheKey = "\(url.standardizedFileURL.path)|\(width)x\(height)|\(scale)|\(modificationTime)|\(fileSize)"
+
+        if let cachedImage = ThumbnailImageCache.shared.image(for: cacheKey) {
+            image = cachedImage
+            return
+        }
+
+        // Prevent a recycled lazy-grid cell from temporarily showing the image
+        // belonging to its previous URL.
+        image = nil
 
         Task.detached(priority: .utility) {
             let request = QLThumbnailGenerator.Request(
                 fileAt: url,
                 size: CGSize(width: width, height: height),
-                scale: await MainActor.run { NSScreen.main?.backingScaleFactor ?? 2.0 },
+                scale: scale,
                 representationTypes: .thumbnail
             )
             
@@ -99,6 +133,7 @@ struct ThumbnailView: View {
                 let nsImage = thumbnail.nsImage
                 
                 await MainActor.run {
+                    ThumbnailImageCache.shared.insert(nsImage, for: cacheKey)
                     guard loadingID == myID else { return }
                     self.image = nsImage
                 }

@@ -295,15 +295,12 @@ struct GalleryView: View {
     private func updateVisibleDate(with positions: [String: CGFloat]) {
         // Pick the section whose top is closest to the top (>= 0 preferred), else the highest one
         // The coordinate space will be the ScrollView named "galleryScroll"
-        let sorted = positions.sorted { a, b in
-            let ay = a.value
-            let by = b.value
-            // Prefer non-negative mins that are closest to zero
-            let aScore = ay >= 0 ? ay : abs(ay) + 10_000
-            let bScore = by >= 0 ? by : abs(by) + 10_000
-            return aScore < bScore
-        }
-        if let top = sorted.first?.key, top != currentVisibleDate {
+        let top = positions.min { first, second in
+            let firstScore = first.value >= 0 ? first.value : abs(first.value) + 10_000
+            let secondScore = second.value >= 0 ? second.value : abs(second.value) + 10_000
+            return firstScore < secondScore
+        }?.key
+        if let top, top != currentVisibleDate {
             currentVisibleDate = top
             onVisibleDateChange(top)
         }
@@ -328,9 +325,11 @@ struct GalleryView: View {
     }
     
     var body: some View {
+        let groups = groupedUrls
+
         ScrollView {
             LazyVStack(alignment: .leading, spacing: 20) {
-                ForEach(groupedUrls, id: \.0) { date, dateString, urls in
+                ForEach(groups, id: \.0) { date, dateString, urls in
                     VStack(alignment: .leading, spacing: 12) {
                         // Track this section's top position within the scroll coordinate space
                         GeometryReader { geo in
@@ -373,7 +372,7 @@ struct GalleryView: View {
                         .padding(.horizontal, 16)
                         
                         // Divider between dates (except for last)
-                        if date != groupedUrls.last?.0 {
+                        if date != groups.last?.0 {
                             Divider()
                                 .padding(.horizontal, 16)
                         }
