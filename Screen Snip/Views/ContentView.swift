@@ -1711,7 +1711,6 @@ struct ContentView: View {
         }
         .onDisappear {
             if let keyMonitor { NSEvent.removeMonitor(keyMonitor); self.keyMonitor = nil }
-            WindowManager.shared.setMainWindowDocumentEdited(false)
         }
         .onChange(of: hasUnsavedChanges) { _, _ in
             updateDocumentEditedIndicator()

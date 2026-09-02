@@ -93,12 +93,26 @@ final class WindowManager {
     var isMainWindowDocumentEdited: Bool {
         mainWindowController?.window?.isDocumentEdited ?? false
     }
+
+    /// Drops the stored controller without allowing its teardown to re-enter a
+    /// read of `mainWindowController` while that property is being mutated.
+    /// SwiftUI can synchronously run disappearance callbacks as the controller
+    /// and hosting view are released.
+    private func clearMainWindowController(ifMatching window: NSWindow? = nil) {
+        guard let controller = mainWindowController else { return }
+        if let window, controller.window !== window { return }
+
+        // The local strong reference defers controller/window destruction until
+        // after the exclusive write to the stored property has completed.
+        mainWindowController = nil
+        withExtendedLifetime(controller) {}
+    }
     
     private func createMainWindow(shouldActivate: Bool = true) {
         // Clean up existing window
         if let controller = mainWindowController {
             controller.window?.close()
-            mainWindowController = nil
+            clearMainWindowController(ifMatching: controller.window)
         }
         
         // Get saved frame or use default
@@ -150,9 +164,10 @@ final class WindowManager {
             forName: NSWindow.willCloseNotification,
             object: window,
             queue: .main
-        ) { [weak self] _ in
+        ) { [weak self, weak window] _ in
             Task { @MainActor in
-                self?.mainWindowController = nil
+                guard let self, let window else { return }
+                self.clearMainWindowController(ifMatching: window)
             }
         }
         
