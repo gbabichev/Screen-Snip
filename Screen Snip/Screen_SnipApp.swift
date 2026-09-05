@@ -291,6 +291,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, ObservableObject {
 
     func applicationWillTerminate(_ notification: Notification) {
         GlobalHotKeyManager.shared.unregister()
+        SnipDirectoryWatcher.shared.stop()
         SecurityScopedResourceManager.shared.releaseAll()
     }
     

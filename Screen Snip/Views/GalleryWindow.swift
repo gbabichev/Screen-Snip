@@ -172,6 +172,7 @@ struct GalleryView: View {
     @State private var refreshTrigger = UUID()
     @State private var currentVisibleDate: String? = nil
     @State private var isReloading = false
+    @State private var reloadRequestedWhileLoading = false
     @State private var isSelecting = false
     @State private var selectedURLs: Set<URL> = []
     @State private var pendingDeletion: [TrashedItem] = []
@@ -407,16 +408,28 @@ struct GalleryView: View {
     }
 
     private func reload() async {
-        guard !isReloading else { return }
-        isReloading = true
-        let refreshedURLs = await onReload()
-        guard !Task.isCancelled else {
-            isReloading = false
+        if isReloading {
+            reloadRequestedWhileLoading = true
             return
         }
-        urlsLocal = refreshedURLs
-        refreshTrigger = UUID()
+
+        isReloading = true
+        repeat {
+            reloadRequestedWhileLoading = false
+            let refreshedURLs = await onReload()
+            guard !Task.isCancelled else {
+                isReloading = false
+                return
+            }
+            urlsLocal = refreshedURLs
+            refreshTrigger = UUID()
+        } while reloadRequestedWhileLoading
         isReloading = false
+    }
+
+    private func startWatchingSnipsDirectory() {
+        guard let directory = SnipsDirectoryFromSettings() else { return }
+        SnipDirectoryWatcher.shared.watch(directory: directory)
     }
     
     var body: some View {
@@ -489,12 +502,6 @@ struct GalleryView: View {
         .toolbar {
             ToolbarItemGroup(placement: .navigation) {
                 Button {
-                    Task { await reload() }
-                } label: {
-                    Label("Reload", systemImage: "arrow.clockwise")
-                }
-                .disabled(isReloading)
-                Button {
                     openSnipsInFinder()
                 } label: {
                     Label("Open in Finder", systemImage: "folder")
@@ -557,9 +564,24 @@ struct GalleryView: View {
             }
         }
         .onDisappear { onVisibleDateChange(nil) }
+        .onChange(of: saveDirectoryPath) { _, _ in
+            startWatchingSnipsDirectory()
+            Task { await reload() }
+        }
+        .onReceive(NotificationCenter.default.publisher(for: .snipDirectoryDidChange)) { notification in
+            guard let changedDirectory = notification.object as? URL,
+                  let galleryDirectory = SnipsDirectoryFromSettings(),
+                  changedDirectory.standardizedFileURL == galleryDirectory.standardizedFileURL else {
+                return
+            }
+            Task { await reload() }
+        }
         // Display the recent in-memory thumbnails immediately, then replace
         // them with one complete directory scan performed off the main thread.
-        .task { await reload() }
+        .task {
+            startWatchingSnipsDirectory()
+            await reload()
+        }
     }
 }
 

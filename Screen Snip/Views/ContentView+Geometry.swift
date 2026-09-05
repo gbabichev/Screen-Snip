@@ -469,23 +469,63 @@ extension ContentView {
                 return ($0, captureDate(for: $0))
             }
             let sorted = deduplicatedSnipURLs(dated.sorted { $0.1 > $1.1 }.map { $0.0 })
-            SnipURLs = Array(sorted.prefix(10))
-            
-            // Clean up missing URLs from our tracking set
-            missingSnipURLs = missingSnipURLs.filter { missingURL in
-                !sorted.contains { snipURLsReferToSameFile($0, missingURL) }
-            }
-            
-            // If currently selected Snip no longer exists, clear selection
-            if let sel = selectedSnipURL {
-                if !fm.fileExists(atPath: sel.path) {
-                    selectedSnipURL = nil
-                } else {
-                    selectedSnipURL = normalizedSnipURL(sel)
-                }
-            }
+            applyLoadedSnipURLs(sorted, fileManager: fm)
         } catch {
             SnipURLs = []
+        }
+    }
+
+    func startWatchingSnipsDirectory() {
+        guard let directory = SnipsDirectory() else {
+            SnipDirectoryWatcher.shared.stop()
+            return
+        }
+        SnipDirectoryWatcher.shared.watch(directory: directory)
+    }
+
+    /// Reconciles filesystem changes in the background. Only the final state is
+    /// applied if several changes arrive while a scan is already underway.
+    func reloadSnipsFromDirectoryWatcher() {
+        guard let directory = SnipsDirectory() else { return }
+
+        let normalizedDirectory = normalizedSnipURL(directory)
+        let reloadID = UUID()
+        snipFolderReloadID = reloadID
+
+        Task {
+            let sorted = await GalleryFileLoader.loadURLs(from: normalizedDirectory)
+            guard snipFolderReloadID == reloadID,
+                  let currentDirectory = SnipsDirectory(),
+                  normalizedSnipURL(currentDirectory) == normalizedDirectory else {
+                return
+            }
+
+            applyLoadedSnipURLs(sorted, fileManager: .default)
+
+            // An existing image may have changed without changing its URL.
+            // Thumbnail cache keys include modification date and file size, so
+            // unchanged thumbnails remain cheap cache hits.
+            thumbnailRefreshTrigger = UUID()
+
+            // Re-arm after the directory itself was renamed or recreated.
+            SnipDirectoryWatcher.shared.watch(directory: normalizedDirectory)
+        }
+    }
+
+    func applyLoadedSnipURLs(_ sorted: [URL], fileManager: FileManager) {
+        let normalized = deduplicatedSnipURLs(sorted)
+        SnipURLs = Array(normalized.prefix(10))
+
+        missingSnipURLs = missingSnipURLs.filter { missingURL in
+            !normalized.contains { snipURLsReferToSameFile($0, missingURL) }
+        }
+
+        if let selectedURL = selectedSnipURL {
+            if fileManager.fileExists(atPath: selectedURL.path) {
+                selectedSnipURL = normalizedSnipURL(selectedURL)
+            } else {
+                selectedSnipURL = nil
+            }
         }
     }
     

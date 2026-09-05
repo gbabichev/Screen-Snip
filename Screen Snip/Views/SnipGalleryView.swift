@@ -7,7 +7,6 @@ struct SnipGalleryView: View {
     var thumbnailsFocus: FocusState<Bool>.Binding
     @Binding var thumbnailRefreshTrigger: UUID
     var navigateToAdjacentThumbnail: (ContentView.NavigationDirection) -> Void
-    var loadExistingSnips: () -> Void
     var openSnipsInFinder: () -> Void
     var openSnipsInGallery: () -> Void
     var deleteSnip: (URL) -> Void
@@ -30,16 +29,6 @@ struct SnipGalleryView: View {
             Text("Snips")
                 .font(.caption)
                 .foregroundStyle(.secondary)
-
-            Button(action: {
-                loadExistingSnips()
-                thumbnailRefreshTrigger = UUID()
-            }) {
-                Image(systemName: "arrow.clockwise")
-                    .imageScale(.small)
-            }
-            .buttonStyle(.plain)
-            .help("Refresh Snips")
 
             Button(action: openSnipsInFinder) {
                 Image(systemName: "folder")

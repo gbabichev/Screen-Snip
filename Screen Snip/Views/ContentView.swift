@@ -190,6 +190,7 @@ struct ContentView: View {
     
     
     @State var thumbnailRefreshTrigger = UUID()
+    @State var snipFolderReloadID = UUID()
     
     @State var selectedImageSize: CGSize? = nil
     @State var imageReloadTrigger = UUID()
@@ -1571,7 +1572,6 @@ struct ContentView: View {
                 thumbnailsFocus: $thumbnailsFocused,
                 thumbnailRefreshTrigger: $thumbnailRefreshTrigger,
                 navigateToAdjacentThumbnail: navigateToAdjacentThumbnail,
-                loadExistingSnips: loadExistingSnips,
                 openSnipsInFinder: openSnipsInFinder,
                 openSnipsInGallery: openSnipsInGallery,
                 deleteSnip: deleteSnip,
@@ -1581,6 +1581,7 @@ struct ContentView: View {
         }
         .onAppear {
             loadExistingSnips()
+            startWatchingSnipsDirectory()
             updateMenuState()
             updateDocumentEditedIndicator()
             // Listen for Cmd+Z / Shift+Cmd+Z globally while this view is active, and Delete for selected objects
@@ -1725,6 +1726,10 @@ struct ContentView: View {
         .onDisappear {
             if let keyMonitor { NSEvent.removeMonitor(keyMonitor); self.keyMonitor = nil }
         }
+        .onChange(of: saveDirectoryPath) { _, _ in
+            startWatchingSnipsDirectory()
+            reloadSnipsFromDirectoryWatcher()
+        }
         .onChange(of: hasUnsavedChanges) { _, _ in
             updateDocumentEditedIndicator()
         }
@@ -1733,6 +1738,14 @@ struct ContentView: View {
         }
         .onReceive(NotificationCenter.default.publisher(for: .openNewWindow)) { _ in
             openWindow(id: "main")
+        }
+        .onReceive(NotificationCenter.default.publisher(for: .snipDirectoryDidChange)) { notification in
+            guard let changedDirectory = notification.object as? URL,
+                  let currentDirectory = SnipsDirectory(),
+                  normalizedSnipURL(changedDirectory) == normalizedSnipURL(currentDirectory) else {
+                return
+            }
+            reloadSnipsFromDirectoryWatcher()
         }
         .onReceive(notificationStream) { note in
             handleAppNotification(note)
