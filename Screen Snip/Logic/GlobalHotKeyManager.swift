@@ -11,13 +11,17 @@ import UniformTypeIdentifiers
 import Combine
 import Cocoa
 
-final class GlobalHotKeyManager {
+final class GlobalHotKeyManager: NSObject, SCContentSharingPickerObserver {
     static let shared = GlobalHotKeyManager()
     
     private var eventTap: CFMachPort?
     private var runLoopSource: CFRunLoopSource?
     
-    private init() {}
+    private var isWindowPickerConfigured = false
+
+    private override init() {
+        super.init()
+    }
     
     func registerSnipHotKey() {
         unregister()
@@ -140,13 +144,26 @@ final class GlobalHotKeyManager {
     private func handleSnipHotkey() {
         guard !isCurrentlyCapturing else { return }
         isCurrentlyCapturing = true
-        
-        let captureModeRaw = UserDefaults.standard.string(forKey: "captureMode") ?? "captureWithWindows"
+
+        let captureTypeRaw = UserDefaults.standard.string(forKey: "captureType")
+            ?? CaptureType.dragToSelect.rawValue
+        let captureType = CaptureType(rawValue: captureTypeRaw) ?? .dragToSelect
+
+        switch captureType {
+        case .dragToSelect:
+            beginDragSelectionCapture()
+        case .fullWindow:
+            shouldRestoreMainWindowAfterCapture = false
+            presentSystemWindowPicker()
+        }
+    }
+
+    private func beginDragSelectionCapture() {
+        let captureModeRaw = UserDefaults.standard.string(forKey: "captureMode")
+            ?? CaptureMode.captureWithWindows.rawValue
         let captureMode = CaptureMode(rawValue: captureModeRaw) ?? .captureWithWindows
-        
-        let windowsWereHidden = (captureMode == .captureWithoutWindows)
-        
-        // NEW: Track if there was a visible main window before capture
+        let windowsWereHidden = captureMode == .captureWithoutWindows
+
         let hadVisibleMainWindow = NSApp.windows.contains { window in
             window.isVisible &&
             !window.isMiniaturized &&
@@ -156,18 +173,123 @@ final class GlobalHotKeyManager {
         }
         shouldRestoreMainWindowAfterCapture = windowsWereHidden && hadVisibleMainWindow
 
-        // Install cancellation handling before asynchronous capture work starts.
         SelectionWindowManager.shared.onCancel = { [weak self] in
             self?.finishCapture(restorePreviousMainWindow: true)
         }
-        
+
         switch captureMode {
         case .captureWithWindows:
             handleCaptureWithWindows()
         case .captureWithoutWindows:
             handleCaptureWithoutWindows()
         }
-        
+    }
+
+    private func presentSystemWindowPicker() {
+        let picker = SCContentSharingPicker.shared
+
+        if !isWindowPickerConfigured {
+            var configuration = SCContentSharingPickerConfiguration()
+            configuration.allowedPickerModes = .singleWindow
+            configuration.allowsChangingSelectedContent = false
+            if let bundleIdentifier = Bundle.main.bundleIdentifier {
+                configuration.excludedBundleIDs = [bundleIdentifier]
+            }
+
+            picker.defaultConfiguration = configuration
+            picker.maximumStreamCount = 1
+            picker.add(self)
+            isWindowPickerConfigured = true
+        }
+
+        picker.isActive = true
+        NSApp.activate(ignoringOtherApps: true)
+        picker.present(using: .window)
+    }
+
+    nonisolated func contentSharingPicker(
+        _ picker: SCContentSharingPicker,
+        didCancelFor stream: SCStream?
+    ) {
+        DispatchQueue.main.async { [weak self] in
+            picker.isActive = false
+            self?.finishCapture(restorePreviousMainWindow: true)
+        }
+    }
+
+    nonisolated func contentSharingPicker(
+        _ picker: SCContentSharingPicker,
+        didUpdateWith filter: SCContentFilter,
+        for stream: SCStream?
+    ) {
+        DispatchQueue.main.async { [weak self] in
+            self?.captureSelectedWindow(using: filter)
+        }
+    }
+
+    nonisolated func contentSharingPickerStartDidFailWithError(_ error: Error) {
+        DispatchQueue.main.async { [weak self] in
+            print("Window picker failed to open: \(error)")
+            NSSound.beep()
+            SCContentSharingPicker.shared.isActive = false
+            self?.finishCapture(restorePreviousMainWindow: true)
+        }
+    }
+
+    private func captureSelectedWindow(using filter: SCContentFilter) {
+        Task { [weak self] in
+            do {
+                let configuration = SCScreenshotConfiguration()
+                configuration.showsCursor = false
+                configuration.ignoreShadows = false
+                configuration.ignoreClipping = false
+                configuration.dynamicRange = .sdr
+
+                let output = try await SCScreenshotManager.captureScreenshot(
+                    contentFilter: filter,
+                    configuration: configuration
+                )
+
+                guard let cgImage = output.sdrImage else {
+                    throw WindowCaptureError.missingImage
+                }
+
+                let pointScale = max(CGFloat(filter.pointPixelScale), 1)
+                let pointSize = CGSize(
+                    width: CGFloat(cgImage.width) / pointScale,
+                    height: CGFloat(cgImage.height) / pointScale
+                )
+                let representation = NSBitmapImageRep(cgImage: cgImage)
+                representation.size = pointSize
+                let image = NSImage(size: pointSize)
+                image.addRepresentation(representation)
+
+                await MainActor.run {
+                    var didSaveCapture = false
+                    if let savedURL = ImageSaver.saveImage(image) {
+                        didSaveCapture = true
+                        WindowManager.shared.loadImageIntoWindow(url: savedURL, shouldActivate: true)
+                    } else {
+                        print("Window capture could not be saved")
+                        NSSound.beep()
+                    }
+
+                    SCContentSharingPicker.shared.isActive = false
+                    self?.finishCapture(restorePreviousMainWindow: !didSaveCapture)
+                }
+            } catch {
+                await MainActor.run {
+                    print("Failed to capture selected window: \(error)")
+                    NSSound.beep()
+                    SCContentSharingPicker.shared.isActive = false
+                    self?.finishCapture(restorePreviousMainWindow: true)
+                }
+            }
+        }
+    }
+
+    private enum WindowCaptureError: Error {
+        case missingImage
     }
 
     private func finishCapture(restorePreviousMainWindow: Bool) {

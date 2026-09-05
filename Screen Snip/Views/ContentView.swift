@@ -108,6 +108,18 @@ enum CaptureMode: String, CaseIterable {
     case captureWithoutWindows = "captureWithoutWindows"
 }
 
+enum CaptureType: String, CaseIterable {
+    case dragToSelect = "dragToSelect"
+    case fullWindow = "fullWindow"
+
+    var title: String {
+        switch self {
+        case .dragToSelect: return "Drag to Select"
+        case .fullWindow: return "Capture Full Windows"
+        }
+    }
+}
+
 private final class EstimatedSizeTokenBox: @unchecked Sendable {
     private let lock = NSLock()
     private var token = UUID()
@@ -171,6 +183,7 @@ struct ContentView: View {
     @Environment(\.openWindow) var openWindow  // Add this line
 
     @AppStorage("captureMode") var captureModeRaw: String = CaptureMode.captureWithWindows.rawValue
+    @AppStorage("captureType") var captureTypeRaw: String = CaptureType.dragToSelect.rawValue
 
     
     @State var currentGeometrySize: CGSize = CGSize(width: 800, height: 600)
@@ -1525,12 +1538,12 @@ struct ContentView: View {
                                 }
                             } else if !SnipURLs.isEmpty {
                                 Image(systemName: "camera").imageScale(.large).foregroundStyle(.tint)
-                                Text("Press ⇧⌘2 or click 'Capture Region' to begin.")
+                                Text("Press ⇧⌘2 or click 'Capture' to begin.")
                                     .multilineTextAlignment(.center)
                                     .foregroundStyle(.secondary)
                             } else {
                                 Image(systemName: "camera").imageScale(.large).foregroundStyle(.tint)
-                                Text("Press ⇧⌘2 or click 'Capture Region' to begin.")
+                                Text("Press ⇧⌘2 or click 'Capture' to begin.")
                                     .multilineTextAlignment(.center)
                                     .foregroundStyle(.secondary)
                             }

@@ -57,6 +57,16 @@ extension ContentView {
                                 }
                                      
                                 Divider()
+
+                                SettingsRow("Capture Type", subtitle: "Choose between selecting a custom area or capturing an entire window.") {
+                                    Picker("", selection: $captureTypeRaw) {
+                                        ForEach(CaptureType.allCases, id: \.rawValue) { captureType in
+                                            Text(captureType.title).tag(captureType.rawValue)
+                                        }
+                                    }
+                                    .labelsHidden()
+                                    .frame(width: 190)
+                                }
                                 
                                 SettingsRow("Downsample Retina Screenshots", subtitle: "High DPI (4k,5k) Snips will be saved as 1x.") {
                                     Toggle("", isOn: $downsampleToNonRetinaForSave)
@@ -83,11 +93,13 @@ extension ContentView {
                                     ))
                                     .toggleStyle(.switch)
                                 }
+                                .disabled(captureTypeRaw == CaptureType.fullWindow.rawValue)
 
                                 SettingsRow("Magnify Capture Cursor", subtitle: "Show a zoomed-in view beneath the orange cursor while selecting an area.") {
                                     Toggle("", isOn: $captureMagnifierEnabled)
                                         .toggleStyle(.switch)
                                 }
+                                .disabled(captureTypeRaw == CaptureType.fullWindow.rawValue)
                                 
                                 SettingsRow("Fit image to window", subtitle: "Enabled : Fill Full Window.\nDisabled: Show True Size.") {
                                     Toggle("", isOn: Binding(
@@ -518,12 +530,12 @@ extension ContentView {
                     }
         
                     
-                    // Capture Region button (always available)
+                    // Capture button (always available)
                     ToolbarItem(placement: .primaryAction) {
                         Button {
                             GlobalHotKeyManager.shared.triggerCapture()
                         } label: {
-                            Label("Capture Region", systemImage: "camera.viewfinder")
+                            Label("Capture", systemImage: "camera.viewfinder")
                         }
                     }
     }
