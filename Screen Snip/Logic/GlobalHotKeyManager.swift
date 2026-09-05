@@ -470,16 +470,19 @@ final class GlobalHotKeyManager: NSObject, SCContentSharingPickerObserver {
                 for (screenInfo, scDisplay) in matchedScreens {
                     group.addTask {
                         let filter = SCContentFilter(display: scDisplay, excludingWindows: [])
-                        let config = Self.makeScreenshotConfiguration(
+                        let config = Self.makeDisplayScreenshotConfiguration(
                             for: scDisplay,
                             backingScale: screenInfo.backingScaleFactor
                         )
 
                         do {
-                            let image = try await SCScreenshotManager.captureImage(
+                            let output = try await SCScreenshotManager.captureScreenshot(
                                 contentFilter: filter,
                                 configuration: config
                             )
+                            guard let image = output.sdrImage else {
+                                throw WindowCaptureError.missingImage
+                            }
                             return (screenInfo: screenInfo, cgImage: image)
                         } catch {
                             print("Failed to capture display \(scDisplay.displayID): \(error)")
@@ -509,15 +512,18 @@ final class GlobalHotKeyManager: NSObject, SCContentSharingPickerObserver {
         return results
     }
 
-    private nonisolated static func makeScreenshotConfiguration(
+    private nonisolated static func makeDisplayScreenshotConfiguration(
         for display: SCDisplay,
         backingScale: CGFloat
-    ) -> SCStreamConfiguration {
-        let config = SCStreamConfiguration()
+    ) -> SCScreenshotConfiguration {
+        let config = SCScreenshotConfiguration()
         config.width = Int(CGFloat(display.width) * backingScale)
         config.height = Int(CGFloat(display.height) * backingScale)
-        config.pixelFormat = kCVPixelFormatType_32BGRA
         config.showsCursor = false
+        config.ignoreShadows = false
+        config.ignoreClipping = false
+        config.includeChildWindows = true
+        config.dynamicRange = .sdr
         return config
     }
     
