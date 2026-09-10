@@ -8,7 +8,6 @@ import VideoToolbox
 import UniformTypeIdentifiers
 import ImageIO
 import Combine
-import ServiceManagement
 
 // MARK: - NSColor Hex Conversion Helper (no RawRepresentable conformance)
 extension NSColor {
@@ -172,18 +171,8 @@ struct ContentView: View {
     }
     
     
-    // MARK: - Launch On Logon
-    static let loginHelperIdentifier = "com.georgebabichev.Screen-Snip-Helper"
-    @State var logonChecked: Bool = {
-        let loginService = SMAppService.loginItem(identifier: loginHelperIdentifier)
-        return loginService.status == .enabled   // True if login item is currently enabled
-    }()
-    
     // MARK: - Vars
     @Environment(\.openWindow) var openWindow  // Add this line
-
-    @AppStorage("captureMode") var captureModeRaw: String = CaptureMode.captureWithWindows.rawValue
-    @AppStorage("captureType") var captureTypeRaw: String = CaptureType.dragToSelect.rawValue
 
     
     @State var currentGeometrySize: CGSize = CGSize(width: 800, height: 600)
@@ -199,14 +188,12 @@ struct ContentView: View {
     @State var zoomPan: CGSize = .zero
     private var isViewportFitMode: Bool { imageDisplayMode == "fit" }
     
-    @State var showSettingsPopover = false
     @AppStorage("preferredSaveFormat") var preferredSaveFormatRaw: String = SaveFormat.png.rawValue
     var preferredSaveFormat: SaveFormat {
         get { SaveFormat(rawValue: preferredSaveFormatRaw) ?? .png }
         set { preferredSaveFormatRaw = newValue.rawValue }
     }
     
-    @AppStorage("hideDockIcon") var hideDockIcon: Bool = false
     @AppStorage("saveQuality") var saveQuality: Double = 0.9
     @AppStorage("saveDirectoryPath") var saveDirectoryPath: String = ""
     @AppStorage("downsampleToNonRetinaClipboard") var downsampleToNonRetinaClipboard: Bool = true
@@ -214,7 +201,6 @@ struct ContentView: View {
     @AppStorage("imageDisplayMode") var imageDisplayMode: String = "fit" // "actual" or "fit"
     @AppStorage("saveOnCopy") var saveOnCopy: Bool = false
     @AppStorage("confirmSaveBeforeLeavingChanges") var confirmSaveBeforeLeavingChanges: Bool = true
-    @AppStorage("captureMagnifierEnabled") var captureMagnifierEnabled: Bool = false
     @State var exportScaleOption: ExportScaleOption = .full
     private let exportScaleDefaultsKey = "exportScaleFactor"
     private let exportQualityDefaultsKey = "exportQuality"
@@ -1912,25 +1898,6 @@ struct ContentView: View {
     }
     
 
-    // MARK: - Launch On Logon Helpers
-    // Handles enabling or disabling the login helper at login
-    func toggleLaunchAtLogin(_ enabled: Bool) {
-        // Create a reference to the login item service using the static identifier
-        let loginService = SMAppService.loginItem(identifier: Self.loginHelperIdentifier)
-        do {
-            if enabled {
-                // If enabled, try to register the login helper so it launches at login
-                try loginService.register()
-            } else {
-                // If disabled, try to unregister it
-                try loginService.unregister()
-            }
-        } catch {
-            // If anything fails, show a user-facing alert dialog with error info
-            showErrorAlert(message: "Failed to update Login Item.", info: error.localizedDescription)
-        }
-    }
-    
     func showErrorAlert(message: String, info: String? = nil) {
         let alert = NSAlert()
         alert.messageText = message
@@ -2505,17 +2472,6 @@ struct ContentView: View {
     }
     
     // MARK: - Save / Save As
-    
-    // Reset the custom save folder back to the default Pictures/Screen Snip directory.
-    func resetSaveDirectoryToDefault() {
-        // Remove any previously stored security-scoped bookmark + path
-        SecurityScopedResourceManager.shared.releaseSaveDirectory()
-        UserDefaults.standard.removeObject(forKey: "saveDirectoryBookmark")
-        saveDirectoryPath = ""
-        // Ensure the default exists and refresh the visible list
-        _ = defaultSnipsDirectory()
-        loadExistingSnips()
-    }
     
     /// Save As… — prompts for a destination, updates gallery if under Snips folder.
     func saveAsCurrent() {

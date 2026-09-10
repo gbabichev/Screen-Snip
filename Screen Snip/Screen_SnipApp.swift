@@ -61,12 +61,6 @@ struct Screen_SnipApp: App {
     }
 
     var body: some Scene {
-        // Remove Settings scene entirely - no Settings menu item
-        // Use an empty WindowGroup that we'll never show - all windows handled by WindowManager
-        
-        
-        
-        
         Group {}
         .handlesExternalEvents(matching: Set(arrayLiteral: "never-match"))
         .onChange(of: hideDockIcon) { _,newValue in
@@ -74,6 +68,10 @@ struct Screen_SnipApp: App {
         }
         .commands {
             AppCommands(menuState: menuState, appDelegate: appDelegate)
+        }
+
+        Settings {
+            ScreenSnipSettingsView()
         }
     }
 }
