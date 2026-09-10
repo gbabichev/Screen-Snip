@@ -134,11 +134,16 @@ struct SnipHotKey: Equatable {
 struct SnipHotKeyRecorder: View {
     @State private var shortcut = SnipHotKey.load()
     @State private var registrationError: String?
+    @State private var isRecording = false
+    @State private var errorDismissTask: Task<Void, Never>?
 
     var body: some View {
         VStack(alignment: .trailing, spacing: 3) {
             HotKeyRecorderButton(
                 shortcut: $shortcut,
+                isRecording: $isRecording,
+                onBegin: clearRegistrationError,
+                onCancel: clearRegistrationError,
                 onCommit: { proposedShortcut in
                     let previousShortcut = shortcut
                     proposedShortcut.save()
@@ -150,28 +155,53 @@ struct SnipHotKeyRecorder: View {
                     } else {
                         previousShortcut.save()
                         _ = GlobalHotKeyManager.shared.registerSnipHotKey()
-                        registrationError = "Shortcut already in use"
+                        showTemporaryError("Shortcut already in use")
                         NSSound.beep()
                     }
                 },
                 onInterrupted: {
-                    registrationError = "Shortcut may be in use"
+                    showTemporaryError("Shortcut may be in use")
                     NSSound.beep()
                 }
             )
             .frame(width: 112, height: 28)
 
-            if let registrationError {
+            if isRecording {
+                Text("Hit Esc to cancel")
+                    .font(.caption2)
+                    .foregroundStyle(.secondary)
+            } else if let registrationError {
                 Text(registrationError)
                     .font(.caption2)
                     .foregroundStyle(.red)
             }
         }
+        .onDisappear(perform: clearRegistrationError)
+    }
+
+    private func showTemporaryError(_ message: String) {
+        errorDismissTask?.cancel()
+        registrationError = message
+        errorDismissTask = Task { @MainActor in
+            try? await Task.sleep(for: .seconds(3))
+            guard !Task.isCancelled else { return }
+            registrationError = nil
+            errorDismissTask = nil
+        }
+    }
+
+    private func clearRegistrationError() {
+        errorDismissTask?.cancel()
+        errorDismissTask = nil
+        registrationError = nil
     }
 }
 
 private struct HotKeyRecorderButton: NSViewRepresentable {
     @Binding var shortcut: SnipHotKey
+    @Binding var isRecording: Bool
+    let onBegin: () -> Void
+    let onCancel: () -> Void
     let onCommit: (SnipHotKey) -> Void
     let onInterrupted: () -> Void
 
@@ -182,19 +212,31 @@ private struct HotKeyRecorderButton: NSViewRepresentable {
         button.normalTitle = shortcut.displayName
         button.onCommit = onCommit
         button.onBeginRecording = {
+            onBegin()
             GlobalHotKeyManager.shared.suspendSnipHotKey()
         }
         button.onCancelRecording = {
             _ = GlobalHotKeyManager.shared.registerSnipHotKey()
+            onCancel()
         }
         button.onInterruptedRecording = onInterrupted
+        button.onRecordingStateChange = { isRecording = $0 }
         return button
     }
 
     func updateNSView(_ button: ShortcutButton, context: Context) {
         button.normalTitle = shortcut.displayName
         button.onCommit = onCommit
+        button.onBeginRecording = {
+            onBegin()
+            GlobalHotKeyManager.shared.suspendSnipHotKey()
+        }
+        button.onCancelRecording = {
+            _ = GlobalHotKeyManager.shared.registerSnipHotKey()
+            onCancel()
+        }
         button.onInterruptedRecording = onInterrupted
+        button.onRecordingStateChange = { isRecording = $0 }
         if !button.isRecording {
             button.title = shortcut.displayName
         }
@@ -206,6 +248,7 @@ private final class ShortcutButton: NSButton {
     var onBeginRecording: (() -> Void)?
     var onCancelRecording: (() -> Void)?
     var onInterruptedRecording: (() -> Void)?
+    var onRecordingStateChange: ((Bool) -> Void)?
     var normalTitle = ""
     var isRecording = false
     private var sawModifierInput = false
@@ -231,6 +274,7 @@ private final class ShortcutButton: NSButton {
         }
         normalTitle = title
         isRecording = true
+        onRecordingStateChange?(true)
         sawModifierInput = false
         title = "Type Shortcut…"
         onBeginRecording?()
@@ -282,6 +326,7 @@ private final class ShortcutButton: NSButton {
 
     private func finishRecording() {
         isRecording = false
+        onRecordingStateChange?(false)
         title = normalTitle
     }
 
