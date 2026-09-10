@@ -133,7 +133,7 @@ private struct CaptureSettingsPane: View {
         SettingsPaneLayout {
             SettingsRow(
                 "Capture Type",
-                subtitle: "Select a custom area or choose an entire window."
+                subtitle: "Select an area, capture a display, or choose an app window."
             ) {
                 Picker("", selection: $captureTypeRaw) {
                     ForEach(CaptureType.allCases, id: \.rawValue) { captureType in
@@ -175,7 +175,7 @@ private struct CaptureSettingsPane: View {
                 Toggle("", isOn: $magnifierEnabled)
                     .toggleStyle(.switch)
             }
-            .disabled(captureTypeRaw == CaptureType.fullWindow.rawValue)
+            .disabled(captureTypeRaw != CaptureType.dragToSelect.rawValue)
         }
     }
 }

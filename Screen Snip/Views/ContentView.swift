@@ -109,11 +109,13 @@ enum CaptureMode: String, CaseIterable {
 
 enum CaptureType: String, CaseIterable {
     case dragToSelect = "dragToSelect"
+    case fullScreen = "fullScreen"
     case fullWindow = "fullWindow"
 
     var title: String {
         switch self {
         case .dragToSelect: return "Drag to Select"
+        case .fullScreen: return "Capture Full Screen"
         case .fullWindow: return "Capture Full Windows"
         }
     }

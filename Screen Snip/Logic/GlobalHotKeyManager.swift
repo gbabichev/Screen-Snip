@@ -156,6 +156,8 @@ final class GlobalHotKeyManager: NSObject, SCContentSharingPickerObserver {
         switch captureType {
         case .dragToSelect:
             beginDragSelectionCapture()
+        case .fullScreen:
+            beginFullScreenCapture()
         case .fullWindow:
             shouldRestoreMainWindowAfterCapture = false
             presentSystemWindowPicker()
@@ -163,6 +165,42 @@ final class GlobalHotKeyManager: NSObject, SCContentSharingPickerObserver {
     }
 
     private func beginDragSelectionCapture() {
+        let captureMode = prepareForScreenCapture()
+
+        SelectionWindowManager.shared.onCancel = { [weak self] in
+            self?.finishCapture(restorePreviousMainWindow: true)
+        }
+
+        switch captureMode {
+        case .captureWithWindows:
+            handleCaptureWithWindows()
+        case .captureWithoutWindows:
+            handleCaptureWithoutWindows()
+        }
+    }
+
+    private func beginFullScreenCapture() {
+        let captureMode = prepareForScreenCapture()
+        let cursorLocation = NSEvent.mouseLocation
+
+        Task { [weak self] in
+            guard let self else { return }
+
+            if captureMode == .captureWithoutWindows {
+                await WindowManager.shared.closeAllAppWindowsAsync()
+            }
+
+            let screenshots = await self.captureAllScreensImmediately()
+            await MainActor.run {
+                self.saveFullScreenCapture(
+                    from: screenshots,
+                    containing: cursorLocation
+                )
+            }
+        }
+    }
+
+    private func prepareForScreenCapture() -> CaptureMode {
         let captureModeRaw = UserDefaults.standard.string(forKey: "captureMode")
             ?? CaptureMode.captureWithWindows.rawValue
         let captureMode = CaptureMode(rawValue: captureModeRaw) ?? .captureWithWindows
@@ -176,16 +214,34 @@ final class GlobalHotKeyManager: NSObject, SCContentSharingPickerObserver {
             window.contentViewController is NSHostingController<ContentView>
         }
         shouldRestoreMainWindowAfterCapture = windowsWereHidden && hadVisibleMainWindow
+        return captureMode
+    }
 
-        SelectionWindowManager.shared.onCancel = { [weak self] in
-            self?.finishCapture(restorePreviousMainWindow: true)
+    private func saveFullScreenCapture(
+        from screenshots: [(screenInfo: ScreenInfo, cgImage: CGImage)],
+        containing cursorLocation: CGPoint
+    ) {
+        guard let screenshot = screenshots.first(where: {
+            $0.screenInfo.frame.contains(cursorLocation)
+        }) ?? screenshots.first else {
+            print("Full-screen capture failed: no display produced an image")
+            NSSound.beep()
+            finishCapture(restorePreviousMainWindow: true)
+            return
         }
 
-        switch captureMode {
-        case .captureWithWindows:
-            handleCaptureWithWindows()
-        case .captureWithoutWindows:
-            handleCaptureWithoutWindows()
+        let representation = NSBitmapImageRep(cgImage: screenshot.cgImage)
+        representation.size = screenshot.screenInfo.frame.size
+        let image = NSImage(size: screenshot.screenInfo.frame.size)
+        image.addRepresentation(representation)
+
+        if let savedURL = ImageSaver.saveImage(image) {
+            WindowManager.shared.loadImageIntoWindow(url: savedURL, shouldActivate: true)
+            finishCapture(restorePreviousMainWindow: false)
+        } else {
+            print("Full-screen capture could not be saved")
+            NSSound.beep()
+            finishCapture(restorePreviousMainWindow: true)
         }
     }
 
