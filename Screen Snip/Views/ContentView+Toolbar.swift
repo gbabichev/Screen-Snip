@@ -3,19 +3,6 @@ import SwiftUI
 extension ContentView {
     @ToolbarContentBuilder
     func toolbarContent() -> some ToolbarContent {
-                    ToolbarItemGroup(placement: .navigation) {
-                        Button {
-                            activeImporter = .image
-                        } label: {
-                            Label("Open File", systemImage: "folder")
-                        }
-                        
-                        SettingsLink {
-                            Label("Settings", systemImage: "gearshape")
-                        }
-                        
-                    }
-                    
                     // Items visible only when we have a capture
                     if selectedSnipURL != nil {
                         
