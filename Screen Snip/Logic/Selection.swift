@@ -102,14 +102,20 @@ class CursorManager {
                 
                 ctx.strokePath()
                 
-                // Add a larger center circle
-                ctx.setFillColor(NSColor.systemOrange.cgColor)
-                ctx.fillEllipse(in: CGRect(x: 56, y: 56, width: 16, height: 16))
-                
-                // Add a white border to the center circle for better visibility
+                // Keep the exact target visible through a hollow center ring.
+                let centerRing = CGRect(x: 54, y: 54, width: 20, height: 20)
                 ctx.setStrokeColor(NSColor.white.cgColor)
-                ctx.setLineWidth(2)
-                ctx.strokeEllipse(in: CGRect(x: 56, y: 56, width: 16, height: 16))
+                ctx.setLineWidth(6)
+                ctx.strokeEllipse(in: centerRing)
+                ctx.setStrokeColor(NSColor.systemOrange.cgColor)
+                ctx.setLineWidth(3)
+                ctx.strokeEllipse(in: centerRing)
+
+                // The cursor hotspot and the dot share the same center point.
+                ctx.setFillColor(NSColor.white.cgColor)
+                ctx.fillEllipse(in: CGRect(x: 60, y: 60, width: 8, height: 8))
+                ctx.setFillColor(NSColor.systemOrange.cgColor)
+                ctx.fillEllipse(in: CGRect(x: 62, y: 62, width: 4, height: 4))
             }
             
             cursorImage.unlockFocus()
@@ -353,6 +359,13 @@ struct SelectionOverlay: View {
 
             magnifierCrosshair(color: .black.opacity(0.9), thickness: 7)
             magnifierCrosshair(color: .white, thickness: 3)
+
+            Circle()
+                .fill(Color.black.opacity(0.9))
+                .frame(width: 10, height: 10)
+            Circle()
+                .fill(Color.orange)
+                .frame(width: 5, height: 5)
         }
         .frame(width: magnifierDiameter, height: magnifierDiameter)
         .clipShape(Circle())
