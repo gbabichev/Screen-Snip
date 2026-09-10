@@ -10,12 +10,15 @@ import SwiftUI
 import UniformTypeIdentifiers
 import Combine
 import Cocoa
+import Carbon.HIToolbox
 
 final class GlobalHotKeyManager: NSObject, SCContentSharingPickerObserver {
     static let shared = GlobalHotKeyManager()
     
-    private var eventTap: CFMachPort?
-    private var runLoopSource: CFRunLoopSource?
+    private var hotKeyRef: EventHotKeyRef?
+    private var hotKeyEventHandler: EventHandlerRef?
+    private static let hotKeySignature: OSType = 0x53534E50 // "SSNP"
+    private static let snipHotKeyID: UInt32 = 1
     
     private var isWindowPickerConfigured = false
 
@@ -23,100 +26,101 @@ final class GlobalHotKeyManager: NSObject, SCContentSharingPickerObserver {
         super.init()
     }
     
-    func registerSnipHotKey() {
-        unregister()
-        
-        guard AXIsProcessTrusted() else {
-            print("Accessibility permissions not granted. Cannot register hotkey.")
-            return
+    @discardableResult
+    func registerSnipHotKey() -> OSStatus {
+        unregisterHotKey()
+
+        if hotKeyEventHandler == nil {
+            var eventType = EventTypeSpec(
+                eventClass: OSType(kEventClassKeyboard),
+                eventKind: UInt32(kEventHotKeyPressed)
+            )
+
+            let handlerStatus = InstallEventHandler(
+                GetApplicationEventTarget(),
+                { _, event, userData in
+                    guard let event, let userData else { return OSStatus(eventNotHandledErr) }
+                    let manager = Unmanaged<GlobalHotKeyManager>
+                        .fromOpaque(userData)
+                        .takeUnretainedValue()
+
+                    var eventHotKeyID = EventHotKeyID()
+                    let status = GetEventParameter(
+                        event,
+                        EventParamName(kEventParamDirectObject),
+                        EventParamType(typeEventHotKeyID),
+                        nil,
+                        MemoryLayout<EventHotKeyID>.size,
+                        nil,
+                        &eventHotKeyID
+                    )
+
+                    guard status == noErr,
+                          eventHotKeyID.signature == GlobalHotKeyManager.hotKeySignature,
+                          eventHotKeyID.id == GlobalHotKeyManager.snipHotKeyID else {
+                        return OSStatus(eventNotHandledErr)
+                    }
+
+                    manager.systemHotKeyPressed()
+                    return noErr
+                },
+                1,
+                &eventType,
+                Unmanaged.passUnretained(self).toOpaque(),
+                &hotKeyEventHandler
+            )
+
+            guard handlerStatus == noErr else {
+                print("Failed to install system hotkey handler: \(handlerStatus)")
+                return handlerStatus
+            }
         }
-        
-        // Request accessibility permissions if needed
-        guard AXIsProcessTrusted() else {
-            print("Accessibility permissions not granted. Cannot register hotkey.")
-            return
-        }
-        
-        // Create event tap for system-wide key monitoring
-        let eventMask = (1 << CGEventType.keyDown.rawValue)
-        
-        eventTap = CGEvent.tapCreate(
-            tap: .cgSessionEventTap,
-            place: .headInsertEventTap,
-            options: .defaultTap,
-            eventsOfInterest: CGEventMask(eventMask),
-            callback: { (proxy, type, event, refcon) -> Unmanaged<CGEvent>? in
-                guard let refcon = refcon else { return Unmanaged.passUnretained(event) }
-                
-                let manager = Unmanaged<GlobalHotKeyManager>.fromOpaque(refcon).takeUnretainedValue()
-                
-                if manager.handleCGEvent(type: type, event: event) {
-                    // Consume the event
-                    return nil
-                } else {
-                    // Pass the event through
-                    return Unmanaged.passUnretained(event)
-                }
-            },
-            userInfo: Unmanaged.passUnretained(self).toOpaque()
+
+        let shortcut = SnipHotKey.load()
+        let hotKeyID = EventHotKeyID(
+            signature: Self.hotKeySignature,
+            id: Self.snipHotKeyID
         )
-        
-        guard let eventTap = eventTap else {
-            print("Failed to create event tap")
-            return
+        let status = RegisterEventHotKey(
+            shortcut.keyCode,
+            shortcut.modifiers,
+            hotKeyID,
+            GetApplicationEventTarget(),
+            0,
+            &hotKeyRef
+        )
+
+        if status == noErr {
+            print("Registered system-wide hotkey: \(shortcut.displayName)")
+        } else {
+            print("Failed to register system-wide hotkey \(shortcut.displayName): \(status)")
         }
-        
-        runLoopSource = CFMachPortCreateRunLoopSource(kCFAllocatorDefault, eventTap, 0)
-        CFRunLoopAddSource(CFRunLoopGetCurrent(), runLoopSource, .commonModes)
-        CGEvent.tapEnable(tap: eventTap, enable: true)
-        
-        print("Registered system-wide hotkey monitor")
+        return status
     }
     
     func unregister() {
-        if let eventTap = eventTap {
-            CGEvent.tapEnable(tap: eventTap, enable: false)
-            
-            if let runLoopSource = runLoopSource {
-                CFRunLoopRemoveSource(CFRunLoopGetCurrent(), runLoopSource, .commonModes)
-                self.runLoopSource = nil
-            }
-            
-            self.eventTap = nil
-            print("Unregistered hotkey monitor")
+        unregisterHotKey()
+        if let hotKeyEventHandler {
+            RemoveEventHandler(hotKeyEventHandler)
+            self.hotKeyEventHandler = nil
         }
     }
-    
-    private func handleCGEvent(type: CGEventType, event: CGEvent) -> Bool {
-        if type == .tapDisabledByTimeout || type == .tapDisabledByUserInput {
-            if let eventTap {
-                CGEvent.tapEnable(tap: eventTap, enable: true)
-                print("Re-enabled system-wide hotkey monitor after macOS disabled it")
-            }
-            return false
-        }
 
-        guard type == .keyDown else { return false }
+    func suspendSnipHotKey() {
+        unregisterHotKey()
+    }
 
-        let keyCode = event.getIntegerValueField(.keyboardEventKeycode)
-        let flags = event.flags
-        
-        // Check for Cmd+Shift+2
-        guard keyCode == 19,  // Key code for '2'
-              flags.contains(.maskCommand),
-              flags.contains(.maskShift) else {
-            return false // Don't consume the event
+    private func unregisterHotKey() {
+        if let hotKeyRef {
+            UnregisterEventHotKey(hotKeyRef)
+            self.hotKeyRef = nil
         }
-        
-        guard !isCurrentlyCapturing else { return true }
-        
-        print("System-wide hotkey detected: Cmd+Shift+2")
-        
-        DispatchQueue.main.async { [weak self] in
-            self?.handleSnipHotkey()
-        }
-        
-        return true // Consume the event
+    }
+
+    private func systemHotKeyPressed() {
+        guard !isCurrentlyCapturing else { return }
+        print("System-wide hotkey detected: \(SnipHotKey.load().displayName)")
+        handleSnipHotkey()
     }
     
     private var isCurrentlyCapturing = false

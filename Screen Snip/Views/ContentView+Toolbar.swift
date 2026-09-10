@@ -67,6 +67,10 @@ extension ContentView {
                                     .labelsHidden()
                                     .frame(width: 190)
                                 }
+
+                                SettingsRow("Capture Shortcut", subtitle: "Click the shortcut, then type a new key combination.") {
+                                    SnipHotKeyRecorder()
+                                }
                                 
                                 SettingsRow("Downsample Retina Screenshots", subtitle: "High DPI (4k,5k) Snips will be saved as 1x.") {
                                     Toggle("", isOn: $downsampleToNonRetinaForSave)

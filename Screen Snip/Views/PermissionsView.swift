@@ -1,15 +1,12 @@
 import SwiftUI
 import ScreenCaptureKit
-import ApplicationServices
 import AppKit
 
 struct PermissionsView: View {
-    let needsAccessibility: Bool
     let needsScreenRecording: Bool
     let onContinue: () -> Void
     
     @State private var isTestingScreenRecording = false
-    @State private var isTestingAccessibility = false
     
     var body: some View {
         VStack(spacing: 20) {
@@ -23,7 +20,7 @@ struct PermissionsView: View {
                     .font(.title2)
                     .fontWeight(.semibold)
                 
-                Text("Screen Snip needs the following permissions to work properly:")
+                Text("Screen Snip needs Screen Recording permission to capture your screen:")
                     .font(.body)
                     .foregroundColor(.secondary)
                     .multilineTextAlignment(.center)
@@ -46,26 +43,6 @@ struct PermissionsView: View {
                     }
                 }
                 
-                if needsAccessibility {
-                    PermissionRowWithAction(
-                        icon: "hand.point.up.left.fill",
-                        title: "Accessibility",
-                        description: "Required to capture screenshots with the global hotkey (⌘⇧2)",
-                        status: .required,
-                        buttonTitle: "Open System Settings",
-                        isLoading: isTestingAccessibility
-                    ) {
-                        isTestingAccessibility = true
-                        
-                        onContinue()
-                        
-                        AXPromptCoordinator.shared.requestAXPromptOnly()
-                        // The coordinator will call AppDelegate.shared.refreshPermissionStatus() after 2 seconds
-                        DispatchQueue.main.asyncAfter(deadline: .now() + 2.5) {
-                            isTestingAccessibility = false
-                        }
-                    }
-                }
             }
             .padding(.horizontal, 8)
             
@@ -76,18 +53,8 @@ struct PermissionsView: View {
                     .fontWeight(.medium)
                 
                 VStack(alignment: .leading, spacing: 6) {
-                    InstructionStep(
-                        number: 1,
-                        text: "Click the button above for each permission"
-                    )
-                    InstructionStep(
-                        number: 2,
-                        text: "For Screen Recording - Enable the Screen Recording toggle in System Settings."
-                    )
-                    InstructionStep(
-                        number: 3,
-                        text: "For Accessibility - Click the '+' Sign and add Screen Snip. Make sure to flip the toggle!"
-                    )
+                    InstructionStep(number: 1, text: "Click Allow above")
+                    InstructionStep(number: 2, text: "Enable Screen Recording for Screen Snip in System Settings.")
                 }
                 .padding(.horizontal, 16)
             }

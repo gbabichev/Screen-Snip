@@ -156,7 +156,7 @@ struct ContentView: View {
     
     
     var hasPermissionIssues: Bool {
-        appDelegate.needsAccessibilityPermission || appDelegate.needsScreenRecordingPermission
+        appDelegate.needsScreenRecordingPermission
     }
     
     var aboutOverlayBinding: Binding<Bool> {

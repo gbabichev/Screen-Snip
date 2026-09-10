@@ -442,7 +442,6 @@ final class SelectionWindowManager: NSObject {
     static let shared = SelectionWindowManager()
     private var panels: [NSPanel] = []
     private var keyMonitor: Any?
-    private var globalKeyMonitor: Any?
 
     private override init() {
         super.init()
@@ -465,7 +464,7 @@ final class SelectionWindowManager: NSObject {
             
             // Match the proven 1.4.5 behavior: the frozen selection surface is
             // intentionally visible and interactive without activating the app.
-            let panel = NSPanel(contentRect: frame,
+            let panel = SelectionPanel(contentRect: frame,
                                 styleMask: [.borderless, .nonactivatingPanel],
                                 backing: .buffered,
                                 defer: false)
@@ -506,7 +505,7 @@ final class SelectionWindowManager: NSObject {
             
             let hostingView = NSHostingView(rootView: root)
             panel.contentView = hostingView
-            panel.makeKeyAndOrderFront(nil)
+            panel.orderFront(nil)
             panels.append(panel)
         }
         CursorTrace.log("selection panels displayed", panels: panels)
@@ -514,6 +513,9 @@ final class SelectionWindowManager: NSObject {
         // Preserve the activation request and delayed cursor installation order
         // used by 1.4.5. The panels themselves do not depend on activation.
         NSApp.activate(ignoringOtherApps: true)
+        let mouseLocation = NSEvent.mouseLocation
+        let focusedPanel = panels.first { NSMouseInRect(mouseLocation, $0.frame, false) } ?? panels.first
+        focusedPanel?.makeKey()
 
         // Keep the original proven fallback as well: app activation and panel
         // ordering may finish without a didBecomeActive notification (notably
@@ -532,16 +534,6 @@ final class SelectionWindowManager: NSObject {
                 return nil
             }
             return event
-        }
-
-        // If activation is still settling, macOS may briefly send keys to the
-        // previously active app. Accessibility permission is already required
-        // for the hotkey, so use a global fallback for Escape during selection.
-        globalKeyMonitor = NSEvent.addGlobalMonitorForEvents(matching: .keyDown) { [weak self] event in
-            guard event.keyCode == 53 else { return }
-            Task { @MainActor in
-                self?.handleCancellation()
-            }
         }
 
         CursorTrace.log("selection input monitors installed", panels: panels)
@@ -568,10 +560,11 @@ final class SelectionWindowManager: NSObject {
             NSEvent.removeMonitor(keyMonitor)
             self.keyMonitor = nil
         }
-        if let globalKeyMonitor {
-            NSEvent.removeMonitor(globalKeyMonitor)
-            self.globalKeyMonitor = nil
-        }
         onCancel = nil
     }
+}
+
+private final class SelectionPanel: NSPanel {
+    override var canBecomeKey: Bool { true }
+    override var canBecomeMain: Bool { false }
 }

@@ -19,7 +19,6 @@ extension ContentView {
     @ViewBuilder
     func permissionsSheetContent() -> some View {
         PermissionsView(
-            needsAccessibility: appDelegate.needsAccessibilityPermission,
             needsScreenRecording: appDelegate.needsScreenRecordingPermission,
             onContinue: {
                 appDelegate.showPermissionsView = false

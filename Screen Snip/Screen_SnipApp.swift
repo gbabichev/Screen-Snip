@@ -57,7 +57,6 @@ struct Screen_SnipApp: App {
     @AppStorage("hideDockIcon") private var hideDockIcon: Bool = false
 
     init() {
-        // Initialize hotkey manager but don't register yet - do it in app delegate
         applyActivationPolicy(hideDockIcon)
     }
 
@@ -96,7 +95,6 @@ final class AppDelegate: NSObject, NSApplicationDelegate, ObservableObject {
     static var shared: AppDelegate!
     
     // Add these properties for permissions tracking
-    @Published var needsAccessibilityPermission = false
     @Published var needsScreenRecordingPermission = false
     @Published var showPermissionsView = false
     @Published var showAboutOverlay = false
@@ -133,10 +131,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, ObservableObject {
         // Check permissions first
         checkPermissions()
 
-        // Register hotkey only if we have accessibility permission
-        if isAccessibilityEnabled() {
-            GlobalHotKeyManager.shared.registerSnipHotKey()
-        }
+        GlobalHotKeyManager.shared.registerSnipHotKey()
 
         // Primary and reliable signal: App Group flag set by the helper
         let defaults = UserDefaults(suiteName: kAppGroupID)
@@ -164,45 +159,33 @@ final class AppDelegate: NSObject, NSApplicationDelegate, ObservableObject {
     
     // NEW: Auto-show permissions when needed
     private func showPermissionsIfNeeded() {
-        let hasAccessibility = isAccessibilityEnabled()
         let hasScreenRecording = isScreenRecordingEnabled()
         
-        // Only show if we're missing permissions and not already showing
-        if (!hasAccessibility || !hasScreenRecording) && !showPermissionsView {
-            print("⚠️ Auto-showing permissions view - Missing: Accessibility: \(!hasAccessibility), Screen Recording: \(!hasScreenRecording)")
+        if !hasScreenRecording && !showPermissionsView {
+            print("⚠️ Auto-showing permissions view - Missing Screen Recording permission")
             showPermissionsView = true
         }
     }
     
     private func checkPermissions() {
-        let hasAccessibility = isAccessibilityEnabled()
         let hasScreenRecording = isScreenRecordingEnabled()
         
-        needsAccessibilityPermission = !hasAccessibility
         needsScreenRecordingPermission = !hasScreenRecording
         
-        if (!hasAccessibility || !hasScreenRecording) {
-            print("⚠️ Missing permissions - Accessibility: \(!hasAccessibility), Screen Recording: \(!hasScreenRecording)")
+        if !hasScreenRecording {
+            print("⚠️ Missing Screen Recording permission")
         }
     }
     
     // Add this method to refresh permission status
     func refreshPermissionStatus() {
-        let hasAccessibility = isAccessibilityEnabled()
         let hasScreenRecording = isScreenRecordingEnabled()
         
-        needsAccessibilityPermission = !hasAccessibility
         needsScreenRecordingPermission = !hasScreenRecording
         
-        // If permissions are now granted, register hotkey and hide permissions view
-        if hasAccessibility && hasScreenRecording {
-            GlobalHotKeyManager.shared.registerSnipHotKey()
+        if hasScreenRecording {
             showPermissionsView = false
         }
-    }
-
-    private func isAccessibilityEnabled() -> Bool {
-        return AXIsProcessTrusted()
     }
     
     private func isScreenRecordingEnabled() -> Bool {
@@ -221,24 +204,17 @@ final class AppDelegate: NSObject, NSApplicationDelegate, ObservableObject {
     }
 
     func applicationDidBecomeActive(_ notification: Notification) {
-        // Store previous permission state
-        let previousAccessibility = !needsAccessibilityPermission
         let previousScreenRecording = !needsScreenRecordingPermission
         
         // Refresh permissions when app becomes active (user might have changed settings)
         refreshPermissionStatus()
         
-        // If permissions were just granted, close the permissions view
-        let nowHasAccessibility = !needsAccessibilityPermission
         let nowHasScreenRecording = !needsScreenRecordingPermission
         
-        if (!previousAccessibility && nowHasAccessibility) || (!previousScreenRecording && nowHasScreenRecording) {
-            if nowHasAccessibility && nowHasScreenRecording {
-                showPermissionsView = false
-            }
+        if !previousScreenRecording && nowHasScreenRecording {
+            showPermissionsView = false
         }
         
-        GlobalHotKeyManager.shared.registerSnipHotKey()
     }
 
     func applicationShouldTerminate(_ sender: NSApplication) -> NSApplication.TerminateReply {
