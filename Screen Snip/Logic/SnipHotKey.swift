@@ -137,21 +137,28 @@ struct SnipHotKeyRecorder: View {
 
     var body: some View {
         VStack(alignment: .trailing, spacing: 3) {
-            HotKeyRecorderButton(shortcut: $shortcut) { proposedShortcut in
-                let previousShortcut = shortcut
-                proposedShortcut.save()
+            HotKeyRecorderButton(
+                shortcut: $shortcut,
+                onCommit: { proposedShortcut in
+                    let previousShortcut = shortcut
+                    proposedShortcut.save()
 
-                let status = GlobalHotKeyManager.shared.registerSnipHotKey()
-                if status == noErr {
-                    shortcut = proposedShortcut
-                    registrationError = nil
-                } else {
-                    previousShortcut.save()
-                    _ = GlobalHotKeyManager.shared.registerSnipHotKey()
-                    registrationError = "Shortcut unavailable"
+                    let status = GlobalHotKeyManager.shared.registerSnipHotKey()
+                    if status == noErr {
+                        shortcut = proposedShortcut
+                        registrationError = nil
+                    } else {
+                        previousShortcut.save()
+                        _ = GlobalHotKeyManager.shared.registerSnipHotKey()
+                        registrationError = "Shortcut already in use"
+                        NSSound.beep()
+                    }
+                },
+                onInterrupted: {
+                    registrationError = "Shortcut may be in use"
                     NSSound.beep()
                 }
-            }
+            )
             .frame(width: 112, height: 28)
 
             if let registrationError {
@@ -166,6 +173,7 @@ struct SnipHotKeyRecorder: View {
 private struct HotKeyRecorderButton: NSViewRepresentable {
     @Binding var shortcut: SnipHotKey
     let onCommit: (SnipHotKey) -> Void
+    let onInterrupted: () -> Void
 
     func makeNSView(context: Context) -> ShortcutButton {
         let button = ShortcutButton()
@@ -179,12 +187,14 @@ private struct HotKeyRecorderButton: NSViewRepresentable {
         button.onCancelRecording = {
             _ = GlobalHotKeyManager.shared.registerSnipHotKey()
         }
+        button.onInterruptedRecording = onInterrupted
         return button
     }
 
     func updateNSView(_ button: ShortcutButton, context: Context) {
         button.normalTitle = shortcut.displayName
         button.onCommit = onCommit
+        button.onInterruptedRecording = onInterrupted
         if !button.isRecording {
             button.title = shortcut.displayName
         }
@@ -195,8 +205,10 @@ private final class ShortcutButton: NSButton {
     var onCommit: ((SnipHotKey) -> Void)?
     var onBeginRecording: (() -> Void)?
     var onCancelRecording: (() -> Void)?
+    var onInterruptedRecording: (() -> Void)?
     var normalTitle = ""
     var isRecording = false
+    private var sawModifierInput = false
 
     override var acceptsFirstResponder: Bool { true }
 
@@ -219,6 +231,7 @@ private final class ShortcutButton: NSButton {
         }
         normalTitle = title
         isRecording = true
+        sawModifierInput = false
         title = "Type Shortcut…"
         onBeginRecording?()
         window?.makeFirstResponder(self)
@@ -240,9 +253,30 @@ private final class ShortcutButton: NSButton {
         onCommit?(shortcut)
     }
 
+    override func flagsChanged(with event: NSEvent) {
+        guard isRecording else {
+            super.flagsChanged(with: event)
+            return
+        }
+
+        let flags = event.modifierFlags.intersection([.command, .shift, .option, .control])
+        if !flags.isEmpty {
+            sawModifierInput = true
+            title = modifierDisplay(for: flags) + "…"
+        } else if sawModifierInput {
+            cancelInterruptedRecording()
+        }
+    }
+
     override func resignFirstResponder() -> Bool {
         let didResign = super.resignFirstResponder()
-        if didResign && isRecording { cancelRecording() }
+        if didResign && isRecording {
+            if sawModifierInput {
+                cancelInterruptedRecording()
+            } else {
+                cancelRecording()
+            }
+        }
         return didResign
     }
 
@@ -254,5 +288,19 @@ private final class ShortcutButton: NSButton {
     private func cancelRecording() {
         finishRecording()
         onCancelRecording?()
+    }
+
+    private func cancelInterruptedRecording() {
+        cancelRecording()
+        onInterruptedRecording?()
+    }
+
+    private func modifierDisplay(for flags: NSEvent.ModifierFlags) -> String {
+        var result = ""
+        if flags.contains(.control) { result += "⌃" }
+        if flags.contains(.option) { result += "⌥" }
+        if flags.contains(.shift) { result += "⇧" }
+        if flags.contains(.command) { result += "⌘" }
+        return result
     }
 }
