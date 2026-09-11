@@ -4,7 +4,7 @@ extension ContentView {
     @ToolbarContentBuilder
     func toolbarContent() -> some ToolbarContent {
                     // Items visible only when we have a capture
-                    if selectedSnipURL != nil {
+                    if selectedSnipURL != nil && !isShowingPermissionsContent {
                         
                         if imageDisplayMode != "fit"{
                             ToolbarItemGroup(placement: .navigation){

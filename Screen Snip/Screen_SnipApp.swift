@@ -221,7 +221,14 @@ final class AppDelegate: NSObject, NSApplicationDelegate, ObservableObject {
                 return .terminateLater
             }
             isAwaitingTerminationConfirmation = true
-            NotificationCenter.default.post(name: .requestTerminateApp, object: nil)
+
+            // The reply to a `.terminateLater` decision must happen after this
+            // delegate method returns. A synchronous NotificationCenter post can
+            // otherwise reply too early and leave AppKit waiting indefinitely.
+            DispatchQueue.main.async {
+                NSApp.activate(ignoringOtherApps: true)
+                NotificationCenter.default.post(name: .requestTerminateApp, object: nil)
+            }
             return .terminateLater
         }
 

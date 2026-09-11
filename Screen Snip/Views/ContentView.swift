@@ -159,6 +159,10 @@ struct ContentView: View {
     var hasPermissionIssues: Bool {
         appDelegate.needsScreenRecordingPermission
     }
+
+    var isShowingPermissionsContent: Bool {
+        appDelegate.showPermissionsView && appDelegate.needsScreenRecordingPermission
+    }
     
     var aboutOverlayBinding: Binding<Bool> {
         Binding(
@@ -1135,7 +1139,9 @@ struct ContentView: View {
                 
                 
                 Group {
-                    if let url = selectedSnipURL, let imgSize = selectedImageSize {
+                    if isShowingPermissionsContent {
+                        permissionsRequiredContent()
+                    } else if let url = selectedSnipURL, let imgSize = selectedImageSize {
                         GeometryReader { geo in
                             let baseFitted = imageDisplayMode == "fit"
                             ? fittedImageSize(original: getActualDisplaySize(imgSize), in: geo.size)  // Use point size for fitting
@@ -1740,9 +1746,6 @@ struct ContentView: View {
         }
         .toolbar {
             toolbarContent()
-        }
-        .sheet(isPresented: $appDelegate.showPermissionsView) {
-            permissionsSheetContent()
         }
         .fileImporter(
             isPresented: Binding(

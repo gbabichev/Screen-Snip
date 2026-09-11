@@ -1,12 +1,13 @@
 import SwiftUI
-import ScreenCaptureKit
 import AppKit
+import CoreGraphics
 
 struct PermissionsView: View {
     let needsScreenRecording: Bool
     let onContinue: () -> Void
     
     @State private var isTestingScreenRecording = false
+    @State private var didRequestScreenRecordingPermission = false
     
     var body: some View {
         VStack(spacing: 20) {
@@ -35,11 +36,10 @@ struct PermissionsView: View {
                         title: "Screen Recording",
                         description: "Required to capture screen content",
                         status: .required,
-                        buttonTitle: "Allow",
+                        buttonTitle: didRequestScreenRecordingPermission ? "Open System Settings" : "Allow",
                         isLoading: isTestingScreenRecording
                     ) {
-                        onContinue()
-                        testScreenRecordingPermission()
+                        handleScreenRecordingPermission()
                     }
                 }
                 
@@ -53,8 +53,13 @@ struct PermissionsView: View {
                     .fontWeight(.medium)
                 
                 VStack(alignment: .leading, spacing: 6) {
-                    InstructionStep(number: 1, text: "Click Allow above")
-                    InstructionStep(number: 2, text: "Enable Screen Recording for Screen Snip in System Settings.")
+                    InstructionStep(
+                        number: 1,
+                        text: didRequestScreenRecordingPermission
+                            ? "Click Open System Settings above."
+                            : "Click Allow above to request access from macOS."
+                    )
+                    InstructionStep(number: 2, text: "Enable Screen Recording for Screen Snip, then use macOS’s Quit & Reopen button if prompted.")
                 }
                 .padding(.horizontal, 16)
             }
@@ -71,44 +76,64 @@ struct PermissionsView: View {
         }
         .padding(32)
         .frame(maxWidth: 480)
-        .background(Color(NSColor.windowBackgroundColor))
+        .background(
+            RoundedRectangle(cornerRadius: 18, style: .continuous)
+                .fill(Color(NSColor.controlBackgroundColor))
+        )
+        .overlay {
+            RoundedRectangle(cornerRadius: 18, style: .continuous)
+                .stroke(Color(NSColor.separatorColor).opacity(0.55), lineWidth: 1)
+        }
+        .shadow(color: .black.opacity(0.12), radius: 18, y: 8)
     }
     
-    private func testScreenRecordingPermission() {
-        isTestingScreenRecording = true
-        
-        Task {
-            do {
-                // Use ScreenCaptureKit to trigger the permission dialog
-                let availableContent = try await SCShareableContent.excludingDesktopWindows(false, onScreenWindowsOnly: true)
-                
-                if let display = availableContent.displays.first {
-                    let filter = SCContentFilter(display: display, excludingWindows: [])
-                    let config = SCStreamConfiguration()
-                    config.width = 100  // Small test capture
-                    config.height = 100
-                    config.minimumFrameInterval = CMTime(value: 1, timescale: 1)
-                    
-                    // This will show the permission dialog if needed
-                    let stream = SCStream(filter: filter, configuration: config, delegate: nil)
-                    try await stream.startCapture()
-                    try await stream.stopCapture()
-                }
-                
-                // If we got here, permission was likely granted
-                await MainActor.run {
-                    self.isTestingScreenRecording = false
-                    AppDelegate.shared.refreshPermissionStatus()
-                }
-                
-            } catch {
-                print("Screen recording test failed: \(error)")
-                await MainActor.run {
-                    self.isTestingScreenRecording = false
-                    AppDelegate.shared.refreshPermissionStatus()
-                }
-            }
+    private func handleScreenRecordingPermission() {
+        if CGPreflightScreenCaptureAccess() {
+            AppDelegate.shared.refreshPermissionStatus()
+            onContinue()
+            return
         }
+
+        // A previously denied process is not prompted again. For this presentation,
+        // remember that the native request has been made so the next attempt goes
+        // straight to Settings. This intentionally resets when the sheet is reopened
+        // so a rebuilt or newly signed app gets a fresh native registration attempt.
+        if didRequestScreenRecordingPermission {
+            openScreenRecordingSettings()
+            onContinue()
+            return
+        }
+
+        isTestingScreenRecording = true
+        didRequestScreenRecordingPermission = true
+
+        // This is the system-supported permission request. Unlike starting a
+        // temporary SCStream, it behaves consistently for sandboxed builds.
+        let granted = CGRequestScreenCaptureAccess()
+
+        isTestingScreenRecording = false
+        AppDelegate.shared.refreshPermissionStatus()
+
+        if granted {
+            onContinue()
+        }
+    }
+
+    private func openScreenRecordingSettings() {
+        // macOS does not expose a dedicated public API for this privacy pane.
+        // The preference URL is the standard route used by Mac apps, with a
+        // generic System Settings fallback in case Apple changes the route.
+        if let privacyPaneURL = URL(
+            string: "x-apple.systempreferences:com.apple.preference.security?Privacy_ScreenCapture"
+        ), NSWorkspace.shared.open(privacyPaneURL) {
+            return
+        }
+
+        let systemSettingsURL = URL(fileURLWithPath: "/System/Applications/System Settings.app")
+        NSWorkspace.shared.openApplication(
+            at: systemSettingsURL,
+            configuration: NSWorkspace.OpenConfiguration()
+        )
     }
 }
 

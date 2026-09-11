@@ -17,12 +17,26 @@ extension ContentView {
     }
     
     @ViewBuilder
-    func permissionsSheetContent() -> some View {
-        PermissionsView(
-            needsScreenRecording: appDelegate.needsScreenRecordingPermission,
-            onContinue: {
-                appDelegate.showPermissionsView = false
+    func permissionsRequiredContent() -> some View {
+        GeometryReader { geometry in
+            ScrollView {
+                VStack(spacing: 0) {
+                    Spacer(minLength: 32)
+
+                    PermissionsView(
+                        needsScreenRecording: appDelegate.needsScreenRecordingPermission,
+                        onContinue: {
+                            appDelegate.showPermissionsView = false
+                        }
+                    )
+
+                    Spacer(minLength: 32)
+                }
+                .padding(.horizontal, 32)
+                .frame(maxWidth: .infinity)
+                .frame(minHeight: geometry.size.height)
             }
-        )
+            .scrollIndicators(.automatic)
+        }
     }
 }
