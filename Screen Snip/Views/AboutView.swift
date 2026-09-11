@@ -31,17 +31,22 @@ struct AboutView: View {
     #endif
 
     var body: some View {
-        VStack(spacing: 18) {
-            
-            LiveAppIconView()
-            
-            VStack(spacing: 4) {
+        VStack(spacing: 20) {
+            VStack(spacing: 10) {
+                LiveAppIconView()
+
                 Text("Screen Snip")
                     .font(.title.weight(.semibold))
+
                 Text("Fast, powerful, and beautifully simple screenshots for Mac.")
-                    .foregroundColor(.secondary)
+                    .font(.callout)
+                    .foregroundStyle(.secondary)
+                    .multilineTextAlignment(.center)
+                    .lineLimit(2)
+                    .fixedSize(horizontal: false, vertical: true)
+                    .frame(maxWidth: 320)
             }
-            
+
             VStack(alignment: .leading, spacing: 6) {
                 AboutRow(label: "Version", value: appVersion)
                 AboutRow(label: "Build", value: appBuild)
@@ -49,24 +54,39 @@ struct AboutView: View {
                 AboutRow(label: "Developer", value: "George Babichev")
                 AboutRow(label: "Copyright", value: "© \(Calendar.current.component(.year, from: Date())) George Babichev")
             }
+            .padding(14)
             .frame(maxWidth: .infinity, alignment: .leading)
-            
+            .background(
+                RoundedRectangle(cornerRadius: 12, style: .continuous)
+                    .fill(Color.primary.opacity(0.045))
+            )
+
             if let devPhoto = NSImage(named: "gbabichev") {
                 HStack(spacing: 12) {
                     Image(nsImage: devPhoto)
                         .resizable()
                         .scaledToFill()
                         .frame(width: 64, height: 64)
-                        .offset(y: 6)
                         .clipShape(Circle())
                         .overlay(Circle().stroke(Color.secondary.opacity(0.2), lineWidth: 1))
+
                     VStack(alignment: .leading, spacing: 4) {
                         Text("George Babichev")
                             .font(.headline)
-                        Link("georgebabichev.com", destination: URL(string: "https://georgebabichev.com")!)
+
+                        Link(destination: URL(string: "https://georgebabichev.com")!) {
+                            HStack(spacing: 4) {
+                                Text("georgebabichev.com")
+                                Image(systemName: "arrow.up.right")
+                                    .font(.caption2.weight(.semibold))
+                            }
                             .font(.subheadline)
+                        }
                     }
+
+                    Spacer(minLength: 0)
                 }
+                .padding(.horizontal, 4)
                 .frame(maxWidth: .infinity, alignment: .leading)
             }
 
@@ -87,14 +107,18 @@ struct AboutView: View {
             #endif
             
             Divider()
-            
+
             Text("Screen Snip lets you quickly take screenshots, and open them in a simple editor with powerful tools.")
                 .font(.callout)
-                .foregroundColor(.secondary)
+                .foregroundStyle(.secondary)
                 .multilineTextAlignment(.center)
+                .lineLimit(3)
+                .fixedSize(horizontal: false, vertical: true)
+                .frame(maxWidth: 330)
         }
-        .padding(24)
-        .frame(width: 380)
+        .padding(.horizontal, 26)
+        .padding(.vertical, 24)
+        .frame(width: 410)
     }
     
     private var appVersion: String {
@@ -119,14 +143,20 @@ private struct AboutRow: View {
     let value: String
     
     var body: some View {
-        HStack {
+        HStack(alignment: .firstTextBaseline, spacing: 16) {
             Text(label)
                 .font(.subheadline)
-                .foregroundColor(.secondary)
-            Spacer()
+                .foregroundStyle(.secondary)
+                .fixedSize(horizontal: true, vertical: false)
+
+            Spacer(minLength: 12)
+
             Text(value)
                 .font(.subheadline)
-                .foregroundColor(.primary)
+                .foregroundStyle(.primary)
+                .multilineTextAlignment(.trailing)
+                .lineLimit(2)
+                .fixedSize(horizontal: false, vertical: true)
         }
     }
 }
@@ -144,7 +174,7 @@ struct AboutOverlayView: View {
             VStack {
                 ZStack(alignment: .topTrailing) {
                     AboutView()
-                        .frame(maxWidth: 380)
+                        .frame(maxWidth: 410)
                         .background(
                             RoundedRectangle(cornerRadius: 24, style: .continuous)
                                 .fill(Color(NSColor.windowBackgroundColor))
