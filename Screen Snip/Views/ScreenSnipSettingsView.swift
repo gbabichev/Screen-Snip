@@ -207,14 +207,12 @@ private struct SavingSettingsPane: View {
             SettingsRow("Save Location", subtitle: displayedDirectory) {
                 HStack(spacing: 8) {
                     Button("Choose…") { isChoosingDirectory = true }
-                    if !saveDirectoryPath.isEmpty {
-                        Button {
-                            resetSaveDirectory()
-                        } label: {
-                            Image(systemName: "arrow.counterclockwise")
-                        }
-                        .help("Restore default save location")
+
+                    Button("Reset", systemImage: "arrow.counterclockwise") {
+                        resetSaveDirectory()
                     }
+                    .disabled(saveDirectoryPath.isEmpty)
+                    .help("Restore Pictures/Screen Snip as the save location")
                 }
             }
 

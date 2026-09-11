@@ -114,11 +114,19 @@ open "Screen Snip.xcodeproj"
 
 ### 1.5.0
 - Added support for macOS 27.
-- Added new magnifier tool for taking screenshots.
-- Using a new screenshot API for improved performance.
-- Fixed an issue with temporary file build-up.
-- Improved object selection.
-
+- Removed the need for Accessibility permission.
+- Added two new capture modes: capture an entire screen, or choose a window.
+- Added an optional magnifier for more precise selections.
+- Added customizable global capture shortcuts.
+- Improved screenshot speed and reduced screen flashing.
+- Redesigned Settings with clearer organization.
+- Improved the Screen Recording permission setup experience.
+- Added automatic updates to Recent Snips and Snip Gallery.
+- Significantly improved Snip Gallery loading and scrolling performance.
+- Added multi-select deletion and Undo Delete to Snip Gallery.
+- Improved selecting, moving, and pasting overlapping objects.
+- Fixed temporary files accumulating over time.
+- Added several stability improvements, including fixes for capture cancellation, saving failures, and closing windows.
 
 ### 1.4.5
 - Fixed an issue with "cmd+c" not properly copying edits in certain rare conditions.
