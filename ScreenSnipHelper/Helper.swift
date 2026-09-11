@@ -27,7 +27,11 @@ private func containingMainAppURL() -> URL? {
 class LoginItemHelperApp: NSObject, NSApplicationDelegate {
     func applicationDidFinishLaunching(_ notification: Notification) {
         
+#if DEBUG
+        let mainAppBundleID = "com.georgebabichev.Screen-Snip.debug"
+#else
         let mainAppBundleID = "com.georgebabichev.Screen-Snip"
+#endif
         
         let config = NSWorkspace.OpenConfiguration()
 

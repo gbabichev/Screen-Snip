@@ -46,7 +46,11 @@ struct ScreenSnipSettingsView: View {
 }
 
 private struct GeneralSettingsPane: View {
+#if DEBUG
+    private static let loginHelperIdentifier = "com.georgebabichev.Screen-Snip-Helper.debug"
+#else
     private static let loginHelperIdentifier = "com.georgebabichev.Screen-Snip-Helper"
+#endif
 
     @AppStorage("confirmSaveBeforeLeavingChanges") private var confirmBeforeLeaving = true
     @AppStorage("hideDockIcon") private var hideDockIcon = false

@@ -3,11 +3,21 @@ import Carbon.HIToolbox
 import SwiftUI
 
 struct SnipHotKey: Equatable {
+#if DEBUG
+    // Keep the development build from taking the released app's default hotkey
+    // when both versions are running at the same time.
+    static let `default` = SnipHotKey(
+        keyCode: 19,
+        modifiers: UInt32(controlKey | shiftKey),
+        keyDisplay: "2"
+    )
+#else
     static let `default` = SnipHotKey(
         keyCode: 19,
         modifiers: UInt32(cmdKey | shiftKey),
         keyDisplay: "2"
     )
+#endif
 
     let keyCode: UInt32
     let modifiers: UInt32

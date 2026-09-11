@@ -111,6 +111,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, ObservableObject {
         
         #if DEBUG
         print("Running in Debug mode")
+        print("Debug app identity: bundle=\(Bundle.main.bundleIdentifier ?? "unknown") path=\(Bundle.main.bundleURL.path)")
         #else
         print("Running in Release mode")
         #endif

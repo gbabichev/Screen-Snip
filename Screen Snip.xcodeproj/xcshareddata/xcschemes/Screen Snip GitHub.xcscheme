@@ -15,23 +15,23 @@
             buildForAnalyzing = "YES">
             <BuildableReference
                BuildableIdentifier = "primary"
-               BlueprintIdentifier = "FF3900FF2E7858C1008A104E"
-               BuildableName = "ScreenSnipHelper.app"
-               BlueprintName = "ScreenSnipHelper"
+               BlueprintIdentifier = "FF30F8E62E6F929000F72D09"
+               BuildableName = "Screen Snip.app"
+               BlueprintName = "Screen Snip"
                ReferencedContainer = "container:Screen Snip.xcodeproj">
             </BuildableReference>
          </BuildActionEntry>
       </BuildActionEntries>
    </BuildAction>
    <TestAction
-      buildConfiguration = "Debug"
+      buildConfiguration = "Release - Web"
       selectedDebuggerIdentifier = "Xcode.DebuggerFoundation.Debugger.LLDB"
       selectedLauncherIdentifier = "Xcode.DebuggerFoundation.Launcher.LLDB"
       shouldUseLaunchSchemeArgsEnv = "YES"
       shouldAutocreateTestPlan = "YES">
    </TestAction>
    <LaunchAction
-      buildConfiguration = "Debug"
+      buildConfiguration = "Release - Web"
       selectedDebuggerIdentifier = "Xcode.DebuggerFoundation.Debugger.LLDB"
       selectedLauncherIdentifier = "Xcode.DebuggerFoundation.Launcher.LLDB"
       launchStyle = "0"
@@ -44,15 +44,15 @@
          runnableDebuggingMode = "0">
          <BuildableReference
             BuildableIdentifier = "primary"
-            BlueprintIdentifier = "FF3900FF2E7858C1008A104E"
-            BuildableName = "ScreenSnipHelper.app"
-            BlueprintName = "ScreenSnipHelper"
+            BlueprintIdentifier = "FF30F8E62E6F929000F72D09"
+            BuildableName = "Screen Snip.app"
+            BlueprintName = "Screen Snip"
             ReferencedContainer = "container:Screen Snip.xcodeproj">
          </BuildableReference>
       </BuildableProductRunnable>
    </LaunchAction>
    <ProfileAction
-      buildConfiguration = "Release"
+      buildConfiguration = "Release - Web"
       shouldUseLaunchSchemeArgsEnv = "YES"
       savedToolIdentifier = ""
       useCustomWorkingDirectory = "NO"
@@ -61,18 +61,18 @@
          runnableDebuggingMode = "0">
          <BuildableReference
             BuildableIdentifier = "primary"
-            BlueprintIdentifier = "FF3900FF2E7858C1008A104E"
-            BuildableName = "ScreenSnipHelper.app"
-            BlueprintName = "ScreenSnipHelper"
+            BlueprintIdentifier = "FF30F8E62E6F929000F72D09"
+            BuildableName = "Screen Snip.app"
+            BlueprintName = "Screen Snip"
             ReferencedContainer = "container:Screen Snip.xcodeproj">
          </BuildableReference>
       </BuildableProductRunnable>
    </ProfileAction>
    <AnalyzeAction
-      buildConfiguration = "Debug">
+      buildConfiguration = "Release - Web">
    </AnalyzeAction>
    <ArchiveAction
-      buildConfiguration = "Release"
+      buildConfiguration = "Release - Web"
       revealArchiveInOrganizer = "YES">
    </ArchiveAction>
 </Scheme>
