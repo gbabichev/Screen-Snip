@@ -57,6 +57,12 @@ struct Screen_SnipApp: App {
     @AppStorage("hideDockIcon") private var hideDockIcon: Bool = false
 
     init() {
+        UserDefaults.standard.register(defaults: [
+            "preferredSaveFormat": SaveFormat.jpeg.rawValue,
+            "downsampleToNonRetinaClipboard": false,
+            "saveOnCopy": true,
+            "captureMagnifierEnabled": true
+        ])
         applyActivationPolicy(hideDockIcon)
     }
 

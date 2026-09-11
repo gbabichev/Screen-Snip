@@ -190,7 +190,7 @@ struct ImageSaver {
     static func saveImage(_ image: NSImage, to directory: URL? = nil) -> URL? {
         // Get user preferences from UserDefaults
         let saveDirectoryPath = UserDefaults.standard.string(forKey: "saveDirectoryPath") ?? ""
-        let preferredSaveFormatRaw = UserDefaults.standard.string(forKey: "preferredSaveFormat") ?? "png"
+        let preferredSaveFormatRaw = UserDefaults.standard.string(forKey: "preferredSaveFormat") ?? "jpeg"
         let saveQuality = UserDefaults.standard.double(forKey: "saveQuality")
         let quality = saveQuality > 0 ? saveQuality : 0.9 // Default to 0.9 if not set
         
@@ -615,7 +615,7 @@ struct ImageDocument: FileDocument {
             case .jpeg: return "jpeg"
             case .heic: return "heic"
             default:
-                return UserDefaults.standard.string(forKey: "preferredSaveFormat") ?? "png"
+                return UserDefaults.standard.string(forKey: "preferredSaveFormat") ?? "jpeg"
             }
         }()
         // Fetch the latest scale/quality selections from defaults so changes made in the sheet are respected at save time.

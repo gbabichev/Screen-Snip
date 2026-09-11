@@ -54,6 +54,13 @@ struct SnipHotKey: Equatable {
         defaults.set(keyDisplay, forKey: Keys.keyDisplay)
     }
 
+    static func clearSavedShortcut() {
+        let defaults = UserDefaults.standard
+        defaults.removeObject(forKey: Keys.keyCode)
+        defaults.removeObject(forKey: Keys.modifiers)
+        defaults.removeObject(forKey: Keys.keyDisplay)
+    }
+
     static func from(event: NSEvent) -> SnipHotKey? {
         let flags = event.modifierFlags.intersection(.deviceIndependentFlagsMask)
         var modifiers: UInt32 = 0
@@ -149,32 +156,26 @@ struct SnipHotKeyRecorder: View {
 
     var body: some View {
         VStack(alignment: .trailing, spacing: 3) {
-            HotKeyRecorderButton(
-                shortcut: $shortcut,
-                isRecording: $isRecording,
-                onBegin: clearRegistrationError,
-                onCancel: clearRegistrationError,
-                onCommit: { proposedShortcut in
-                    let previousShortcut = shortcut
-                    proposedShortcut.save()
-
-                    let status = GlobalHotKeyManager.shared.registerSnipHotKey()
-                    if status == noErr {
-                        shortcut = proposedShortcut
-                        registrationError = nil
-                    } else {
-                        previousShortcut.save()
-                        _ = GlobalHotKeyManager.shared.registerSnipHotKey()
-                        showTemporaryError("Shortcut already in use")
+            HStack(spacing: 8) {
+                HotKeyRecorderButton(
+                    shortcut: $shortcut,
+                    isRecording: $isRecording,
+                    onBegin: clearRegistrationError,
+                    onCancel: clearRegistrationError,
+                    onCommit: applyShortcut,
+                    onInterrupted: {
+                        showTemporaryError("Shortcut may be in use")
                         NSSound.beep()
                     }
-                },
-                onInterrupted: {
-                    showTemporaryError("Shortcut may be in use")
-                    NSSound.beep()
+                )
+                .frame(width: 112, height: 28)
+
+                Button("Reset", systemImage: "arrow.counterclockwise") {
+                    resetShortcut()
                 }
-            )
-            .frame(width: 112, height: 28)
+                .disabled(shortcut == .default || isRecording)
+                .help("Restore the default shortcut (\(SnipHotKey.default.displayName))")
+            }
 
             if isRecording {
                 Text("Hit Esc to cancel")
@@ -187,6 +188,38 @@ struct SnipHotKeyRecorder: View {
             }
         }
         .onDisappear(perform: clearRegistrationError)
+    }
+
+    private func applyShortcut(_ proposedShortcut: SnipHotKey) {
+        let previousShortcut = shortcut
+        proposedShortcut.save()
+
+        let status = GlobalHotKeyManager.shared.registerSnipHotKey()
+        if status == noErr {
+            shortcut = proposedShortcut
+            clearRegistrationError()
+        } else {
+            previousShortcut.save()
+            _ = GlobalHotKeyManager.shared.registerSnipHotKey()
+            showTemporaryError("Shortcut already in use")
+            NSSound.beep()
+        }
+    }
+
+    private func resetShortcut() {
+        let previousShortcut = shortcut
+        clearRegistrationError()
+        SnipHotKey.clearSavedShortcut()
+
+        let status = GlobalHotKeyManager.shared.registerSnipHotKey()
+        if status == noErr {
+            shortcut = .default
+        } else {
+            previousShortcut.save()
+            _ = GlobalHotKeyManager.shared.registerSnipHotKey()
+            showTemporaryError("Default shortcut is already in use")
+            NSSound.beep()
+        }
     }
 
     private func showTemporaryError(_ message: String) {

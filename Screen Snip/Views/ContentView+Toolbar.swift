@@ -379,7 +379,16 @@ extension ContentView {
                             .help("Drag to select an area to crop")
                             
                         }
-                    }        else {
+                    } else {
+                        if !isShowingPermissionsContent {
+                            ToolbarItem(placement: .navigation) {
+                                SettingsLink {
+                                    Label("Settings", systemImage: "gearshape")
+                                }
+                                .help("Open Settings")
+                            }
+                        }
+
                         ToolbarItem(placement: .principal) {
                             Spacer()
                         }

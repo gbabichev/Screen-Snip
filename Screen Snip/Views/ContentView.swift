@@ -194,18 +194,18 @@ struct ContentView: View {
     @State var zoomPan: CGSize = .zero
     private var isViewportFitMode: Bool { imageDisplayMode == "fit" }
     
-    @AppStorage("preferredSaveFormat") var preferredSaveFormatRaw: String = SaveFormat.png.rawValue
+    @AppStorage("preferredSaveFormat") var preferredSaveFormatRaw: String = SaveFormat.jpeg.rawValue
     var preferredSaveFormat: SaveFormat {
-        get { SaveFormat(rawValue: preferredSaveFormatRaw) ?? .png }
+        get { SaveFormat(rawValue: preferredSaveFormatRaw) ?? .jpeg }
         set { preferredSaveFormatRaw = newValue.rawValue }
     }
     
     @AppStorage("saveQuality") var saveQuality: Double = 0.9
     @AppStorage("saveDirectoryPath") var saveDirectoryPath: String = ""
-    @AppStorage("downsampleToNonRetinaClipboard") var downsampleToNonRetinaClipboard: Bool = true
+    @AppStorage("downsampleToNonRetinaClipboard") var downsampleToNonRetinaClipboard: Bool = false
     @AppStorage("downsampleToNonRetinaForSave") var downsampleToNonRetinaForSave: Bool = false
     @AppStorage("imageDisplayMode") var imageDisplayMode: String = "fit" // "actual" or "fit"
-    @AppStorage("saveOnCopy") var saveOnCopy: Bool = false
+    @AppStorage("saveOnCopy") var saveOnCopy: Bool = true
     @AppStorage("confirmSaveBeforeLeavingChanges") var confirmSaveBeforeLeavingChanges: Bool = true
     @State var exportScaleOption: ExportScaleOption = .full
     private let exportScaleDefaultsKey = "exportScaleFactor"

@@ -5,7 +5,7 @@ import UniformTypeIdentifiers
 
 struct ScreenSnipSettingsView: View {
     @AppStorage("selectedSettingsPane") private var selectedPane = SettingsPane.general.rawValue
-    @AppStorage("preferredSaveFormat") private var preferredFormatRaw = SaveFormat.png.rawValue
+    @AppStorage("preferredSaveFormat") private var preferredFormatRaw = SaveFormat.jpeg.rawValue
 
     private var paneHeight: CGFloat {
         switch SettingsPane(rawValue: selectedPane) ?? .general {
@@ -14,7 +14,7 @@ struct ScreenSnipSettingsView: View {
         case .capture:
             return 300
         case .saving:
-            let format = SaveFormat(rawValue: preferredFormatRaw) ?? .png
+            let format = SaveFormat(rawValue: preferredFormatRaw) ?? .jpeg
             return format == .png ? 350 : 395
         }
     }
@@ -131,7 +131,7 @@ private struct GeneralSettingsPane: View {
 private struct CaptureSettingsPane: View {
     @AppStorage("captureMode") private var captureModeRaw = CaptureMode.captureWithWindows.rawValue
     @AppStorage("captureType") private var captureTypeRaw = CaptureType.dragToSelect.rawValue
-    @AppStorage("captureMagnifierEnabled") private var magnifierEnabled = false
+    @AppStorage("captureMagnifierEnabled") private var magnifierEnabled = true
 
     var body: some View {
         SettingsPaneLayout {
@@ -185,17 +185,17 @@ private struct CaptureSettingsPane: View {
 }
 
 private struct SavingSettingsPane: View {
-    @AppStorage("preferredSaveFormat") private var preferredFormatRaw = SaveFormat.png.rawValue
+    @AppStorage("preferredSaveFormat") private var preferredFormatRaw = SaveFormat.jpeg.rawValue
     @AppStorage("saveQuality") private var saveQuality = 0.9
     @AppStorage("saveDirectoryPath") private var saveDirectoryPath = ""
-    @AppStorage("downsampleToNonRetinaClipboard") private var downsampleClipboard = true
+    @AppStorage("downsampleToNonRetinaClipboard") private var downsampleClipboard = false
     @AppStorage("downsampleToNonRetinaForSave") private var downsampleSave = false
-    @AppStorage("saveOnCopy") private var saveOnCopy = false
+    @AppStorage("saveOnCopy") private var saveOnCopy = true
     @State private var isChoosingDirectory = false
     @State private var directoryError: String?
 
     private var preferredFormat: SaveFormat {
-        SaveFormat(rawValue: preferredFormatRaw) ?? .png
+        SaveFormat(rawValue: preferredFormatRaw) ?? .jpeg
     }
 
     private var displayedDirectory: String {
