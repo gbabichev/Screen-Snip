@@ -250,37 +250,8 @@ struct ImageSaver {
         // Check if user wants to downsample to non-retina
         let downsampleToNonRetinaForSave = UserDefaults.standard.bool(forKey: "downsampleToNonRetinaForSave")
         
-        // Get the image's current scale
-        let originalScale = image.recommendedLayerContentsScale(0.0)
-        _ = downsampleToNonRetinaForSave ? 1.0 : originalScale
-        
-        // For PNG, use the original method since it works
-        if format == "png" {
-            guard let tiff = image.tiffRepresentation,
-                  let rep = NSBitmapImageRep(data: tiff) else { return false }
-            
-            let data = rep.representation(using: .png, properties: [:])
-            guard let pngData = data else { return false }
-            
-            do {
-                try pngData.write(to: url, options: .atomic)
-                
-                // Restore original creation date if we captured it
-                if preserveAttributes, let creationDate = originalCreationDate {
-                    do {
-                        try FileManager.default.setAttributes([.creationDate: creationDate], ofItemAtPath: url.path)
-                    } catch {
-                        print("Could not restore original creation date: \(error)")
-                    }
-                }
-                
-                return true
-            } catch {
-                return false
-            }
-        }
-        
-        // For JPEG and HEIC, explicitly rasterize at the desired pixel scale, preserving backing pixel dimensions when not downsampling.
+        // Rasterize every format through the same path so PNG, JPEG, and HEIC
+        // all honor the Retina downsampling preference consistently.
         var backingWidth = Int(round(image.size.width))
         var backingHeight = Int(round(image.size.height))
         if let cg = image.cgImage(forProposedRect: nil, context: nil, hints: nil) {
