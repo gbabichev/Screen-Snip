@@ -12,6 +12,7 @@ import VideoToolbox
 import UniformTypeIdentifiers
 import ImageIO
 import Combine
+import Carbon.HIToolbox
 
 @MainActor
 private enum CursorTrace {
@@ -455,6 +456,9 @@ final class SelectionWindowManager: NSObject {
     static let shared = SelectionWindowManager()
     private var panels: [NSPanel] = []
     private var keyMonitor: Any?
+    private var escapeHotKey: EventHotKeyRef?
+    private var escapeEventHandler: EventHandlerRef?
+    private static let escapeSignature: OSType = 0x53534553 // "SSES"
 
     private override init() {
         super.init()
@@ -499,7 +503,9 @@ final class SelectionWindowManager: NSObject {
                 windowOrigin: frame.origin,
                 capturedImage: cgImage,
                 magnifierEnabled: UserDefaults.standard.bool(forKey: "captureMagnifierEnabled"),
-                onComplete: { rect in
+                onComplete: { [weak panel] rect in
+                    // A canceled drag can still deliver its mouse-up callback.
+                    guard let panel, self.panels.contains(where: { $0 === panel }) else { return }
                     // Remove the selection UI before image extraction, encoding,
                     // disk I/O, and editor setup begin. Running completion on the
                     // next main-loop turn also gives WindowServer a chance to
@@ -522,6 +528,7 @@ final class SelectionWindowManager: NSObject {
             panels.append(panel)
         }
         CursorTrace.log("selection panels displayed", panels: panels)
+        installEscapeHotKey()
 
         // Preserve the activation request and delayed cursor installation order
         // used by 1.4.5. The panels themselves do not depend on activation.
@@ -560,8 +567,73 @@ final class SelectionWindowManager: NSObject {
         onCancel?()
         dismiss()
     }
+
+    private func installEscapeHotKey() {
+        // Unlike a global keyboard monitor, a registered hotkey needs no
+        // Accessibility permission and works even while focus is settling.
+        var eventType = EventTypeSpec(
+            eventClass: OSType(kEventClassKeyboard),
+            eventKind: UInt32(kEventHotKeyPressed)
+        )
+        let handlerStatus = InstallEventHandler(
+            GetApplicationEventTarget(),
+            { _, event, userData in
+                guard let event, let userData else { return OSStatus(eventNotHandledErr) }
+                var hotKeyID = EventHotKeyID()
+                let status = GetEventParameter(
+                    event,
+                    EventParamName(kEventParamDirectObject),
+                    EventParamType(typeEventHotKeyID),
+                    nil,
+                    MemoryLayout<EventHotKeyID>.size,
+                    nil,
+                    &hotKeyID
+                )
+                guard status == noErr,
+                      hotKeyID.signature == SelectionWindowManager.escapeSignature,
+                      hotKeyID.id == 1 else { return OSStatus(eventNotHandledErr) }
+                let manager = Unmanaged<SelectionWindowManager>
+                    .fromOpaque(userData).takeUnretainedValue()
+                manager.handleCancellation()
+                return noErr
+            },
+            1,
+            &eventType,
+            Unmanaged.passUnretained(self).toOpaque(),
+            &escapeEventHandler
+        )
+        guard handlerStatus == noErr else {
+            print("Failed to install Escape hotkey handler: \(handlerStatus)")
+            return
+        }
+
+        let status = RegisterEventHotKey(
+            UInt32(kVK_Escape),
+            0,
+            EventHotKeyID(signature: Self.escapeSignature, id: 1),
+            GetApplicationEventTarget(),
+            0,
+            &escapeHotKey
+        )
+        if status != noErr {
+            print("Failed to register selection Escape hotkey: \(status)")
+            removeEscapeHotKey()
+        }
+    }
+
+    private func removeEscapeHotKey() {
+        if let escapeHotKey {
+            UnregisterEventHotKey(escapeHotKey)
+            self.escapeHotKey = nil
+        }
+        if let escapeEventHandler {
+            RemoveEventHandler(escapeEventHandler)
+            self.escapeEventHandler = nil
+        }
+    }
     
     func dismiss() {
+        removeEscapeHotKey()
         CursorTrace.end()
         // FIXED: Force restore cursor when dismissing selection windows
         CursorManager.shared.forceRestoreCursor()

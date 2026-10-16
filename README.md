@@ -112,6 +112,9 @@ open "Screen Snip.xcodeproj"
 
 ## Recent Changes
 
+### 1.5.1
+- Fixed 'esc' key not working to cancel a snip in certain cases.
+
 ### 1.5.0
 - Added support for macOS 27.
 - Removed the need for Accessibility permission.

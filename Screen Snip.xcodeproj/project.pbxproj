@@ -24,7 +24,7 @@
 /* End PBXCopyFilesBuildPhase section */
 
 /* Begin PBXFileReference section */
-		FF30F8E72E6F929000F72D09 /* Screen Snip.app */ = {isa = PBXFileReference; explicitFileType = wrapper.application; includeInIndex = 0; name = "Screen Snip.app"; path = "Screen Snip Debug.app"; sourceTree = BUILT_PRODUCTS_DIR; };
+		FF30F8E72E6F929000F72D09 /* Screen Snip Debug.app */ = {isa = PBXFileReference; explicitFileType = wrapper.application; includeInIndex = 0; path = "Screen Snip Debug.app"; sourceTree = BUILT_PRODUCTS_DIR; };
 		FF3901002E7858C1008A104E /* ScreenSnipHelper.app */ = {isa = PBXFileReference; explicitFileType = wrapper.application; includeInIndex = 0; path = ScreenSnipHelper.app; sourceTree = BUILT_PRODUCTS_DIR; };
 /* End PBXFileReference section */
 
@@ -84,7 +84,7 @@
 		FF30F8E82E6F929000F72D09 /* Products */ = {
 			isa = PBXGroup;
 			children = (
-				FF30F8E72E6F929000F72D09 /* Screen Snip.app */,
+				FF30F8E72E6F929000F72D09 /* Screen Snip Debug.app */,
 				FF3901002E7858C1008A104E /* ScreenSnipHelper.app */,
 			);
 			name = Products;
@@ -113,7 +113,7 @@
 			packageProductDependencies = (
 			);
 			productName = "Screen Snap";
-			productReference = FF30F8E72E6F929000F72D09 /* Screen Snip.app */;
+			productReference = FF30F8E72E6F929000F72D09 /* Screen Snip Debug.app */;
 			productType = "com.apple.product-type.application";
 		};
 		FF3900FF2E7858C1008A104E /* ScreenSnipHelper */ = {
@@ -344,7 +344,7 @@
 				CODE_SIGN_ENTITLEMENTS = "Screen Snip/Screen Snip.entitlements";
 				CODE_SIGN_STYLE = Automatic;
 				COMBINE_HIDPI_IMAGES = YES;
-				CURRENT_PROJECT_VERSION = 14;
+				CURRENT_PROJECT_VERSION = 15;
 				DEAD_CODE_STRIPPING = YES;
 				DEVELOPMENT_TEAM = 7GK58M2353;
 				ENABLE_APP_SANDBOX = YES;
@@ -360,7 +360,7 @@
 					"$(inherited)",
 					"@executable_path/../Frameworks",
 				);
-				MARKETING_VERSION = 1.5.0;
+				MARKETING_VERSION = 1.5.1;
 				PRODUCT_BUNDLE_IDENTIFIER = "com.georgebabichev.Screen-Snip.debug";
 				PRODUCT_NAME = "Screen Snip Debug";
 				REGISTER_APP_GROUPS = YES;
@@ -388,7 +388,7 @@
 				CODE_SIGN_ENTITLEMENTS = "Screen Snip/Screen Snip.entitlements";
 				CODE_SIGN_STYLE = Automatic;
 				COMBINE_HIDPI_IMAGES = YES;
-				CURRENT_PROJECT_VERSION = 14;
+				CURRENT_PROJECT_VERSION = 15;
 				DEAD_CODE_STRIPPING = YES;
 				DEVELOPMENT_TEAM = 7GK58M2353;
 				ENABLE_APP_SANDBOX = YES;
@@ -403,7 +403,7 @@
 					"$(inherited)",
 					"@executable_path/../Frameworks",
 				);
-				MARKETING_VERSION = 1.5.0;
+				MARKETING_VERSION = 1.5.1;
 				PRODUCT_BUNDLE_IDENTIFIER = "com.georgebabichev.Screen-Snip";
 				PRODUCT_NAME = "$(TARGET_NAME)";
 				REGISTER_APP_GROUPS = YES;
@@ -582,7 +582,7 @@
 				CODE_SIGN_ENTITLEMENTS = "Screen Snip/Screen Snip.entitlements";
 				CODE_SIGN_STYLE = Automatic;
 				COMBINE_HIDPI_IMAGES = YES;
-				CURRENT_PROJECT_VERSION = 14;
+				CURRENT_PROJECT_VERSION = 15;
 				DEAD_CODE_STRIPPING = YES;
 				DEVELOPMENT_TEAM = 7GK58M2353;
 				ENABLE_APP_SANDBOX = YES;
@@ -598,7 +598,7 @@
 					"$(inherited)",
 					"@executable_path/../Frameworks",
 				);
-				MARKETING_VERSION = 1.5.0;
+				MARKETING_VERSION = 1.5.1;
 				PRODUCT_BUNDLE_IDENTIFIER = "com.georgebabichev.Screen-Snip";
 				PRODUCT_NAME = "$(TARGET_NAME)";
 				REGISTER_APP_GROUPS = YES;
