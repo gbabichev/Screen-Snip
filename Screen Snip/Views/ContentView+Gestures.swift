@@ -1093,10 +1093,11 @@ extension ContentView {
     func rasterize(base: NSImage, objects: [Drawable]) -> NSImage? {
         // Keep logical canvas in points (matches editor), but render into a bitmap using the base image's backing pixels.
         let imgSize = base.size // points
+        let baseCGImage = base.cgImage(forProposedRect: nil, context: nil, hints: nil)
         
         // Determine backing pixel dimensions (prefer CGImage; else largest bitmap rep; else fall back to points)
         let pixelDims: (w: Int, h: Int) = {
-            if let cg = base.cgImage(forProposedRect: nil, context: nil, hints: nil) {
+            if let cg = baseCGImage {
                 return (cg.width, cg.height)
             }
             if let best = base.representations
@@ -1135,7 +1136,15 @@ extension ContentView {
             let fitted = objectSpaceSize ?? lastFittedSize ?? imgSize
 
             // Draw the base image to fill the logical canvas
-            base.draw(in: CGRect(origin: .zero, size: imgSize))
+            // Reuse the bitmap resolved above instead of entering NSImage's
+            // drawing/cache path, which can wait on lower-priority AppKit work.
+            let canvasRect = CGRect(origin: .zero, size: imgSize)
+            if let baseCGImage {
+                ctx.cgContext.interpolationQuality = .high
+                ctx.cgContext.draw(baseCGImage, in: canvasRect)
+            } else {
+                base.draw(in: canvasRect)
+            }
             let scaleX = imgSize.width / max(1, fitted.width)
             let scaleY = imgSize.height / max(1, fitted.height)
             let scaleW = (scaleX + scaleY) / 2
