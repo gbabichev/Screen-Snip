@@ -36,12 +36,24 @@ class WindowSizeDelegate: NSObject, NSWindowDelegate {
     }
 }
 
-// Simplified window manager - let SwiftUI handle the window lifecycle
+// Retains editor windows and their view state across captures.
 @MainActor
 final class WindowManager {
     static let shared = WindowManager()
     
     private var mainWindowController: NSWindowController?
+    private var editors: [UUID: NSWindowController] = [:]
+    private var editorObservers: [UUID: [NSObjectProtocol]] = [:]
+    private var terminationEditors: [UUID] = []
+
+    private struct CaptureWindowState {
+        let windows: [NSWindow]
+        let keyWindow: NSWindow?
+        let frontmostApplication: NSRunningApplication?
+        let appWasActive: Bool
+        let appWasHidden: Bool
+    }
+    private var captureWindowState: CaptureWindowState?
     private let windowFrameAutosaveName = "MainEditorWindow"
     
     // Add UserDefaults keys for manual frame storage
@@ -50,22 +62,74 @@ final class WindowManager {
     
     private init() {}
     
-    func closeAllAppWindows() {
-        // IMPORTANT: Save current window frame BEFORE closing to preserve good dimensions
-        // (Don't wait for the close notification which might have collapsed dimensions)
+    func beginCapture(hideWindows: Bool) {
+        guard captureWindowState == nil else { return }
         saveCurrentWindowFrame()
-        
-        for window in NSApp.windows {
-            if window.isVisible &&
-               !window.isMiniaturized &&
-               window.canBecomeKey &&
-               !window.isSheet {
-                
-                window.close()
-            }
+        let visibleWindows = NSApp.orderedWindows.filter { $0.isVisible && !$0.isMiniaturized && !$0.isSheet }
+        captureWindowState = CaptureWindowState(
+            windows: hideWindows ? visibleWindows : [],
+            keyWindow: NSApp.keyWindow,
+            frontmostApplication: NSWorkspace.shared.frontmostApplication,
+            appWasActive: NSApp.isActive,
+            appWasHidden: NSApp.isHidden
+        )
+        if hideWindows {
+            for window in visibleWindows { window.orderOut(nil) }
         }
     }
-    
+
+    func finishCapture(restoreFocus: Bool) {
+        guard let state = captureWindowState else { return }
+        captureWindowState = nil
+        // orderBack preserves the order within the app without raising it over
+        // the app the person was using before the capture.
+        for window in state.windows where !window.isVisible && !window.isMiniaturized {
+            window.orderBack(nil)
+        }
+        guard restoreFocus else { return }
+        if state.appWasHidden {
+            NSApp.hide(nil)
+        } else if state.appWasActive {
+            state.keyWindow?.makeKeyAndOrderFront(nil)
+        }
+        if !state.appWasActive {
+            state.frontmostApplication?.activate(options: [])
+        }
+    }
+
+    func window(for editorID: UUID) -> NSWindow? { editors[editorID]?.window }
+
+    func isActiveEditor(_ editorID: UUID) -> Bool {
+        guard let window = window(for: editorID) else { return false }
+        return NSApp.keyWindow === window
+    }
+
+    func setDocumentEdited(_ edited: Bool, for editorID: UUID) {
+        window(for: editorID)?.isDocumentEdited = edited
+    }
+
+    var hasEditedEditors: Bool { editors.values.contains { $0.window?.isDocumentEdited == true } }
+
+    func beginTerminationConfirmation() {
+        terminationEditors = editors.compactMap { $0.value.window?.isDocumentEdited == true ? $0.key : nil }
+    }
+
+    @discardableResult func confirmNextEditorBeforeTermination() -> Bool {
+        while !terminationEditors.isEmpty {
+            let id = terminationEditors.removeFirst()
+            guard let window = window(for: id), window.isDocumentEdited else { continue }
+            window.makeKeyAndOrderFront(nil)
+            NSApp.activate(ignoringOtherApps: true)
+            DispatchQueue.main.async {
+                NotificationCenter.default.post(name: .requestTerminateApp, object: window)
+            }
+            return true
+        }
+        return false
+    }
+
+    func cancelTerminationConfirmation() { terminationEditors.removeAll() }
+
     func ensureMainWindow() {
         // If we already have a valid window, just bring it forward
         if let controller = mainWindowController,
@@ -86,34 +150,20 @@ final class WindowManager {
         createMainWindow()
     }
 
-    func setMainWindowDocumentEdited(_ isEdited: Bool) {
-        mainWindowController?.window?.isDocumentEdited = isEdited
-    }
-
-    var isMainWindowDocumentEdited: Bool {
-        mainWindowController?.window?.isDocumentEdited ?? false
-    }
-
-    /// Drops the stored controller without allowing its teardown to re-enter a
-    /// read of `mainWindowController` while that property is being mutated.
-    /// SwiftUI can synchronously run disappearance callbacks as the controller
-    /// and hosting view are released.
-    private func clearMainWindowController(ifMatching window: NSWindow? = nil) {
-        guard let controller = mainWindowController else { return }
-        if let window, controller.window !== window { return }
-
-        // The local strong reference defers controller/window destruction until
-        // after the exclusive write to the stored property has completed.
-        mainWindowController = nil
+    private func removeEditor(_ id: UUID) {
+        guard let controller = editors.removeValue(forKey: id) else { return }
+        for observer in editorObservers.removeValue(forKey: id) ?? [] {
+            NotificationCenter.default.removeObserver(observer)
+        }
+        if mainWindowController === controller {
+            mainWindowController = editors.values.first
+        }
         withExtendedLifetime(controller) {}
     }
-    
+
     private func createMainWindow(shouldActivate: Bool = true) {
-        // Clean up existing window
-        if let controller = mainWindowController {
-            controller.window?.close()
-            clearMainWindowController(ifMatching: controller.window)
-        }
+        // Keep existing editors alive, including their unsaved view state.
+        let editorID = UUID()
         
         // Get saved frame or use default
         let savedFrame = getSavedWindowFrame()
@@ -140,7 +190,7 @@ final class WindowManager {
         window.delegate = WindowSizeDelegate.shared
         // Don't set maxSize - let it be unlimited for resizing
         
-        let contentView = ContentView()
+        let contentView = ContentView(editorID: editorID)
 #if DEBUG
             .overlay(alignment: .bottomTrailing) {
                 BetaTag()
@@ -159,20 +209,30 @@ final class WindowManager {
         let controller = NSWindowController(window: window)
         controller.windowFrameAutosaveName = windowFrameAutosaveName
         
-        // Set up close notification to clean up our reference
-        NotificationCenter.default.addObserver(
+        // Retain every editor and scope lifecycle observations to it.
+        editors[editorID] = controller
+        var observers: [NSObjectProtocol] = []
+        observers.append(NotificationCenter.default.addObserver(
             forName: NSWindow.willCloseNotification,
             object: window,
             queue: .main
+        ) { [weak self] _ in
+            Task { @MainActor in
+                self?.removeEditor(editorID)
+            }
+        })
+        observers.append(NotificationCenter.default.addObserver(
+            forName: NSWindow.didBecomeKeyNotification, object: window, queue: .main
         ) { [weak self, weak window] _ in
             Task { @MainActor in
-                guard let self, let window else { return }
-                self.clearMainWindowController(ifMatching: window)
+                guard let self, window?.isKeyWindow == true,
+                      let controller = self.editors[editorID] else { return }
+                self.mainWindowController = controller
             }
-        }
+        })
         
         // Also save frame when window is resized or moved (but throttled)
-        NotificationCenter.default.addObserver(
+        observers.append(NotificationCenter.default.addObserver(
             forName: NSWindow.didResizeNotification,
             object: window,
             queue: .main
@@ -180,9 +240,9 @@ final class WindowManager {
             Task { @MainActor in
                 self?.saveCurrentWindowFrame()
             }
-        }
+        })
         
-        NotificationCenter.default.addObserver(
+        observers.append(NotificationCenter.default.addObserver(
             forName: NSWindow.didMoveNotification,
             object: window,
             queue: .main
@@ -190,8 +250,9 @@ final class WindowManager {
             Task { @MainActor in
                 self?.saveCurrentWindowFrame()
             }
-        }
+        })
         
+        editorObservers[editorID] = observers
         // Store reference
         mainWindowController = controller
         
@@ -297,29 +358,27 @@ final class WindowManager {
     }
     
     func loadImageIntoWindow(url: URL, shouldActivate: Bool = true) {
-        // Always ensure we have a window first
-        ensureMainWindow()
+        if mainWindowController?.window?.isDocumentEdited == true ||
+            mainWindowController?.window?.isMiniaturized == true {
+            createMainWindow(shouldActivate: shouldActivate)
+        } else {
+            ensureMainWindow()
+        }
+        let targetWindow = mainWindowController?.window
         
         let userInfo: [String: Any] = [
             "url": url,
             "shouldActivate": shouldActivate
         ]
         
-        // Send notification immediately - now there's a ContentView to receive it
-        NotificationCenter.default.post(
-            name: Notification.Name("com.georgebabichev.screenSnip.beginSnipFromIntent"),
-            object: nil,
-            userInfo: userInfo
-        )
-    }
-    
-    func closeAllAppWindowsAsync() async {
-        await MainActor.run {
-            self.closeAllAppWindows()
+        // Allow a newly created hosting view to install its subscriptions.
+        DispatchQueue.main.async { [weak targetWindow] in
+            guard let targetWindow else { return }
+            NotificationCenter.default.post(
+                name: Notification.Name("com.georgebabichev.screenSnip.beginSnipFromIntent"),
+                object: targetWindow,
+                userInfo: userInfo
+            )
         }
-        
-        // Wait for window close animations to complete
-        // Adjust timing based on your actual window close animation duration
-        try? await Task.sleep(nanoseconds: 300_000_000) // 0.3 seconds
     }
 }

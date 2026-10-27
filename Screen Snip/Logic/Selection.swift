@@ -495,6 +495,7 @@ final class SelectionWindowManager: NSObject {
             panel.titlebarAppearsTransparent = true
             panel.acceptsMouseMovedEvents = true
             panel.hidesOnDeactivate = false
+            panel.canHide = false
             panel.hasShadow = false
             panel.isExcludedFromWindowsMenu = true
             panel.setFrame(frame, display: false)
@@ -532,7 +533,9 @@ final class SelectionWindowManager: NSObject {
 
         // Preserve the activation request and delayed cursor installation order
         // used by 1.4.5. The panels themselves do not depend on activation.
-        NSApp.activate(ignoringOtherApps: true)
+        if !NSApp.isHidden {
+            NSApp.activate(ignoringOtherApps: true)
+        }
         let mouseLocation = NSEvent.mouseLocation
         let focusedPanel = panels.first { NSMouseInRect(mouseLocation, $0.frame, false) } ?? panels.first
         focusedPanel?.makeKey()
@@ -564,8 +567,9 @@ final class SelectionWindowManager: NSObject {
         guard !panels.isEmpty else { return }
         // FIXED: Ensure cursor is restored on cancellation
         CursorManager.shared.forceRestoreCursor()
-        onCancel?()
+        let cancellation = onCancel
         dismiss()
+        cancellation?()
     }
 
     private func installEscapeHotKey() {

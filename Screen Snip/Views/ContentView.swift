@@ -139,6 +139,7 @@ private final class EstimatedSizeTokenBox: @unchecked Sendable {
 }
 
 struct ContentView: View {
+    let editorID: UUID
     private nonisolated static let saveOnCopyQueue = DispatchQueue(
         label: "com.georgebabichev.Screen-Snip.save-on-copy",
         qos: .utility
@@ -1580,6 +1581,7 @@ struct ContentView: View {
             updateDocumentEditedIndicator()
             // Listen for Cmd+Z / Shift+Cmd+Z globally while this view is active, and Delete for selected objects
             keyMonitor = NSEvent.addLocalMonitorForEvents(matching: .keyDown) { event in
+                guard WindowManager.shared.isActiveEditor(editorID) else { return event }
                 
                 if event.type == .keyDown {
                     // Auto-focus thumbnails when arrow keys are pressed and nothing specific is focused
@@ -1922,7 +1924,7 @@ struct ContentView: View {
     }
 
     func updateDocumentEditedIndicator() {
-        WindowManager.shared.setMainWindowDocumentEdited(hasUnsavedChanges)
+        WindowManager.shared.setDocumentEdited(hasUnsavedChanges, for: editorID)
     }
 
     func discardUnsavedChanges() {
@@ -1974,6 +1976,7 @@ struct ContentView: View {
     }
 
     func updateMenuState() {
+        guard WindowManager.shared.isActiveEditor(editorID) else { return }
         MenuState.shared.canUndo = !undoStack.isEmpty
         MenuState.shared.canRedo = !redoStack.isEmpty
         MenuState.shared.hasSelectedImage = selectedSnipURL != nil

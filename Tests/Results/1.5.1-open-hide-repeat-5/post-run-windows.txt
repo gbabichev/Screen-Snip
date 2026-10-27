@@ -1,0 +1,9 @@
+Running app: /Users/georgebabichev/Library/Developer/Xcode/DerivedData/Screen_Snip-hbhmjbfborevkmdvgqorrwpxzynk/Build/Products/Debug/Screen Snip Debug.app pid=48251
+[]
+Running app: /private/tmp/screen-snip-release-baseline-151/Build/Products/Release - Web/Screen Snip.app pid=48453
+[]
+Test driver: /Users/georgebabichev/Developer/Apps-Code/Screen Snip/Tests/.build/HotkeyEscapeStress
+Terminal host: not identified; use the entry named by macOS
+These checks concern the test driver/launcher, not Screen Snip's Screen Recording permission.
+System event posting authorized: true
+Device Control and Data Access — window/UI access authorized: true

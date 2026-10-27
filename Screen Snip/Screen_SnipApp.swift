@@ -223,7 +223,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, ObservableObject {
     }
 
     func applicationShouldTerminate(_ sender: NSApplication) -> NSApplication.TerminateReply {
-        if WindowManager.shared.isMainWindowDocumentEdited {
+        if WindowManager.shared.hasEditedEditors {
             guard !isAwaitingTerminationConfirmation else {
                 return .terminateLater
             }
@@ -234,7 +234,10 @@ final class AppDelegate: NSObject, NSApplicationDelegate, ObservableObject {
             // otherwise reply too early and leave AppKit waiting indefinitely.
             DispatchQueue.main.async {
                 NSApp.activate(ignoringOtherApps: true)
-                NotificationCenter.default.post(name: .requestTerminateApp, object: nil)
+                WindowManager.shared.beginTerminationConfirmation()
+                if !WindowManager.shared.confirmNextEditorBeforeTermination() {
+                    self.replyToPendingTermination(shouldTerminate: true)
+                }
             }
             return .terminateLater
         }
@@ -245,6 +248,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate, ObservableObject {
 
     func replyToPendingTermination(shouldTerminate: Bool) {
         guard isAwaitingTerminationConfirmation else { return }
+        if shouldTerminate, WindowManager.shared.confirmNextEditorBeforeTermination() { return }
+        WindowManager.shared.cancelTerminationConfirmation()
         isAwaitingTerminationConfirmation = false
 
         if shouldTerminate {
@@ -357,26 +362,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, ObservableObject {
         print("📸 Opening image: \(firstImage.path)")
         
         DispatchQueue.main.async {
-            // Ensure we have a main window first
-            WindowManager.shared.ensureMainWindow()
-            
-            // Small delay to ensure window is ready
-            DispatchQueue.main.asyncAfter(deadline: .now() + 0.1) {
-                let userInfo: [String: Any] = [
-                    "url": firstImage,
-                    "shouldActivate": true
-                ]
-                
-                NotificationCenter.default.post(
-                    name: Notification.Name("com.georgebabichev.screenSnip.beginSnipFromIntent"),
-                    object: nil,
-                    userInfo: userInfo
-                )
-                
-                if imageURLs.count > 1 {
-                    print("📚 Multiple images selected. Currently opening the first one: \(firstImage.lastPathComponent)")
-                }
-            }
+            WindowManager.shared.loadImageIntoWindow(url: firstImage, shouldActivate: true)
         }
     }
     

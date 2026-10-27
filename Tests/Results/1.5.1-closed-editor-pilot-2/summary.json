@@ -1,0 +1,19 @@
+{
+  "appPath" : "\/private\/tmp\/screen-snip-release-baseline-151\/Build\/Products\/Release - Web\/Screen Snip.app",
+  "baseline" : "08f2c0af639144f90033112e2835e26282ef678a",
+  "confirmedCaptureOverlays" : 3,
+  "editorReopened" : 0,
+  "escapeDelayMilliseconds" : [
+    0,
+    25,
+    75,
+    150,
+    300
+  ],
+  "input" : "system CGEvent hotkey Cmd+Shift+2 followed by Escape",
+  "iterations" : 3,
+  "observationSecondsPerTrial" : 1.5,
+  "observer" : "read-only CGWindowListCopyWindowInfo sampled every approximately 20 ms",
+  "overlayDismissals" : 3,
+  "startingState" : "editor CLOSED; app running; Finder foreground; hide-during-capture enabled"
+}

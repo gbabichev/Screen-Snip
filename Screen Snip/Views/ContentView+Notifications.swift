@@ -23,13 +23,21 @@ extension ContentView {
             nc.publisher(for: .rotateCounterclockwise),
             nc.publisher(for: .requestCloseWindow),
             nc.publisher(for: .requestTerminateApp),
+            nc.publisher(for: NSWindow.didBecomeKeyNotification),
         ])
         .eraseToAnyPublisher()
     }
     
     // Central handler so the `.onReceive` body stays tiny.
     func handleAppNotification(_ note: Notification) {
+        if let target = note.object as? NSWindow {
+            guard target === WindowManager.shared.window(for: editorID) else { return }
+        } else {
+            guard WindowManager.shared.isActiveEditor(editorID) else { return }
+        }
         switch note.name {
+        case NSWindow.didBecomeKeyNotification:
+            updateMenuState()
         case Notification.Name("com.georgebabichev.screenSnip.beginSnipFromIntent"):
             onBeginSnipFromIntent(note)
             

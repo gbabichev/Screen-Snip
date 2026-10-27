@@ -1,0 +1,14 @@
+{
+  "allPassed" : true,
+  "appPath" : "\/private\/tmp\/screen-snip-preserve-window\/Build\/Products\/Release - Web\/Screen Snip.app",
+  "checks" : 7,
+  "results" : {
+    "hidden_app_preserved" : true,
+    "minimized_editor_preserved" : true,
+    "quit_confirms_each_dirty_editor" : true,
+    "settings_window_preserved" : true,
+    "successful_capture_preserves_unsaved_editor" : true,
+    "undo_scoped_to_active_editor" : true,
+    "unsaved_cancel_preserved" : true
+  }
+}

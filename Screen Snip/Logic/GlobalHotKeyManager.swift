@@ -126,7 +126,6 @@ final class GlobalHotKeyManager: NSObject, SCContentSharingPickerObserver {
     private var isCurrentlyCapturing = false
     private var capturedScreens: [(screenInfo: ScreenInfo, cgImage: CGImage)] = []
     private var suppressMainWindowReopenUntil: CFTimeInterval = 0
-    private var shouldRestoreMainWindowAfterCapture = false
 
     var shouldSuppressMainWindowReopen: Bool {
         isCurrentlyCapturing ||
@@ -159,7 +158,7 @@ final class GlobalHotKeyManager: NSObject, SCContentSharingPickerObserver {
         case .fullScreen:
             beginFullScreenCapture()
         case .fullWindow:
-            shouldRestoreMainWindowAfterCapture = false
+            WindowManager.shared.beginCapture(hideWindows: false)
             presentSystemWindowPicker()
         }
     }
@@ -187,7 +186,7 @@ final class GlobalHotKeyManager: NSObject, SCContentSharingPickerObserver {
             guard let self else { return }
 
             if captureMode == .captureWithoutWindows {
-                await WindowManager.shared.closeAllAppWindowsAsync()
+                try? await Task.sleep(for: .milliseconds(300))
             }
 
             let screenshots = await self.captureAllScreensImmediately()
@@ -204,16 +203,7 @@ final class GlobalHotKeyManager: NSObject, SCContentSharingPickerObserver {
         let captureModeRaw = UserDefaults.standard.string(forKey: "captureMode")
             ?? CaptureMode.captureWithWindows.rawValue
         let captureMode = CaptureMode(rawValue: captureModeRaw) ?? .captureWithWindows
-        let windowsWereHidden = captureMode == .captureWithoutWindows
-
-        let hadVisibleMainWindow = NSApp.windows.contains { window in
-            window.isVisible &&
-            !window.isMiniaturized &&
-            window.canBecomeKey &&
-            !window.isSheet &&
-            window.contentViewController is NSHostingController<ContentView>
-        }
-        shouldRestoreMainWindowAfterCapture = windowsWereHidden && hadVisibleMainWindow
+        WindowManager.shared.beginCapture(hideWindows: captureMode == .captureWithoutWindows)
         return captureMode
     }
 
@@ -353,19 +343,11 @@ final class GlobalHotKeyManager: NSObject, SCContentSharingPickerObserver {
     }
 
     private func finishCapture(restorePreviousMainWindow: Bool) {
-        let shouldRestore = restorePreviousMainWindow && shouldRestoreMainWindowAfterCapture
-
         suppressMainWindowReopenBriefly()
-        isCurrentlyCapturing = false
         capturedScreens.removeAll()
-        shouldRestoreMainWindowAfterCapture = false
         SelectionWindowManager.shared.onCancel = nil
-
-        if shouldRestore {
-            DispatchQueue.main.async {
-                WindowManager.shared.ensureMainWindow()
-            }
-        }
+        WindowManager.shared.finishCapture(restoreFocus: restorePreviousMainWindow)
+        isCurrentlyCapturing = false
     }
 
     // MARK: - Capture Mode Implementations
@@ -391,8 +373,9 @@ final class GlobalHotKeyManager: NSObject, SCContentSharingPickerObserver {
         Task { [weak self] in
             guard let self = self else { return }
             
-            // STEP 1: Hide windows first for clean desktop
-            await WindowManager.shared.closeAllAppWindowsAsync()
+            // Windows were ordered out synchronously during capture preparation.
+            // Give WindowServer time to update before freezing the desktop.
+            try? await Task.sleep(for: .milliseconds(300))
             
             // STEP 2: Capture with windows hidden
             let screenshots = await self.captureAllScreensImmediately()

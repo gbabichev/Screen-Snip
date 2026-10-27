@@ -1,0 +1,134 @@
+[
+  {
+    "initiallyOpen": false,
+    "hideEnabled": false,
+    "scenario": "normal",
+    "trials": 5,
+    "windowStateFailures": 0,
+    "returnedBlank": 0,
+    "selectionPreserved": 0,
+    "windowIDChanged": 0,
+    "firstEscapeNeededCleanup": 0
+  },
+  {
+    "initiallyOpen": false,
+    "hideEnabled": false,
+    "scenario": "startup",
+    "trials": 5,
+    "windowStateFailures": 0,
+    "returnedBlank": 0,
+    "selectionPreserved": 0,
+    "windowIDChanged": 0,
+    "firstEscapeNeededCleanup": 1
+  },
+  {
+    "initiallyOpen": false,
+    "hideEnabled": false,
+    "scenario": "drag",
+    "trials": 5,
+    "windowStateFailures": 0,
+    "returnedBlank": 0,
+    "selectionPreserved": 0,
+    "windowIDChanged": 0,
+    "firstEscapeNeededCleanup": 0
+  },
+  {
+    "initiallyOpen": true,
+    "hideEnabled": false,
+    "scenario": "normal",
+    "trials": 5,
+    "windowStateFailures": 0,
+    "returnedBlank": 0,
+    "selectionPreserved": 5,
+    "windowIDChanged": 0,
+    "firstEscapeNeededCleanup": 0
+  },
+  {
+    "initiallyOpen": true,
+    "hideEnabled": false,
+    "scenario": "startup",
+    "trials": 5,
+    "windowStateFailures": 0,
+    "returnedBlank": 0,
+    "selectionPreserved": 5,
+    "windowIDChanged": 0,
+    "firstEscapeNeededCleanup": 1
+  },
+  {
+    "initiallyOpen": true,
+    "hideEnabled": false,
+    "scenario": "drag",
+    "trials": 5,
+    "windowStateFailures": 0,
+    "returnedBlank": 0,
+    "selectionPreserved": 5,
+    "windowIDChanged": 0,
+    "firstEscapeNeededCleanup": 0
+  },
+  {
+    "initiallyOpen": false,
+    "hideEnabled": true,
+    "scenario": "normal",
+    "trials": 5,
+    "windowStateFailures": 0,
+    "returnedBlank": 0,
+    "selectionPreserved": 0,
+    "windowIDChanged": 0,
+    "firstEscapeNeededCleanup": 0
+  },
+  {
+    "initiallyOpen": false,
+    "hideEnabled": true,
+    "scenario": "startup",
+    "trials": 5,
+    "windowStateFailures": 0,
+    "returnedBlank": 0,
+    "selectionPreserved": 0,
+    "windowIDChanged": 0,
+    "firstEscapeNeededCleanup": 3
+  },
+  {
+    "initiallyOpen": false,
+    "hideEnabled": true,
+    "scenario": "drag",
+    "trials": 5,
+    "windowStateFailures": 0,
+    "returnedBlank": 0,
+    "selectionPreserved": 0,
+    "windowIDChanged": 0,
+    "firstEscapeNeededCleanup": 0
+  },
+  {
+    "initiallyOpen": true,
+    "hideEnabled": true,
+    "scenario": "normal",
+    "trials": 5,
+    "windowStateFailures": 0,
+    "returnedBlank": 5,
+    "selectionPreserved": 0,
+    "windowIDChanged": 5,
+    "firstEscapeNeededCleanup": 0
+  },
+  {
+    "initiallyOpen": true,
+    "hideEnabled": true,
+    "scenario": "startup",
+    "trials": 5,
+    "windowStateFailures": 0,
+    "returnedBlank": 5,
+    "selectionPreserved": 0,
+    "windowIDChanged": 5,
+    "firstEscapeNeededCleanup": 3
+  },
+  {
+    "initiallyOpen": true,
+    "hideEnabled": true,
+    "scenario": "drag",
+    "trials": 5,
+    "windowStateFailures": 0,
+    "returnedBlank": 5,
+    "selectionPreserved": 0,
+    "windowIDChanged": 5,
+    "firstEscapeNeededCleanup": 0
+  }
+]

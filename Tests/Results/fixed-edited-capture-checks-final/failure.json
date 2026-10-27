@@ -1,0 +1,8 @@
+{
+  "error" : "precondition(\"rotation did not mark editor edited\")",
+  "passedChecks" : {
+    "hidden_app_preserved" : true,
+    "minimized_editor_preserved" : true,
+    "settings_window_preserved" : true
+  }
+}

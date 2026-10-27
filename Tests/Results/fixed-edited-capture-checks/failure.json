@@ -1,0 +1,7 @@
+{
+  "error" : "precondition(\"Settings or editor recreated\")",
+  "passedChecks" : {
+    "hidden_app_preserved" : true,
+    "minimized_editor_preserved" : true
+  }
+}

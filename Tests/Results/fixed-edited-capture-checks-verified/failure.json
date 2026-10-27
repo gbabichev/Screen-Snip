@@ -1,0 +1,7 @@
+{
+  "error" : "precondition(\"Settings close button missing\")",
+  "passedChecks" : {
+    "hidden_app_preserved" : true,
+    "minimized_editor_preserved" : true
+  }
+}

@@ -1,0 +1,1 @@
+Incomplete probe calibration, excluded from the final matrix. Copy-to-Clipboard accessibility labels were not stable in the loaded-image toolbar. The visible fixture remained loaded on inspection. The final matrix instead checks the image-only Crop button and blank Capture prompt.

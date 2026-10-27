@@ -1,0 +1,25 @@
+{
+  "appPath" : "\/private\/tmp\/screen-snip-release-baseline-151\/Build\/Products\/Release - Web\/Screen Snip.app",
+  "baseline" : "08f2c0af639144f90033112e2835e26282ef678a",
+  "cleanupRequired" : 6,
+  "confirmedOverlays" : 8,
+  "delaysMS" : [
+    40,
+    75,
+    125,
+    200,
+    300,
+    400,
+    475,
+    550
+  ],
+  "dragCancelledBeforeMouseUp" : 0,
+  "editorReopened" : 0,
+  "firstEscapeLeftOverlayVisible" : 6,
+  "input" : "real system CGEvent keyboard\/mouse events",
+  "iterations" : 8,
+  "newSnipFileCount" : 0,
+  "scenario" : "startup",
+  "startingState" : "editor CLOSED; app running; Finder foreground",
+  "verifiedActiveDrags" : 0
+}

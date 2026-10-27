@@ -1,0 +1,14 @@
+{
+  "baseline" : "08f2c0af639144f90033112e2835e26282ef678a",
+  "confirmedOverlays" : 60,
+  "fixture" : "\/Users\/georgebabichev\/Developer\/Apps-Code\/Screen Snip\/Tests\/Fixtures\/selection-sentinel.png",
+  "newSnipFileCount" : 0,
+  "openEditorTrials" : 30,
+  "repetitionsPerCase" : 5,
+  "returnedBlank" : 15,
+  "selectionCheck" : "Image-only Crop toolbar button versus blank Capture prompt; fixture reopened before every trial",
+  "selectionPreserved" : 15,
+  "trials" : 60,
+  "unexpectedEditorOpens" : 0,
+  "windowStateFailures" : 0
+}

@@ -1,0 +1,4 @@
+System event posting authorized: true
+Accessibility authorized: true
+Running app: /private/tmp/screen-snip-release-baseline-151/Build/Products/Release - Web/Screen Snip.app pid=36918
+[]

@@ -1,0 +1,15 @@
+{
+  "baseline" : "working-tree-preserve-existing-windows",
+  "confirmedOverlays" : 60,
+  "fixture" : "\/Users\/georgebabichev\/Developer\/Apps-Code\/Screen Snip\/Tests\/Fixtures\/selection-sentinel.png",
+  "focusedOpenHideOnly" : false,
+  "newSnipFileCount" : 0,
+  "openEditorTrials" : 30,
+  "repetitionsPerCase" : 5,
+  "returnedBlank" : 0,
+  "selectionCheck" : "Image-only Crop toolbar button versus blank Capture prompt; fixture reopened before every trial",
+  "selectionPreserved" : 30,
+  "trials" : 60,
+  "unexpectedEditorOpens" : 0,
+  "windowStateFailures" : 0
+}

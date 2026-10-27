@@ -1,0 +1,7 @@
+{
+  "error" : "precondition(\"Settings\/editor check: before=[88879, 88574] after=[88879, 88574] selected=false\")",
+  "passedChecks" : {
+    "hidden_app_preserved" : true,
+    "minimized_editor_preserved" : true
+  }
+}
