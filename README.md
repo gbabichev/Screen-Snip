@@ -112,6 +112,9 @@ open "Screen Snip.xcodeproj"
 
 ## Recent Changes
 
+### 1.5.2
+- Fixed an issue where canceling a screenshot could reopen a blank window or lose your current edits.
+
 ### 1.5.1
 - Fixed 'esc' key not working to cancel a snip in certain cases.
 
